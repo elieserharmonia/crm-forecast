@@ -355,15 +355,7 @@ function App() {
     if (prompt) setTimeout(()=>chat(prompt),150);
   }
 
-  const totalVal = opps.reduce((s,o)=>s+(o.value||0),0);
-  const wonVal   = opps.filter(o=>o.stage==="pos_venda").reduce((s,o)=>s+(o.value||0),0);
-  const overdue  = opps.filter(o=>o.nextDate&&o.nextDate<today).length;
-  const highPri  = opps.filter(o=>o.priority==="alta").length;
-
-  const inp = {width:"100%",fontSize:"12px",padding:"7px 9px",borderRadius:"6px",border:"1px solid #ddd",background:"#fafafa",color:"#1a1a1a",boxSizing:"border-box"};
-  const lbl = {fontSize:"11px",color:"#888",marginBottom:"3px",display:"block",textTransform:"uppercase",letterSpacing:"0.05em"};
-  const btn = (bg,tc,bc) => ({padding:"6px 12px",fontSize:"12px",borderRadius:"6px",border:`1px solid ${bc||bg}`,background:bg,color:tc,cursor:"pointer",fontWeight:500});
-
+  
   // ── TAREFAS ────────────────────────────────────────────────────────
   function addTask(){ if(!taskForm.title) return; saveTasks([...tasks,{...taskForm,id:Date.now().toString(),createdAt:new Date().toISOString().slice(0,10)}]); setTaskForm(emptyTask); setTaskModal(false); }
   function delTask(id){ saveTasks(tasks.filter(t=>t.id!==id)); }
