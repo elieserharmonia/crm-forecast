@@ -355,7 +355,6 @@ function App() {
     if (prompt) setTimeout(()=>chat(prompt),150);
   }
 
-  const today    = new Date().toISOString().slice(0,10);
   const totalVal = opps.reduce((s,o)=>s+(o.value||0),0);
   const wonVal   = opps.filter(o=>o.stage==="pos_venda").reduce((s,o)=>s+(o.value||0),0);
   const overdue  = opps.filter(o=>o.nextDate&&o.nextDate<today).length;
