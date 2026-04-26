@@ -182,7 +182,7 @@ function App() {
   const isGestor=true,isVendedor=false,isEngenheiro=false,myResp="",userName="Usuário",userRole="gestor",userAvatar=null,userEmail="";
   function handleSignOut(){location.reload();}
 
-  async function loadProfile(user) {
+  async function loadProfile(user) { return; //
     const {data} = await supabase.from("profiles").select("*").eq("id", user.id).single();
     if (data) setAuthProfile(data);
   }
