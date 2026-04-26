@@ -212,16 +212,6 @@ function App() {
   // Não logado → tela de login
   if (getSupabase() && authSession === false) return <LoginScreen />;
 
-  // Perfil carregado → passar para o CRM
-  const userRole = authProfile?.role || "gestor"; // offline = gestor
-  const userName = authProfile?.name || (authSession?.user?.user_metadata?.full_name) || "Usuário";
-  const userAvatar = authSession?.user?.user_metadata?.avatar_url || null;
-  const userEmail = authSession?.user?.email || "";
-  const isGestor = userRole === "gestor";
-  const isVendedor = userRole === "vendedor";
-  const isEngenheiro = userRole === "engenheiro";
-  const myResp = authProfile?.resp_name || "";
-
   const [opps, setOpps]           = useState(() => loadData() || DEMO);
   const [sel, setSel]             = useState(null);
   const _setSel = (v) => { setSel(v); if(v) setDetailTab("dados"); };
