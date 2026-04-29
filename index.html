@@ -1,6 +1,9 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script>
+<head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <title>FORECAST-CRM · 3S+M</title>
@@ -576,23 +579,98 @@ function App() {
   const [relWeekFilter, setRelWeekFilter] = useState("all");
   function toggleRelOpp(id){ setRelSelected(s=>s.includes(id)?s.filter(x=>x!==id):[...s,id]); setRelText(""); }
   async function gerarRelatorio(){
-    if(!apiKey||relSelected.length===0) return;
-    setRelLoading(true); setRelText("");
-    const selOpps = opps.filter(o=>relSelected.includes(o.id));
-    const blocksText = selOpps.map(o=>{
-      const hist = (o.visitHistory||[]);
-      const lastVisit = hist.length>0?hist[hist.length-1]:null;
-      return `CLIENTE: ${o.company}\nCONTATO: ${o.contact||"—"}\nOPORTUNIDADE: ${o.title}${o.supplier?" ("+o.supplier+")":""}\nVALOR: R$ ${(o.value||0).toLocaleString("pt-BR")}\nETAPA: ${o.stage}\nÚLTIMO FOLLOW-UP: ${o.nextAction||"—"}\nHISTÓRICO ÚLTIMA VISITA: ${lastVisit?JSON.stringify(lastVisit):"sem registro"}`;
-    }).join("\n\n---\n\n");
-    const prompt = `Você é um assistente comercial B2B industrial. Com base nas informações abaixo, gere um relatório semanal de visitas e oportunidades comerciais em português. Para cada oportunidade use EXATAMENTE este formato:\n\nCLIENTE: [nome]\nCONTATO: [nome do contato responsável pela oportunidade]\nOPORTUNIDADE: [descrição]\nRESUMO:\n* [tópico 1]\n* [tópico 2]\n* [tópico 3]\nPRÓXIMO PASSO: [próximo passo claro e datado]\n\nSepare cada oportunidade com uma linha em branco. Seja objetivo, profissional e direto. Use os dados de histórico de visita (5W2H) quando disponíveis.\n\nDADOS:\n\n${blocksText}`;
-    try {
-      const res = await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01"},body:JSON.stringify({model:"claude-opus-4-5",max_tokens:4000,messages:[{role:"user",content:prompt}]})});
-      const data = await res.json();
-      setRelText(data.content?.[0]?.text||"Erro ao gerar relatório.");
-    } catch(e){ setRelText("Erro de conexão."); }
+  if(!relSelected || relSelected.length !== 1) return;
+  setRelLoading(true);
+  setRelText("");
+
+  const opp = opps.find(o => o.id === relSelected[0]);
+  if(!opp){
+    setRelText("Oportunidade não encontrada.");
     setRelLoading(false);
+    return;
   }
 
+  const clean = (v) => String(v || "").replace(/\s+/g, " ").trim();
+  const fmtDate = (v) => {
+    if(!v) return "";
+    const s = String(v).trim();
+    const m = s.match(/^(\d{2})[./-](\d{2})[./-](\d{2,4})/);
+    if(m) return `${m[1]}/${m[2]}/${m[3].length === 2 ? "20" + m[3] : m[3]}`;
+    return s;
+  };
+
+  const top = [
+    `CLIENTE: ${clean(opp.company)}`,
+    `CONTATO: ${clean(opp.contact) || "—"}`,
+    `OPORTUNIDADE: ${clean(opp.title)}${opp.supplier ? " (" + clean(opp.supplier) + ")" : ""}`,
+    `VALOR: R$ ${(opp.value || 0).toLocaleString("pt-BR")}`,
+    `ETAPA: ${clean(opp.stage)}`,
+    `PRIORIDADE: ${clean(opp.priority)}`,
+    `NEG.: ${clean(opp.negType)}`,
+    `CONF.: ${clean(opp.forecastColor)}`
+  ].join(" | ");
+
+  const hist = Array.isArray(opp.visitHistory) ? opp.visitHistory : [];
+  const follow = hist.length
+    ? hist.map((h, i) => {
+        const date = fmtDate(h.date || h.createdAt || "");
+        const who = [
+          h.who ? `Sinuelo: ${clean(h.who)}` : "",
+          h.clientWho ? `Cliente: ${clean(h.clientWho)}` : ""
+        ].filter(Boolean).join(" | ");
+        const text = clean(h.summary || h.what || h.nextStep || "");
+        return `${i + 1}. ${date}${who ? " | " + who : ""}\n${text}`;
+      }).join("\n")
+    : "Sem follow-up registrado.";
+
+  const last = hist.length ? hist[hist.length - 1] : null;
+  const next = [
+    `PRÓXIMO PASSO: ${clean(opp.nextAction)}`,
+    last?.what ? `O QUE: ${clean(last.what)}` : "",
+    last?.why ? `POR QUE: ${clean(last.why)}` : "",
+    last?.who ? `QUEM: ${clean(last.who)}` : "",
+    last?.where ? `ONDE: ${clean(last.where)}` : "",
+    last?.when ? `QUANDO: ${clean(last.when)}` : "",
+    last?.how ? `COMO: ${clean(last.how)}` : "",
+    last?.howMuch ? `QUANTO: ${clean(last.howMuch)}` : ""
+  ].filter(Boolean).join("\n");
+
+  const text = [
+    top,
+    "--------------------------------------------------",
+    "FOLLOW-UP",
+    follow,
+    "--------------------------------------------------",
+    "PRÓXIMO PASSO 5W2H",
+    next,
+    "--------------------------------------------------",
+    "COMENTÁRIOS / NOTAS",
+    clean(opp.notes) || " "
+  ].join("\n");
+
+  try {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: "pt", format: "a4" });
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.text("RELATÓRIO DE OPORTUNIDADE", 40, 40);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.text(`Gerado em: ${new Date().toLocaleString("pt-BR")}`, 40, 58);
+
+    const lines = doc.splitTextToSize(text, 515);
+    doc.text(lines, 40, 80);
+
+    doc.save(`Relatorio_${clean(opp.company || "Oportunidade").replace(/[^\w\-]+/g, "_")}.pdf`);
+    setRelText(text);
+  } catch(e) {
+    setRelText("Erro ao gerar PDF.");
+  }
+
+  setRelLoading(false);
+}
   // TEMA
   const THEME_KEY = "crm_theme_v1";
   const getSystemTheme = () => window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
@@ -1397,8 +1475,8 @@ function App() {
                     );
                   })}
                 </div>
-                {relSelected.length>0&&(
-                  <button onClick={gerarRelatorio} disabled={relLoading||!apiKey}
+                {relSelected.length===1&&(
+  <button onClick={gerarRelatorio} disabled={relLoading}
                     style={{width:"100%",marginTop:"12px",padding:"10px",fontSize:"13px",borderRadius:"6px",border:"none",background:(apiKey&&!relLoading)?"#8C1A1A":"#4A2A2A",color:(apiKey&&!relLoading)?"#FFD0D0":"#7A5050",cursor:(apiKey&&!relLoading)?"pointer":"default",fontWeight:600}}>
                     {relLoading?"Gerando relatório...":!apiKey?"Configure a API Key primeiro":`Gerar relatório (${relSelected.length} opp)`}
                   </button>
