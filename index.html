@@ -632,13 +632,13 @@ function App() {
   const last = hist.length ? hist[hist.length - 1] : null;
   const next = [
     `PRÓXIMO PASSO: ${clean(opp.nextAction)}`,
-    last?.what ? `O QUE: ${clean(last.what)}` : "",
-    last?.why ? `POR QUE: ${clean(last.why)}` : "",
-    last?.who ? `QUEM: ${clean(last.who)}` : "",
-    last?.where ? `ONDE: ${clean(last.where)}` : "",
-    last?.when ? `QUANDO: ${clean(last.when)}` : "",
-    last?.how ? `COMO: ${clean(last.how)}` : "",
-    last?.howMuch ? `QUANTO: ${clean(last.howMuch)}` : ""
+    last && last.what ? `O QUE: ${clean(last.what)}` : "",
+    last && last.why ? `POR QUE: ${clean(last.why)}` : "",
+    last && last.who ? `QUEM: ${clean(last.who)}` : "",
+    last && last.where ? `ONDE: ${clean(last.where)}` : "",
+    last && last.when ? `QUANDO: ${clean(last.when)}` : "",
+    last && last.how ? `COMO: ${clean(last.how)}` : "",
+    last && last.howMuch ? `QUANTO: ${clean(last.howMuch)}` : ""
   ].filter(Boolean).join("\n");
 
   const text = [
@@ -676,8 +676,8 @@ function App() {
   }
 
   setRelLoading(false);
-}
-  // TEMA
+} 
+// TEMA
   const THEME_KEY = "crm_theme_v1";
   const getSystemTheme = () => window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   const [themePref, setThemePref] = useState(() => localStorage.getItem(THEME_KEY) || "light");
