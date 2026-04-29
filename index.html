@@ -74,10 +74,22 @@ function getSupabase() {
 const supabase = { 
   get client() { return getSupabase(); },
   auth: {
-    getSession: (...a) => getSupabase()?.auth.getSession(...a) || Promise.resolve({data:{session:null}}),
-    onAuthStateChange: (...a) => getSupabase()?.auth.onAuthStateChange(...a) || {data:{subscription:{unsubscribe:()=>{}}}},
-    signInWithOAuth: (...a) => getSupabase()?.auth.signInWithOAuth(...a) || Promise.resolve({}),
-    signOut: (...a) => getSupabase()?.auth.signOut(...a) || Promise.resolve({}),
+    getSession: (...a) => {
+  const s = getSupabase();
+  return (s && s.auth && s.auth.getSession) ? s.auth.getSession(...a) : Promise.resolve({data:{session:null}});
+},
+onAuthStateChange: (...a) => {
+  const s = getSupabase();
+  return (s && s.auth && s.auth.onAuthStateChange) ? s.auth.onAuthStateChange(...a) : {data:{subscription:{unsubscribe:()=>{}}}};
+},
+signInWithOAuth: (...a) => {
+  const s = getSupabase();
+  return (s && s.auth && s.auth.signInWithOAuth) ? s.auth.signInWithOAuth(...a) : Promise.resolve({});
+},
+signOut: (...a) => {
+  const s = getSupabase();
+  return (s && s.auth && s.auth.signOut) ? s.auth.signOut(...a) : Promise.resolve({});
+},,
   },
   from: (...a) => getSupabase()?.from(...a),
 };
