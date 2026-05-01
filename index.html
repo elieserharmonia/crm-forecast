@@ -472,7 +472,7 @@ function App() {
       {key:"resp",   label:"RESP.",       visible:true,  width:"52px"},
       {key:"company",label:"CUSTOMER",   visible:true,  width:"110px"},
       {key:"supplier",label:"SUPPLIER",  visible:true,  width:"80px"},
-      {key:"title",  label:"DESCRIPTION",visible:true,  width:"200px"},
+      {key:"title",  label:"DESCRIPTION",visible:true,  width:"150px"},
       {key:"value",  label:"AMOUNT",     visible:true,  width:"88px"},
       {key:"stage",  label:"CONF.",      visible:true,  width:"60px"},
       {key:"notes",  label:"FOLLOW-UP",  visible:true,  width:"220px"},
@@ -1348,11 +1348,11 @@ function App() {
         <button onClick={()=>setShowSettings(true)} title="Configurações" style={{width:"32px",height:"32px",borderRadius:"8px",border:"1px solid var(--border)",background:"var(--bg-card2)",cursor:"pointer",fontSize:"16px",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text-secondary)"}}>⚙</button>
         <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
           <div style={{textAlign:"right",lineHeight:1.2}}>
-            <div style={{fontSize:"11px",fontWeight:600,color:"var(--text-primary)",maxWidth:"80px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{userName}</div>
-            <div style={{fontSize:"9px",padding:"1px 5px",borderRadius:"5px",display:"inline-block",marginTop:"1px",background:isGestor?"rgba(29,158,117,0.15)":isEngenheiro?"rgba(24,95,165,0.15)":"rgba(140,26,26,0.15)",color:isGestor?"#1D9E75":isEngenheiro?"#185FA5":"var(--text-accent)",fontWeight:700}}>{userRole}</div>
+            <div style={{fontSize:"11px",fontWeight:600,color:"var(--text-primary)",maxWidth:"80px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{profile.userName||"Usuário"}</div>
+            <div style={{fontSize:"9px",padding:"1px 5px",borderRadius:"5px",display:"inline-block",marginTop:"1px",background:"rgba(29,158,117,0.15)",color:"#1D9E75",fontWeight:700}}>{profile.role||"Gestor"}</div>
           </div>
           <button onClick={()=>setShowProfile(true)} title={userName} style={{width:"34px",height:"34px",borderRadius:"50%",border:"2px solid #8C1A1A",background:"#8C1A1A",cursor:"pointer",overflow:"hidden",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>
-            {userAvatar ? <img src={userAvatar} style={{width:"34px",height:"34px",objectFit:"cover"}} alt="perfil"/> : <span style={{fontSize:"11px",fontWeight:700,color:"#FFD0D0",pointerEvents:"none"}}>{(userName||"U").split(" ").map(w=>w[0]).slice(0,2).join("")}</span>}
+            {profile.photo ? <img src={profile.photo} style={{width:"34px",height:"34px",objectFit:"cover"}} alt="perfil"/> : <span style={{fontSize:"11px",fontWeight:700,color:"#FFD0D0",pointerEvents:"none"}}>{(profile.userName||"EF").split(" ").map(w=>w[0]).slice(0,2).join("")}</span>}
           </button>
           {getSupabase() && <button onClick={handleSignOut} title="Sair" style={{width:"28px",height:"28px",borderRadius:"8px",border:"1px solid var(--border)",background:"transparent",cursor:"pointer",fontSize:"13px",color:"var(--text-muted)",display:"flex",alignItems:"center",justifyContent:"center"}}>⏻</button>}
         </div>
@@ -1556,7 +1556,7 @@ function App() {
                               <td style={{padding:"6px 8px",color:"var(--text-secondary)",whiteSpace:"nowrap",fontSize:"11px",width:(settings.forecastCols||[]).find(c=>c.key==="resp")?.width||"52px"}}>{opp.resp||"EF"}</td>
                               <td style={{padding:"6px 8px",fontWeight:600,color:"var(--text-primary)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",width:(settings.forecastCols||[]).find(c=>c.key==="company")?.width||"110px"}}>{opp.company}</td>
                               <td style={{padding:"6px 8px",color:"var(--text-secondary)",whiteSpace:"nowrap",fontSize:"11px",width:(settings.forecastCols||[]).find(c=>c.key==="supplier")?.width||"80px"}}>{opp.supplier||"—"}</td>
-                              <td style={{padding:"6px 8px",color:"var(--text-primary)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",width:(settings.forecastCols||[]).find(c=>c.key==="title")?.width||"200px"}}>{opp.title}</td>
+                              <td style={{padding:"6px 8px",color:"var(--text-primary)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",width:(settings.forecastCols||[]).find(c=>c.key==="title")?.width||"150px"}}>{opp.title}</td>
                               <td style={{padding:"6px 8px",color:"var(--text-accent)",fontWeight:600,whiteSpace:"nowrap",textAlign:"right",fontSize:"11px",width:(settings.forecastCols||[]).find(c=>c.key==="value")?.width||"auto"}}>
                                 {opp.value?`R$ ${opp.value.toLocaleString("pt-BR")}`:"—"}
                               </td>
@@ -1786,7 +1786,7 @@ function App() {
                 placeholder="Buscar cliente, cidade, segmento..."
                 style={{...inp,maxWidth:"280px",flex:1}}/>
               <div style={{display:"flex",gap:"2px",background:"rgba(128,128,128,0.12)",borderRadius:"8px",padding:"3px"}}>
-                {[["list","≡ Lista"],["kanban","⊞ Cards"]].map(([v,l])=>(
+                {[["list","≡ Lista"],["kanban","⊞ Kanban"]].map(([v,l])=>(
                   <button key={v} onClick={()=>setClientView2(v)} style={{padding:"4px 12px",fontSize:"11px",borderRadius:"6px",border:"none",cursor:"pointer",background:clientView2===v?"#8C1A1A":"transparent",color:clientView2===v?"#fff":"var(--text-secondary)",fontWeight:clientView2===v?700:400}}>{l}</button>
                 ))}
               </div>
@@ -1917,8 +1917,8 @@ function App() {
                                   )}
                                   {ct.email&&(
                                     <a href={`mailto:${ct.email}`} onClick={e=>e.stopPropagation()}
-                                      style={{width:"26px",height:"26px",borderRadius:"50%",background:"rgba(24,95,165,0.15)",display:"flex",alignItems:"center",justifyContent:"center",textDecoration:"none",fontSize:"13px"}} title="E-mail">
-                                      ✉️
+                                      style={{width:"26px",height:"26px",borderRadius:"50%",background:"rgba(0,120,212,0.15)",display:"flex",alignItems:"center",justifyContent:"center",textDecoration:"none"}} title="E-mail">
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="4" width="22" height="16" rx="2" fill="#0078D4"/><path d="M1 6l9.5 6.5a2 2 0 0 0 3 0L23 6" stroke="white" stroke-width="1.5" stroke-linecap="round"/><path d="M1 4h10.5L14 7l2.5-3H23" fill="none"/></svg>
                                     </a>
                                   )}
                                 </div>
@@ -1932,28 +1932,100 @@ function App() {
                 </div>
               );
 
-              // CARDS VIEW
+              // KANBAN VIEW
               return (
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:"10px"}}>
-                  {filtered.map(c=>{
-                    const oppCount = opps.filter(o=>o.company?.toLowerCase().includes(c.alias?.toLowerCase())||o.company===c.alias).length;
-                    return (
-                      <div key={c.alias} onClick={()=>setSelClient(selClient?.alias===c.alias?null:c)}
-                        style={{background:"var(--bg-card)",border:`1px solid ${selClient?.alias===c.alias?"#8C1A1A":"var(--border)"}`,borderRadius:"8px",padding:"12px",cursor:"pointer"}}>
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"6px"}}>
-                          <div style={{fontSize:"13px",fontWeight:700,color:"var(--text-primary)"}}>{c.alias}</div>
-                          {oppCount>0&&<span style={{fontSize:"10px",padding:"2px 7px",borderRadius:"8px",background:"rgba(140,26,26,0.15)",color:"var(--text-accent)",fontWeight:600}}>{oppCount} opp</span>}
-                        </div>
-                        <div style={{fontSize:"10px",color:"var(--text-secondary)",marginBottom:"4px"}}>{c.city}/{c.state} · {c.segment}</div>
-                        <div style={{fontSize:"10px",color:"var(--text-muted)"}}>{c.contacts?.length||0} contatos</div>
-                        {c.contacts?.slice(0,2).map((ct,i)=>(
-                          <div key={i} style={{fontSize:"10px",color:"var(--text-secondary)",marginTop:"3px",borderTop:"1px solid var(--border2)",paddingTop:"3px"}}>
-                            <span style={{fontWeight:600}}>{ct.name}</span>{ct.role?` · ${ct.role.slice(0,30)}`:""}
+                <div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:"10px",marginBottom:selClient?"16px":"0"}}>
+                    {filtered.map(c=>{
+                      const oppCount = opps.filter(o=>o.company?.toLowerCase().includes(c.alias?.toLowerCase())||o.company===c.alias).length;
+                      const isSel = selClient?.alias===c.alias;
+                      return (
+                        <div key={c.alias} onClick={()=>setSelClient(isSel?null:c)}
+                          style={{background:"var(--bg-card)",border:`2px solid ${isSel?"#8C1A1A":"var(--border)"}`,borderRadius:"10px",padding:"13px",cursor:"pointer",transition:"border-color .15s, box-shadow .15s",boxShadow:isSel?"0 0 0 3px rgba(140,26,26,0.12)":"none"}}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"6px"}}>
+                            <div style={{fontSize:"13px",fontWeight:700,color:isSel?"var(--text-accent)":"var(--text-primary)",lineHeight:1.2}}>{c.alias}</div>
+                            {oppCount>0&&<span style={{fontSize:"10px",padding:"2px 7px",borderRadius:"8px",background:"rgba(140,26,26,0.15)",color:"var(--text-accent)",fontWeight:600,flexShrink:0,marginLeft:"4px"}}>{oppCount} opp</span>}
                           </div>
-                        ))}
+                          <div style={{fontSize:"10px",color:"var(--text-secondary)",marginBottom:"3px"}}>{c.city}/{c.state}</div>
+                          <div style={{fontSize:"10px",color:"var(--text-muted)",marginBottom:"6px"}}>{c.segment}</div>
+                          <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
+                            <span style={{fontSize:"10px",padding:"1px 7px",borderRadius:"8px",background:"var(--bg-card2)",color:"var(--text-secondary)"}}>{c.contacts?.length||0} contatos</span>
+                            {c.contacts?.slice(0,1).map(ct=>(
+                              <span key={ct.name} style={{fontSize:"9px",color:"var(--text-muted)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ct.name.split(" ").slice(0,2).join(" ")}</span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* Painel detalhe no Kanban - expande abaixo do grid */}
+                  {selClient && (() => {
+                    const clientOpps = opps.filter(o=>o.company?.toLowerCase().includes(selClient.alias?.toLowerCase())||o.company===selClient.alias);
+                    return (
+                      <div style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"16px"}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"12px"}}>
+                          <div>
+                            <div style={{fontSize:"15px",fontWeight:700,color:"var(--text-primary)",marginBottom:"2px"}}>{selClient.alias}</div>
+                            <div style={{fontSize:"11px",color:"var(--text-secondary)"}}>{selClient.name}</div>
+                          </div>
+                          <button onClick={()=>setSelClient(null)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--text-muted)",fontSize:"18px"}}>✕</button>
+                        </div>
+                        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"16px"}}>
+                          {/* Dados empresa */}
+                          <div>
+                            <div style={{fontSize:"10px",fontWeight:600,color:"var(--text-secondary)",textTransform:"uppercase",letterSpacing:".08em",marginBottom:"6px"}}>Empresa</div>
+                            {[["CNPJ",selClient.cnpj],["Endereço",selClient.address],["Cidade",`${selClient.city}/${selClient.state}`],["Segmento",selClient.segment]].map(([k,v])=>v?(
+                              <div key={k} style={{display:"flex",gap:"6px",fontSize:"11px",marginBottom:"3px"}}>
+                                <span style={{color:"var(--text-muted)",width:"60px",flexShrink:0}}>{k}</span>
+                                <span style={{color:"var(--text-primary)"}}>{v}</span>
+                              </div>
+                            ):null)}
+                          </div>
+                          {/* Oportunidades */}
+                          <div>
+                            <div style={{fontSize:"10px",fontWeight:600,color:"var(--text-secondary)",textTransform:"uppercase",letterSpacing:".08em",marginBottom:"6px"}}>Oportunidades ({clientOpps.length})</div>
+                            <div style={{display:"flex",flexDirection:"column",gap:"3px",maxHeight:"140px",overflowY:"auto"}}>
+                              {clientOpps.length===0?<div style={{fontSize:"11px",color:"var(--text-muted)"}}>Nenhuma</div>:
+                              clientOpps.map(o=>{
+                                const stage=STAGES.find(s=>s.id===o.stage);
+                                return (
+                                  <div key={o.id} onClick={()=>{setSel(o);setView("kanban");}} style={{fontSize:"10px",padding:"3px 7px",borderRadius:"5px",background:"var(--bg-card2)",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",gap:"4px"}}>
+                                    <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:"var(--text-primary)"}}>{o.title.slice(0,28)}</span>
+                                    <span style={{fontSize:"9px",padding:"1px 5px",borderRadius:"4px",background:(stage?.color||"#888")+"22",color:stage?.color||"#888",flexShrink:0}}>{stage?.tag||"—"}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                          {/* Contatos */}
+                          <div>
+                            <div style={{fontSize:"10px",fontWeight:600,color:"var(--text-secondary)",textTransform:"uppercase",letterSpacing:".08em",marginBottom:"6px"}}>Contatos ({selClient.contacts?.length||0})</div>
+                            <div style={{display:"flex",flexDirection:"column",gap:"4px",maxHeight:"140px",overflowY:"auto"}}>
+                              {(selClient.contacts||[]).map((ct,i)=>(
+                                <div key={i} onClick={()=>setSelContact({...ct,_clientAlias:selClient.alias,_idx:i})}
+                                  style={{background:"var(--bg-card2)",borderRadius:"6px",padding:"6px 8px",cursor:"pointer",border:"1px solid transparent"}}
+                                  onMouseEnter={e=>e.currentTarget.style.borderColor="var(--border)"}
+                                  onMouseLeave={e=>e.currentTarget.style.borderColor="transparent"}>
+                                  <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
+                                    {ct.photo?<img src={ct.photo} style={{width:"24px",height:"24px",borderRadius:"50%",objectFit:"cover",flexShrink:0}} alt={ct.name}/>
+                                    :<div style={{width:"24px",height:"24px",borderRadius:"50%",background:"rgba(140,26,26,0.15)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"11px",flexShrink:0}}>👤</div>}
+                                    <div style={{flex:1,minWidth:0}}>
+                                      <div style={{fontSize:"10px",fontWeight:600,color:"var(--text-primary)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ct.name}</div>
+                                      {ct.role&&<div style={{fontSize:"9px",color:"var(--text-accent)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ct.role}</div>}
+                                    </div>
+                                    {ct.cel&&<a href={`https://wa.me/55${ct.cel.replace(/\D/g,"")}`} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()}
+                                      style={{width:"22px",height:"22px",borderRadius:"50%",background:"#25D366",display:"flex",alignItems:"center",justifyContent:"center",textDecoration:"none",flexShrink:0}}>
+                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                                    </a>}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     );
-                  })}
+                  })()}
                 </div>
               );
             })()}
@@ -3241,6 +3313,23 @@ function App() {
               </div>
             </div>
 
+            {/* Botão salvar tudo */}
+            <div style={{borderTop:"1px solid var(--border2)",paddingTop:"14px",marginTop:"4px",display:"flex",gap:"8px",alignItems:"center"}}>
+              <button onClick={()=>{
+                // Salva larguras das colunas + fecha
+                const cols = (settings.forecastCols||[]).map(c=>({...c,width:colWidthDraft[c.key]||c.width}));
+                saveSettings({...settings,forecastCols:cols});
+                setColWidthSaved(true);
+                setTimeout(()=>setColWidthSaved(false),2000);
+                setShowSettings(false);
+              }} style={{flex:1,padding:"11px",fontSize:"13px",borderRadius:"8px",border:"none",background:"#8C1A1A",color:"#FFD0D0",cursor:"pointer",fontWeight:700}}>
+                💾 Salvar e fechar
+              </button>
+              <button onClick={()=>setShowSettings(false)} style={{padding:"11px 18px",fontSize:"13px",borderRadius:"8px",border:"1px solid var(--border)",background:"transparent",color:"var(--text-secondary)",cursor:"pointer"}}>
+                Fechar sem salvar
+              </button>
+            </div>
+
           </div>
         </div>
       )}
@@ -3803,7 +3892,7 @@ function App() {
                   {ct.email&&(
                     <a href={`mailto:${ct.email}`}
                       style={{flex:1,padding:"10px",borderRadius:"8px",background:"rgba(24,95,165,0.12)",color:"#185FA5",fontWeight:700,fontSize:"13px",textAlign:"center",textDecoration:"none",display:"flex",alignItems:"center",justifyContent:"center",gap:"6px",border:"1px solid rgba(24,95,165,0.3)"}}>
-                      ✉️ E-mail
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="1" y="4" width="22" height="16" rx="2" fill="#0078D4"/><path d="M1 6l9.5 6.5a2 2 0 0 0 3 0L23 6" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg> E-mail
                     </a>
                   )}
                   {ct.linkedin&&(
@@ -3816,7 +3905,7 @@ function App() {
 
                 {/* Dados de contato */}
                 <div style={{background:"var(--bg-card2)",borderRadius:"8px",padding:"12px",marginBottom:"14px"}}>
-                  {[["📞","Tel",ct.tel],["📱","Cel",ct.cel],["✉️","E-mail",ct.email]].map(([icon,label,val])=>val?(
+                  {[["📞","Tel",ct.tel],["📱","Cel",ct.cel],["📧","E-mail",ct.email]].map(([icon,label,val])=>val?(
                     <div key={label} style={{display:"flex",gap:"8px",alignItems:"center",padding:"4px 0",borderBottom:"1px solid var(--border2)"}}>
                       <span style={{fontSize:"13px",width:"18px"}}>{icon}</span>
                       <span style={{fontSize:"10px",color:"var(--text-muted)",width:"36px"}}>{label}</span>
