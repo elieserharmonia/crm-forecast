@@ -480,14 +480,36 @@ function App() {
     ]
   };
   const [settings, setSettings] = useState(()=>{
-    try{ const r=localStorage.getItem(SETTINGS_KEY); return r?JSON.parse(r):defaultSettings; }catch{ return defaultSettings; }
+    try{
+      const r = localStorage.getItem(SETTINGS_KEY);
+      let s = r ? JSON.parse(r) : defaultSettings;
+      // Migração: garantir que todas as colunas do defaultSettings existem e têm larguras corretas
+      const defCols = defaultSettings.forecastCols;
+      let cols = s.forecastCols || [];
+      // Adicionar colunas novas que não existem (follow-up, contato)
+      defCols.forEach(dc=>{
+        if(!cols.find(c=>c.key===dc.key)) cols = [...cols, dc];
+      });
+      // Corrigir title de 200px → 150px se ainda for o valor antigo
+      cols = cols.map(c=>{
+        if(c.key==="title" && c.width==="200px") return {...c, width:"150px"};
+        return c;
+      });
+      s = {...s, forecastCols: cols};
+      // Persistir correção imediatamente
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+      return s;
+    }catch{ return defaultSettings; }
   });
   function saveSettings(s){ setSettings(s); try{ localStorage.setItem(SETTINGS_KEY,JSON.stringify(s)); }catch{}; }
-  // Draft local para larguras das colunas (só salva ao clicar em Salvar)
+  // Draft local para larguras das colunas (sincroniza com settings já migrado)
   const [colWidthDraft, setColWidthDraft] = useState(()=>{
-    try{ const r=localStorage.getItem(SETTINGS_KEY); const s=r?JSON.parse(r):defaultSettings;
-      return Object.fromEntries((s.forecastCols||[]).map(c=>[c.key,c.width||"auto"]));
-    }catch{ return {}; }
+    try{
+      const r=localStorage.getItem(SETTINGS_KEY);
+      const s=r?JSON.parse(r):defaultSettings;
+      const cols=s.forecastCols||defaultSettings.forecastCols;
+      return Object.fromEntries(cols.map(c=>[c.key,c.width||"auto"]));
+    }catch{ return Object.fromEntries(defaultSettings.forecastCols.map(c=>[c.key,c.width||"auto"])); }
   });
   const [colWidthSaved, setColWidthSaved] = useState(false); // feedback visual
   function saveColWidths(){
