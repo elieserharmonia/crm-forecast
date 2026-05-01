@@ -605,6 +605,94 @@ function App() {
   // Seleção única — se já estiver selecionada, desmarca; caso contrário substitui
   function toggleRelOpp(id){ setRelSelected(s=>s.includes(id)?[]:[id]); setRelText(""); }
 
+  // ===== FOLLOW-UPS =====
+  // Detecta se uma linha começa com data DD.MM.YY (ou DD/MM/YY ou DD-MM-YY)
+  const FOLLOWUP_DATE_RE = /^\s*(\d{2}[.\/\-]\d{2}[.\/\-]\d{2,4})\b/;
+
+  // Migra uma string de notes para array de followUps
+  function parseFollowUpsFromNotes(notes){
+    if(!notes) return [];
+    const lines = String(notes).split(/\r?\n/);
+    const out = [];
+    let cur = null;
+    for(const ln of lines){
+      const m = ln.match(FOLLOWUP_DATE_RE);
+      if(m){
+        if(cur) out.push(cur);
+        const date = m[1].replace(/\//g,".").replace(/-/g,".");
+        const text = ln.replace(FOLLOWUP_DATE_RE,"").replace(/^\s*[-–—:]\s*/,"").trim();
+        cur = {id:Date.now()+Math.random(), date, text};
+      } else if(ln.trim() && cur){
+        // continuação da linha anterior — concatena (até 60 chars total da entrada incluindo data)
+        cur.text = (cur.text + " " + ln.trim()).trim();
+      } else if(ln.trim() && !cur){
+        // linha sem data no início — cria entrada sem data
+        cur = {id:Date.now()+Math.random(), date:"", text:ln.trim()};
+      }
+    }
+    if(cur) out.push(cur);
+    return out;
+  }
+
+  // Retorna a lista de follow-ups de uma oportunidade (migrando se necessário)
+  function getFollowUps(opp){
+    if(Array.isArray(opp.followUps)) return opp.followUps;
+    return parseFollowUpsFromNotes(opp.notes);
+  }
+
+  // Formata a lista como texto (para exibição em relatório/exports)
+  function formatFollowUpsAsText(list){
+    if(!list || !list.length) return "—";
+    return list.map(f=>f.date?`${f.date} - ${f.text}`:f.text).join("\n");
+  }
+
+  // Estado do modal de novo follow-up
+  const [fupModal, setFupModal] = useState(false);
+  const [fupForm, setFupForm] = useState({date:"", text:""});
+
+  // Converte data ISO (YYYY-MM-DD) para formato BR (DD.MM.YY)
+  function dateBR(iso){
+    if(!iso) return "";
+    const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if(!m) return iso;
+    return `${m[3]}.${m[2]}.${m[1].slice(2)}`;
+  }
+  function todayBR(){ return dateBR(new Date().toISOString().slice(0,10)); }
+
+  // Abre modal pré-preenchido com hoje
+  function openFollowUpModal(){
+    setFupForm({date: todayBR(), text:""});
+    setFupModal(true);
+  }
+
+  // Salva nova entrada de follow-up
+  function saveFollowUp(){
+    if(!sel) return;
+    const date = (fupForm.date||"").trim();
+    const text = (fupForm.text||"").trim();
+    if(!text) return;
+    // Construir entrada como aparecerá: "DD.MM.YY - texto"
+    const fullLine = date ? `${date} - ${text}` : text;
+    if(fullLine.length > 60){
+      alert(`Limite de 60 caracteres excedido (atual: ${fullLine.length}). Encurte o texto.`);
+      return;
+    }
+    const cur = getFollowUps(sel);
+    const entry = {id:Date.now(), date, text};
+    const updated = [entry, ...cur]; // mais novo primeiro
+    updateOpp({...sel, followUps:updated, notes: formatFollowUpsAsText(updated)});
+    setFupForm({date:"", text:""});
+    setFupModal(false);
+  }
+
+  // Remove uma entrada (por índice — mais robusto que por ID após parse)
+  function deleteFollowUp(idx){
+    if(!sel) return;
+    const cur = getFollowUps(sel);
+    const updated = cur.filter((_,i)=>i!==idx);
+    updateOpp({...sel, followUps:updated, notes: formatFollowUpsAsText(updated)});
+  }
+
   // Helper: monta o objeto de relatório a partir de uma oportunidade
   function buildRelatorioData(opp){
     const stage = STAGES.find(s=>s.id===opp.stage);
@@ -681,7 +769,7 @@ function App() {
       linha,
       "",
       `FOLLOW-UP:`,
-      opp.notes||"—",
+      formatFollowUpsAsText(getFollowUps(opp)),
       "",
       linha,
       "",
@@ -804,7 +892,8 @@ function App() {
       doc.setFont("helvetica","bold"); doc.setFontSize(11);
       doc.text("FOLLOW-UP:", M, y); y += 14;
       doc.setFont("helvetica","normal"); doc.setFontSize(9);
-      const followLines = doc.splitTextToSize(opp.notes||"—", W-2*M);
+      const followText = formatFollowUpsAsText(getFollowUps(opp));
+      const followLines = doc.splitTextToSize(followText, W-2*M);
       followLines.forEach(l=>{
         if(y > 800){ doc.addPage(); y = M; }
         doc.text(l, M, y); y += 11;
@@ -910,7 +999,7 @@ function App() {
         ...histChildren,
         sep(),
         new Paragraph({children:[new TextRun({text:"FOLLOW-UP:", bold:true, size:22})], spacing:{after:120}}),
-        ...((opp.notes||"—").split("\n").map(l=>para(l))),
+        ...(formatFollowUpsAsText(getFollowUps(opp)).split("\n").map(l=>para(l))),
         sep(),
         new Paragraph({children:[new TextRun({text:"PRÓXIMA AÇÃO:", bold:true, size:22})], spacing:{after:120}}),
         ...((opp.nextAction||"—").split("\n").map(l=>para(l))),
@@ -958,15 +1047,17 @@ function App() {
       window.XLSX.utils.book_append_sheet(wb, ws2, "Histórico");
 
       // Aba 3: Follow-up + Próxima ação
+      const fupsList = getFollowUps(opp);
       const a3 = [
         ["FOLLOW-UP"],
-        ...((opp.notes||"—").split("\n").map(l=>[l])),
+        ["Data","Resumo"],
+        ...(fupsList.length ? fupsList.map(f=>[f.date||"—", f.text||""]) : [["—","Sem follow-ups registrados."]]),
         [],
         ["PRÓXIMA AÇÃO"],
         ...((opp.nextAction||"—").split("\n").map(l=>[l])),
       ];
       const ws3 = window.XLSX.utils.aoa_to_sheet(a3);
-      ws3["!cols"] = [{wch:120}];
+      ws3["!cols"] = [{wch:14},{wch:80}];
       window.XLSX.utils.book_append_sheet(wb, ws3, "Follow-up & Próxima Ação");
 
       const safeName = (opp.company||"Oportunidade").replace(/[^\w\-]+/g,"_");
@@ -2553,7 +2644,8 @@ function App() {
               </div>
               <div style={{display:"flex",gap:"4px",marginBottom:"10px"}}>
                 <button onClick={()=>move(sel.id,-1)} style={{flex:1,padding:"4px",fontSize:"10px",borderRadius:"5px",border:"1px solid var(--border)",background:"transparent",cursor:"pointer",color:"var(--text-secondary)"}}>← Recuar</button>
-                <button onClick={()=>openVisita(sel)} style={{flex:2,padding:"4px",fontSize:"10px",borderRadius:"5px",border:"1px solid #185FA5",background:"rgba(24,95,165,0.12)",cursor:"pointer",color:"#185FA5",fontWeight:700}}>📝 + Registrar visita</button>
+                <button onClick={()=>openVisita(sel)} style={{flex:2,padding:"4px",fontSize:"10px",borderRadius:"5px",border:"1px solid #185FA5",background:"rgba(24,95,165,0.12)",cursor:"pointer",color:"#185FA5",fontWeight:700}}>📝 + Visita</button>
+                <button onClick={()=>setDetailTab("historico")} style={{flex:2,padding:"4px",fontSize:"10px",borderRadius:"5px",border:"1px solid #7F77DD",background:"rgba(127,119,221,0.12)",cursor:"pointer",color:"#7F77DD",fontWeight:700}}>📚 Histórico ({(sel.visitHistory||[]).length})</button>
                 <button onClick={()=>{setTaskForm({...emptyTask,company:sel.company,oppId:sel.id,title:"Visita — "+sel.company,notes:sel.nextAction||""});setTaskModal(true);setView("tasks");}} style={{flex:2,padding:"4px",fontSize:"10px",borderRadius:"5px",border:"1px solid #EF9F27",background:"rgba(239,159,39,0.12)",cursor:"pointer",color:"#EF9F27",fontWeight:700}}>📅 + Tarefa</button>
                 <button onClick={()=>move(sel.id,1)} style={{flex:1,padding:"4px",fontSize:"10px",borderRadius:"5px",border:"1px solid #8C1A1A",background:"rgba(140,26,26,0.2)",cursor:"pointer",color:"var(--text-accent)",fontWeight:600}}>Avançar →</button>
               </div>
@@ -2608,8 +2700,36 @@ function App() {
                     <input type="number" value={sel.value||""} onChange={e=>updateOpp({...sel,value:Number(e.target.value)})} style={inp}/>
                   </div>
                   <div style={{marginBottom:"8px"}}>
-                    <label style={lbl}>FOLLOW-UP</label>
-                    <textarea value={sel.notes||""} onChange={e=>updateOpp({...sel,notes:e.target.value})} style={{...inp,height:"140px",fontFamily:"monospace",fontSize:"11px"}} placeholder="Histórico cronológico de follow-ups, ex:&#10;08.04.26 - FUP BG - projeto standby&#10;20.03.26 - Aguardando aprovação ergonomia"/>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"4px"}}>
+                      <label style={{...lbl,marginBottom:0}}>FOLLOW-UP</label>
+                      <button onClick={openFollowUpModal}
+                        style={{fontSize:"10px",padding:"3px 9px",borderRadius:"5px",border:"1px solid #185FA5",background:"rgba(24,95,165,0.12)",color:"#185FA5",cursor:"pointer",fontWeight:600}}>+ novo</button>
+                    </div>
+                    {(()=>{
+                      const list = getFollowUps(sel);
+                      if(list.length===0) return (
+                        <div style={{fontSize:"11px",color:"var(--text-muted)",padding:"10px",textAlign:"center",border:"1px dashed var(--border)",borderRadius:"6px"}}>
+                          Sem follow-ups. Clique em "+ novo" para registrar.
+                        </div>
+                      );
+                      return (
+                        <div style={{maxHeight:"200px",overflowY:"auto",display:"flex",flexDirection:"column",gap:"3px",border:"1px solid var(--border)",borderRadius:"6px",padding:"4px",background:"var(--bg-input)"}}>
+                          {list.map((f,idx)=>{
+                            const fullLine = f.date?`${f.date} - ${f.text}`:f.text;
+                            return (
+                              <div key={idx} style={{display:"flex",alignItems:"center",gap:"6px",padding:"4px 7px",borderRadius:"4px",background:"var(--bg-card2)",fontSize:"11px",fontFamily:"monospace"}}>
+                                <div style={{flex:1,minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:"var(--text-primary)"}} title={fullLine}>
+                                  {f.date && <span style={{color:"#185FA5",fontWeight:700,marginRight:"4px"}}>{f.date}</span>}
+                                  <span style={{color:"var(--text-secondary)"}}>{f.date?"- ":""}</span>
+                                  <span>{f.text}</span>
+                                </div>
+                                <button onClick={()=>deleteFollowUp(idx)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--text-muted)",fontSize:"11px",padding:"0 2px",flexShrink:0}} title="Excluir">✕</button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
                   </div>
                   <div style={{marginBottom:"12px"}}>
                     <label style={lbl}>Prioridade</label>
@@ -3336,6 +3456,56 @@ function App() {
           </div>
         </div>
       )}
+
+      {/* MODAL NOVO FOLLOW-UP */}
+      {fupModal && sel && (()=>{
+        const fullLine = (fupForm.date||"").trim() ? `${(fupForm.date||"").trim()} - ${fupForm.text||""}` : (fupForm.text||"");
+        const len = fullLine.length;
+        const overLimit = len > 60;
+        const charsColor = overLimit ? "#E24B4A" : (len>50 ? "#EF9F27" : "var(--text-secondary)");
+        return (
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:65,padding:"16px"}}>
+            <div style={{background:"var(--bg-card)",borderRadius:"12px",border:"1px solid var(--border)",padding:"20px",width:"440px",maxWidth:"100%"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"4px"}}>
+                <div style={{fontSize:"14px",fontWeight:600,color:"var(--text-primary)"}}>Novo follow-up</div>
+                <button onClick={()=>setFupModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--text-muted)",fontSize:"16px"}}>✕</button>
+              </div>
+              <div style={{fontSize:"11px",color:"var(--text-accent)",marginBottom:"14px"}}>{sel.company} · {sel.title?.slice(0,50)}</div>
+
+              <div style={{display:"grid",gridTemplateColumns:"110px 1fr",gap:"8px",marginBottom:"10px"}}>
+                <div>
+                  <label style={lbl}>Data</label>
+                  <input value={fupForm.date} onChange={e=>setFupForm({...fupForm,date:e.target.value})}
+                    style={{...inp,fontFamily:"monospace"}} placeholder="DD.MM.YY" maxLength={10}/>
+                </div>
+                <div>
+                  <label style={lbl}>Resumo (máx 60 chars com data)</label>
+                  <input value={fupForm.text} onChange={e=>setFupForm({...fupForm,text:e.target.value})}
+                    style={{...inp,fontFamily:"monospace"}} placeholder="Ex: FUP BG - projeto standby" autoFocus/>
+                </div>
+              </div>
+
+              <div style={{background:"var(--bg-card2)",borderRadius:"6px",padding:"8px 10px",marginBottom:"14px"}}>
+                <div style={{fontSize:"10px",color:"var(--text-secondary)",marginBottom:"3px"}}>Pré-visualização:</div>
+                <div style={{fontSize:"12px",fontFamily:"monospace",color:overLimit?"#E24B4A":"var(--text-primary)",wordBreak:"break-all"}}>
+                  {fullLine || <span style={{color:"var(--text-muted)"}}>(vazio)</span>}
+                </div>
+                <div style={{fontSize:"10px",color:charsColor,marginTop:"4px",fontWeight:overLimit?700:400}}>
+                  {len} / 60 caracteres {overLimit && "— passou do limite!"}
+                </div>
+              </div>
+
+              <div style={{display:"flex",gap:"8px"}}>
+                <button onClick={saveFollowUp} disabled={!fupForm.text?.trim() || overLimit}
+                  style={{flex:1,padding:"10px",fontSize:"13px",borderRadius:"6px",border:"none",background:(fupForm.text?.trim() && !overLimit)?"#185FA5":"#2A3C4F",color:(fupForm.text?.trim() && !overLimit)?"#fff":"#7A8090",cursor:(fupForm.text?.trim() && !overLimit)?"pointer":"default",fontWeight:600}}>
+                  Salvar follow-up
+                </button>
+                <button onClick={()=>setFupModal(false)} style={{padding:"10px 16px",fontSize:"13px",borderRadius:"6px",border:"1px solid var(--border)",background:"transparent",color:"var(--text-secondary)",cursor:"pointer"}}>Cancelar</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
