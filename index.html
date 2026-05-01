@@ -1512,7 +1512,7 @@ function App() {
                     return 0;
                   });
                   return (
-                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:"12px",minWidth:"1100px"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:"12px",minWidth:"1100px",tableLayout:"fixed"}}>
                       <thead>
                         <tr style={{background:"var(--bg-card2)",position:"sticky",top:0,zIndex:5}}>
                           {(settings.forecastCols||[]).filter(c=>c.visible&&!["notes","contact"].includes(c.key)).map(col=>(
