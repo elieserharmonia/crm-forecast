@@ -754,32 +754,33 @@ function App() {
     setFupModal(true);
   }
 
-  // Salva nova entrada de follow-up
+  // Salva nova entrada de follow-up em nextAction
   function saveFollowUp(){
     if(!sel) return;
     const date = (fupForm.date||"").trim();
     const text = (fupForm.text||"").trim();
     if(!text) return;
-    // Construir entrada como aparecerá: "DD.MM.YY - texto"
     const fullLine = date ? `${date} - ${text}` : text;
     if(fullLine.length > 60){
       alert(`Limite de 60 caracteres excedido (atual: ${fullLine.length}). Encurte o texto.`);
       return;
     }
-    const cur = getFollowUps(sel);
-    const entry = {id:Date.now(), date, text};
-    const updated = [entry, ...cur]; // mais novo primeiro
-    updateOpp({...sel, followUps:updated, notes: formatFollowUpsAsText(updated)});
+    // Pegar lista atual do nextAction
+    const rawLines = (sel.nextAction||"").split("\n").filter(l=>l.trim());
+    const newLines = [fullLine, ...rawLines]; // mais recente primeiro
+    const newNextAction = newLines.join("\n");
+    // Também limpar followUps array pois nextAction é a fonte de verdade
+    updateOpp({...sel, nextAction: newNextAction, followUps: undefined});
     setFupForm({date:"", text:""});
     setFupModal(false);
   }
 
-  // Remove uma entrada (por índice — mais robusto que por ID após parse)
+  // Remove uma entrada do nextAction por índice
   function deleteFollowUp(idx){
     if(!sel) return;
-    const cur = getFollowUps(sel);
-    const updated = cur.filter((_,i)=>i!==idx);
-    updateOpp({...sel, followUps:updated, notes: formatFollowUpsAsText(updated)});
+    const rawLines = (sel.nextAction||"").split("\n").filter(l=>l.trim());
+    const updated = rawLines.filter((_,i)=>i!==idx);
+    updateOpp({...sel, nextAction: updated.join("\n"), followUps: undefined});
   }
 
   // Helper: monta o objeto de relatório a partir de uma oportunidade
@@ -1459,7 +1460,7 @@ function App() {
                                 <span style={{fontSize:"10px",padding:"2px 6px",borderRadius:"8px",background:PRI_BG[opp.priority],color:PRI_TXT[opp.priority],fontWeight:600}}>{opp.priority}</span>
                               </div>
                               {opp.nextDate&&opp.nextDate<today && <div style={{fontSize:"10px",color:"#FF7777",marginTop:"5px",fontWeight:600}}>Atrasado · {opp.nextDate}</div>}
-                              {(()=>{const fups=getFollowUps(opp);const fup=fups.length?fups[0]:null;const txt=fup?(fup.date?fup.date+" - "+fup.text:fup.text):(opp.notes?opp.notes.split("\n")[0]:"");return txt?<div style={{fontSize:"10px",color:"var(--text-secondary)",marginTop:"3px",lineHeight:1.3}}>{txt.slice(0,52)}{txt.length>52?"…":""}</div>:null;})()}
+                              {(()=>{const txt=(opp.nextAction||"").split("\n").find(l=>l.trim())||"";return txt?<div style={{fontSize:"10px",color:"var(--text-secondary)",marginTop:"3px",lineHeight:1.3}}>{txt.slice(0,52)}{txt.length>52?"…":""}</div>:null;})()}
                             </div>
                           );
                           })}
@@ -1602,7 +1603,7 @@ function App() {
                               })}
                               {(settings.forecastCols||[]).find(c=>c.key==="notes")?.visible!==false&&(
                                 <td style={{padding:"6px 8px",color:"var(--text-secondary)",fontSize:"11px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",borderLeft:`1px solid var(--border2)`,width:(settings.forecastCols||[]).find(c=>c.key==="notes")?.width||"220px"}}>
-                                  {(()=>{const fups=getFollowUps(opp);return fups.length?fups[0].date?fups[0].date+" - "+fups[0].text:fups[0].text:"—";})()}
+                                  {(()=>{const lines=(opp.nextAction||"").split("\n").filter(l=>l.trim());return lines.length?lines[0]:"—";})()}
                                 </td>
                               )}
                               {(settings.forecastCols||[]).find(c=>c.key==="contact")?.visible!==false&&(
@@ -2911,31 +2912,20 @@ function App() {
                     </div>
                   </div>
                   <div style={{marginBottom:"8px"}}>
-                    <label style={lbl}>Próxima ação (resumo livre)</label>
-                    <textarea value={sel.nextAction||""} onChange={e=>updateOpp({...sel,nextAction:e.target.value})} style={{...inp,height:"60px"}} placeholder="Resumo das próximas ações ou próximos passos. Ex: Visita pré-agendada com Bruno; aguardar retorno da ergonomia; enviar proposta atualizada até 30.04."/>
-                  </div>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px",marginBottom:"8px"}}>
-                    <div>
-                      <label style={lbl}>Data</label>
-                      <input type="date" value={sel.nextDate||""} onChange={e=>updateOpp({...sel,nextDate:e.target.value})} style={inp}/>
-                    </div>
-                    <div>
-                      <label style={lbl}>Horário</label>
-                      <input type="time" value={sel.nextTime||""} onChange={e=>updateOpp({...sel,nextTime:e.target.value})} style={inp}/>
-                    </div>
-                  </div>
-                  <div style={{marginBottom:"8px"}}>
-                    <label style={lbl}>Valor R$</label>
-                    <input type="number" value={sel.value||""} onChange={e=>updateOpp({...sel,value:Number(e.target.value)})} style={inp}/>
-                  </div>
-                  <div style={{marginBottom:"8px"}}>
                     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"4px"}}>
                       <label style={{...lbl,marginBottom:0}}>FOLLOW-UP</label>
                       <button onClick={openFollowUpModal}
                         style={{fontSize:"10px",padding:"3px 9px",borderRadius:"5px",border:"1px solid #185FA5",background:"rgba(24,95,165,0.12)",color:"#185FA5",cursor:"pointer",fontWeight:600}}>+ novo</button>
                     </div>
                     {(()=>{
-                      const list = getFollowUps(sel);
+                      // FOLLOW-UP lê nextAction (cada linha = uma entrada)
+                      const rawLines = (sel.nextAction||"").split("\n").filter(l=>l.trim());
+                      const list = Array.isArray(sel.followUps) && sel.followUps.length
+                        ? sel.followUps
+                        : rawLines.map((l,i)=>{
+                            const m = l.match(/^(\d{2}[.\/-]\d{2}[.\/-]\d{2,4})\s*[-–]\s*(.*)/);
+                            return m ? {id:i, date:m[1], text:m[2].trim()} : {id:i, date:"", text:l.trim()};
+                          });
                       if(list.length===0) return (
                         <div style={{fontSize:"11px",color:"var(--text-muted)",padding:"10px",textAlign:"center",border:"1px dashed var(--border)",borderRadius:"6px"}}>
                           Sem follow-ups. Clique em "+ novo" para registrar.
@@ -2959,6 +2949,24 @@ function App() {
                         </div>
                       );
                     })()}
+                  </div>
+                  <div style={{marginBottom:"8px"}}>
+                    <label style={lbl}>Próxima ação (resumo livre)</label>
+                    <textarea value={sel.notes||""} onChange={e=>updateOpp({...sel,notes:e.target.value})} style={{...inp,height:"60px"}} placeholder="Resumo das próximas ações ou próximos passos. Ex: Visita pré-agendada com Bruno; aguardar retorno da ergonomia; enviar proposta atualizada até 30.04."/>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px",marginBottom:"8px"}}>
+                    <div>
+                      <label style={lbl}>Data</label>
+                      <input type="date" value={sel.nextDate||""} onChange={e=>updateOpp({...sel,nextDate:e.target.value})} style={inp}/>
+                    </div>
+                    <div>
+                      <label style={lbl}>Horário</label>
+                      <input type="time" value={sel.nextTime||""} onChange={e=>updateOpp({...sel,nextTime:e.target.value})} style={inp}/>
+                    </div>
+                  </div>
+                  <div style={{marginBottom:"8px"}}>
+                    <label style={lbl}>Valor R$</label>
+                    <input type="number" value={sel.value||""} onChange={e=>updateOpp({...sel,value:Number(e.target.value)})} style={inp}/>
                   </div>
                   <div style={{marginBottom:"12px"}}>
                     <label style={lbl}>Prioridade</label>
