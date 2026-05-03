@@ -713,184 +713,92 @@ function App() {
 
   // Função principal: executa a análise diária de inteligência comercial
   async function runIntelAnalysis(){
-    // Ler key diretamente do localStorage (evita estado React desatualizado)
-    const freshKey = (localStorage.getItem(KEY_STORE)||"").trim();
-    if(!freshKey){
-      setIntelError("❌ API key não configurada. Vá em Configurações → 🔑 API Key (senha: sinuelo2026) e cole sua chave da Anthropic. Depois clique em Salvar.");
-      return;
-    }
-
-    // Pegar clientes únicos com monitorar_pesquisa = SIM
+    // SEM API KEY — usa Google News RSS via proxy CORS gratuito (allorigins.win)
     const clientesMonitor = [...new Set(
       clientsData.filter(c=>c.monitorar_pesquisa==="SIM").map(c=>c.alias)
     )];
 
     if(clientesMonitor.length===0){
-      setIntelError("Nenhum cliente marcado como monitorar_pesquisa = SIM. Acesse a aba Clientes, clique em um cliente e ative o botão NAO → SIM.");
+      setIntelError("Nenhum cliente marcado para monitorar. Acesse Clientes → clique num cliente → ative 🧠 NAO → SIM.");
       return;
     }
     if(clientesMonitor.length > 20){
-      setIntelError(`Você tem ${clientesMonitor.length} clientes marcados como SIM. Máximo é 20 por rodada. Desmarque alguns em Clientes.`);
+      setIntelError("Limite de 20 clientes por rodada. Desmarque alguns em Clientes.");
       return;
     }
 
     setIntelLoading(true);
     setIntelError("");
 
-    // Montar a lista com detalhes dos clientes para o prompt
-    const clientesDetalhe = clientesMonitor.map(alias=>{
+    // Buscar notícias RSS do Google News para cada cliente
+    async function fetchRSS(query){
+      const q = encodeURIComponent(query);
+      const rssUrl = `https://news.google.com/rss/search?q=${q}&hl=pt-BR&gl=BR&ceid=BR:pt-419`;
+      const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(rssUrl)}`;
+      try{
+        const res = await fetch(proxy, {signal: AbortSignal.timeout(8000)});
+        if(!res.ok) return [];
+        const data = await res.json();
+        const xml = data.contents||"";
+        // Parsear itens do RSS
+        const items = [];
+        const itemRegex = /<item>([\s\S]*?)<\/item>/g;
+        let m;
+        while((m = itemRegex.exec(xml)) !== null){
+          const item = m[1];
+          const title = (item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/) || item.match(/<title>(.*?)<\/title>/))?.[1]||"";
+          const link  = (item.match(/<link>(.*?)<\/link>/) || item.match(/<link\/>(.*?)<\/link>/))?.[1]||
+                        item.match(/href="(https?:\/\/[^"]+)"/)?.[1]||"";
+          const pub   = (item.match(/<pubDate>(.*?)<\/pubDate>/))?.[1]||"";
+          const src   = (item.match(/<source[^>]*>(.*?)<\/source>/))?.[1]||"";
+          if(title) items.push({title, link, pub, src});
+          if(items.length>=5) break;
+        }
+        return items;
+      }catch(e){ return []; }
+    }
+
+    const results = {};
+    for(const alias of clientesMonitor){
       const cli = clientsData.find(c=>c.alias===alias);
+      const setor = cli?.segment||"indústria";
+      // Query 1: nome da empresa + termos positivos
+      const q1 = `"${alias}" OR "${(cli?.name||alias).split(" ").slice(0,3).join(" ")}" investimento expansão produção Brasil 2025 2026`;
+      // Query 2: setor industrial (notícias do mercado)
+      const q2 = `${setor} Brasil mercado indústria 2025 2026`;
+      const [news1, news2] = await Promise.all([fetchRSS(q1), fetchRSS(q2)]);
+      results[alias] = {
+        alias, setor,
+        city: cli?.city||"", state: cli?.state||"",
+        newsEmpresa: news1,
+        newsSetor: news2,
+      };
+      // Pausa curta para não sobrecarregar o proxy
+      await new Promise(r=>setTimeout(r,400));
+    }
+
+    // Montar relatório estruturado sem IA
+    const gerado_em = new Date().toLocaleString("pt-BR");
+    const clientesReport = clientesMonitor.map(alias=>{
+      const r = results[alias];
+      const totalNews = r.newsEmpresa.length + r.newsSetor.length;
       return {
         alias,
-        setor: cli?.segment||"indústria",
-        tipo: cli?.tipoCliente||"cliente atual",
-        cidade: cli?.city||"",
-        prioridade: cli?.prioridadeComercial||"Média",
-        ultimaVisita: cli?.ultimaVisita||"",
-        obs: cli?.obsComerciais||"",
-        palavrasChave: cli?.palavrasChave||""
+        setor: r.setor,
+        city: r.city,
+        newsEmpresa: r.newsEmpresa,
+        newsSetor: r.newsSetor,
+        totalNews,
       };
     });
 
-    // ESTRATÉGIA: Claude com web_search tool habilitado
-    // O Claude busca as notícias internamente — sem CORS, sem Brave key
-    const promptAnalysis = `Você é analista de inteligência comercial industrial B2B no Brasil.
-Use a ferramenta web_search para pesquisar notícias recentes (últimos 30-90 dias) sobre cada cliente listado abaixo.
-
-CONTEXTO:
-- Empresa solicitante: Sinuelo Torque+Controle (ferramentas industriais, torquímetros, parafusadeiras, automação de torque)
-- Clientes atendidos: indústria automotiva, agrícola, aeronáutica, ferrovias, logística
-
-CLIENTES PARA PESQUISAR (${clientesMonitor.length} clientes):
-${clientesDetalhe.map(c=>`- ${c.alias} | Setor: ${c.setor} | ${c.cidade} | Obs: ${c.obs||"—"}`).join("\n")}
-
-INSTRUÇÕES:
-Para cada cliente, faça 1-2 buscas usando web_search:
-1. Busca positiva: "${'{alias}'}" investimento expansão ampliação fábrica parceria crescimento 2025 2026
-2. Se necessário, busca negativa: "${'{alias}'}" demissão crise corte fechamento redução
-
-Após pesquisar todos, retorne APENAS um JSON puro (sem markdown, sem backticks) no formato:
-{
-  "gerado_em": "${new Date().toLocaleString("pt-BR")}",
-  "total_clientes": ${clientesMonitor.length},
-  "clientes": [
-    {
-      "alias": "NOME",
-      "setor": "setor do cliente",
-      "sinais_encontrados": "resumo em 2-3 frases do que encontrou",
-      "classificacao": "POSITIVO FORTE|POSITIVO MODERADO|NEUTRO|NEGATIVO MODERADO|NEGATIVO FORTE",
-      "score_empresa": 3,
-      "cenario_setor": "descrição do cenário do setor",
-      "score_setor": 1,
-      "score_final": 4,
-      "recomendacao": "Por que visitar/não visitar",
-      "frequencia_sugerida": "Semanal|Quinzenal|Mensal|Bimestral|Reduzir esforço",
-      "proxima_acao": "ação concreta recomendada",
-      "fontes": ["https://url1.com", "https://url2.com"],
-      "confianca": "Alto|Médio|Baixo"
-    }
-  ],
-  "resumo_executivo": {
-    "mais_energia_agora": ["cliente1", "cliente2"],
-    "acompanhamento_normal": ["cliente3"],
-    "menos_visitas": ["cliente4"],
-    "setores_aquecidos": ["automotivo", "agro"],
-    "setores_retração": [],
-    "oportunidades_indiretas": "texto",
-    "alertas": "texto"
-  },
-  "plano_acao": {
-    "visitar_esta_semana": ["cliente1"],
-    "contatar_wpp_email": ["cliente2"],
-    "monitorar_sem_visita": ["cliente3"],
-    "reduzir_esforco": []
-  }
-}
-
-Regras:
-- Score: POSITIVO FORTE=+3, POSITIVO MODERADO=+2, NEUTRO=0, NEGATIVO MODERADO=-2, NEGATIVO FORTE=-3
-- Score setor: crescimento forte=+2, moderado=+1, estável=0, desaceleração=-1, retração=-2
-- Frequência: score≥5=Semanal, 2-4=Quinzenal, -1 a 1=Mensal, -2 a -4=Bimestral, ≤-5=Reduzir esforço
-- Se não encontrar notícias: sinais_encontrados="sem sinal recente relevante", classificacao="NEUTRO", score_empresa=0
-- Nunca invente informações. Cite sempre as fontes encontradas.`;
-
-    try{
-      // Chamar Claude com web_search tool habilitado
-      const cleanKey = (apiKey||"").trim();
-      if(!cleanKey){ throw new Error("API key vazia. Configure em Configurações → 🔑 API Key."); }
-      const res = await fetch("https://api.anthropic.com/v1/messages",{
-        method:"POST",
-        headers:{
-          "Content-Type":"application/json",
-          "x-api-key": freshKey,
-          "anthropic-version":"2023-06-01",
-          "anthropic-dangerous-direct-browser-access":"true"
-        },
-        body:JSON.stringify({
-          model:"claude-sonnet-4-20250514",
-          max_tokens:8000,
-          tools:[{type:"web_search_20250305",name:"web_search"}],
-          messages:[{role:"user",content:promptAnalysis}]
-        })
-      });
-
-      if(!res.ok){
-        const err = await res.json().catch(()=>({error:{message:res.statusText}}));
-        throw new Error(`Anthropic API: ${res.status} — ${err?.error?.message||res.statusText}`);
-      }
-
-      const data = await res.json();
-
-      // Processar resposta — pode ter múltiplos blocos (tool_use + text)
-      const textBlocks = (data.content||[]).filter(b=>b.type==="text").map(b=>b.text||"");
-      let text = textBlocks.join("");
-
-      // Se não retornou texto final ainda (stop_reason=tool_use), fazer segundo turno
-      if(data.stop_reason==="tool_use" || text.trim()===""){
-        // Construir histórico de mensagens com os resultados das buscas
-        const messages = [{role:"user",content:promptAnalysis}];
-        messages.push({role:"assistant",content:data.content});
-        // Adicionar resultados das tool calls como tool_result
-        const toolResults = (data.content||[])
-          .filter(b=>b.type==="tool_use")
-          .map(b=>({type:"tool_result",tool_use_id:b.id,content:JSON.stringify(b.input||{})}));
-        if(toolResults.length>0){
-          messages.push({role:"user",content:toolResults});
-        }
-        messages.push({role:"user",content:"Agora gere o JSON completo do relatório com base em todas as buscas realizadas. Retorne APENAS o JSON, sem markdown."});
-
-        const res2 = await fetch("https://api.anthropic.com/v1/messages",{
-          method:"POST",
-          headers:{
-            "Content-Type":"application/json",
-            "x-api-key": freshKey,
-            "anthropic-version":"2023-06-01",
-            "anthropic-dangerous-direct-browser-access":"true"
-          },
-          body:JSON.stringify({
-            model:"claude-sonnet-4-20250514",
-            max_tokens:8000,
-            tools:[{type:"web_search_20250305",name:"web_search"}],
-            messages
-          })
-        });
-        const data2 = await res2.json();
-        text = (data2.content||[]).filter(b=>b.type==="text").map(b=>b.text||"").join("");
-      }
-
-      // Extrair JSON da resposta (pode estar entre ```json ... ``` ou direto)
-      let jsonStr = text.trim();
-      const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/) || jsonStr.match(/(\{[\s\S]*\})/);
-      if(!jsonMatch) throw new Error("Claude não retornou JSON válido. Resposta: "+text.slice(0,200));
-
-      jsonStr = jsonMatch[1]||jsonMatch[0];
-      const report = JSON.parse(jsonStr);
-      report.gerado_em = new Date().toLocaleString("pt-BR");
-      saveIntelReport(report);
-
-    }catch(e){
-      setIntelError("Erro: "+e.message+". Verifique se a API key está correta em Configurações.");
-    }
+    const report = {
+      gerado_em,
+      total_clientes: clientesMonitor.length,
+      modo: "rss_gratuito",
+      clientes: clientesReport,
+    };
+    saveIntelReport(report);
     setIntelLoading(false);
   }
   function saveClients(c){ setClientsData(c); try{ localStorage.setItem(CLIENTS_KEY,JSON.stringify(c)); }catch{}; }
@@ -1970,23 +1878,38 @@ Regras:
                                 {opp.value?`R$ ${opp.value.toLocaleString("pt-BR")}`:"—"}
                               </td>
                               <td style={{padding:"6px 8px",width:(settings.forecastCols||[]).find(c=>c.key==="stage")?.width||"auto"}}>
-                                <span style={{fontSize:"10px",padding:"2px 6px",borderRadius:"8px",background:(stage?.color||"#888")+"22",color:stage?.color||"#888",fontWeight:700}}>{confPct}</span>
+                                {(()=>{
+                                  const isConf100 = opp.stage==="fechado"||opp.stage==="po_recebido";
+                                  const markedCount = Object.values(opp.months||{}).filter(Boolean).length;
+                                  const isContrato = isConf100 && markedCount > 1;
+                                  return (
+                                    <div style={{display:"flex",flexDirection:"column",gap:"2px",alignItems:"flex-start"}}>
+                                      <span style={{fontSize:"10px",padding:"2px 6px",borderRadius:"8px",background:(stage?.color||"#888")+"22",color:stage?.color||"#888",fontWeight:700}}>{confPct}</span>
+                                      {isContrato&&<span style={{fontSize:"9px",padding:"1px 5px",borderRadius:"6px",background:"rgba(29,158,117,0.15)",color:"#1D9E75",fontWeight:700,whiteSpace:"nowrap"}}>🏆 Fornecimento</span>}
+                                    </div>
+                                  );
+                                })()}
                               </td>
                               {/* Colunas de tempo — clicáveis */}
-                              {timeCols.map(tc=>{
-                                const marked = !!months[tc.key];
-                                return (
-                                  <td key={tc.key} onClick={e=>toggleMonth(e,opp,tc.key)}
-                                    style={{padding:"6px 4px",textAlign:"center",borderLeft:`1px solid var(--border2)`,cursor:"pointer"}}>
-                                    {marked
-                                      ? <div style={{width:"18px",height:"18px",borderRadius:"4px",background:tc.isSem?"#0F6E56":"#8C1A1A",margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                                          <span style={{color:"#fff",fontSize:"10px",fontWeight:700,lineHeight:1}}>x</span>
-                                        </div>
-                                      : <div style={{width:"18px",height:"18px",borderRadius:"4px",border:`1px solid var(--border)`,margin:"0 auto"}}/>
-                                    }
-                                  </td>
-                                );
-                              })}
+                              {(()=>{
+                                const isConf100 = opp.stage==="fechado"||opp.stage==="po_recebido";
+                                const markedCount = Object.values(opp.months||{}).filter(Boolean).length;
+                                const isContrato = isConf100 && markedCount > 1;
+                                return timeCols.map(tc=>{
+                                  const marked = !!(opp.months||{})[tc.key];
+                                  return (
+                                    <td key={tc.key} onClick={e=>toggleMonth(e,opp,tc.key)}
+                                      style={{padding:"6px 4px",textAlign:"center",borderLeft:`1px solid var(--border2)`,cursor:"pointer",background:isContrato&&marked?"rgba(29,158,117,0.06)":"transparent"}}>
+                                      {marked
+                                        ? <div style={{width:"18px",height:"18px",borderRadius:"4px",background:isContrato?"#1D9E75":tc.isSem?"#0F6E56":"#8C1A1A",margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"center"}} title={isContrato?"Contrato de fornecimento":""}>
+                                            <span style={{color:"#fff",fontSize:isContrato?"9px":"10px",fontWeight:700,lineHeight:1}}>{isContrato?"✓":"x"}</span>
+                                          </div>
+                                        : <div style={{width:"18px",height:"18px",borderRadius:"4px",border:`1px dashed ${isConf100?"rgba(29,158,117,0.4)":"var(--border)"}`,margin:"0 auto"}} title={isConf100?"Clique para marcar mês (contrato de fornecimento)":""}/>
+                                      }
+                                    </td>
+                                  );
+                                });
+                              })()}
                               {(settings.forecastCols||[]).find(c=>c.key==="notes")?.visible!==false&&(
                                 <td style={{padding:"6px 8px",color:"var(--text-secondary)",fontSize:"11px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",borderLeft:`1px solid var(--border2)`,width:(settings.forecastCols||[]).find(c=>c.key==="notes")?.width||"220px"}}>
                                   {(()=>{const lines=(opp.nextAction||"").split("\n").filter(l=>l.trim());return lines.length?lines[0]:"—";})()}
@@ -4341,23 +4264,14 @@ Regras:
                     {totalSIM}/20 clientes no radar
                   </div>
                   {intelReport&&<div style={{fontSize:"10px",color:"var(--text-muted)"}}>Último: {intelReport.gerado_em}</div>}
-                  <button onClick={runIntelAnalysis} disabled={intelLoading||totalSIM===0||totalSIM>20||!apiKey}
-                    style={{padding:"8px 18px",fontSize:"13px",borderRadius:"8px",border:"none",background:intelLoading||totalSIM===0||totalSIM>20||!apiKey?"#3A2A2A":"#8C1A1A",color:intelLoading||totalSIM===0||totalSIM>20||!apiKey?"#7A5050":"#FFD0D0",cursor:intelLoading||totalSIM===0||totalSIM>20||!apiKey?"not-allowed":"pointer",fontWeight:700}}>
+                  <button onClick={runIntelAnalysis} disabled={intelLoading||totalSIM===0||totalSIM>20}
+                    style={{padding:"8px 18px",fontSize:"13px",borderRadius:"8px",border:"none",background:intelLoading||totalSIM===0||totalSIM>20?"#3A2A2A":"#8C1A1A",color:intelLoading||totalSIM===0||totalSIM>20?"#7A5050":"#FFD0D0",cursor:intelLoading||totalSIM===0||totalSIM>20?"not-allowed":"pointer",fontWeight:700}}>
                     {intelLoading?"⏳ Buscando e analisando...":"🔍 Executar Radar Diário"}
                   </button>
                 </div>
               </div>
 
-              {/* Setup guide se não configurado */}
-              {!apiKey&&(
-                <div style={{background:"rgba(239,159,39,0.08)",border:"1px solid rgba(239,159,39,0.3)",borderRadius:"10px",padding:"14px 16px"}}>
-                  <div style={{fontSize:"12px",fontWeight:600,color:"#EF9F27",marginBottom:"8px"}}>⚠️ Configuração necessária</div>
-                  <div style={{fontSize:"11px",color:"var(--text-secondary)",lineHeight:1.6}}>
-                    <div>• <strong>API Key Anthropic</strong> — configure em Configurações → 🔑 API Key (senha: sinuelo2026)</div>
-                    <div style={{marginTop:"4px",fontSize:"10px",color:"var(--text-muted)"}}>O Radar usa o Claude com busca web integrada — não precisa de Brave API Key.</div>
-                  </div>
-                </div>
-              )}
+
 
               {/* Alert clientes > 20 */}
               {totalSIM>20&&(
@@ -4391,132 +4305,118 @@ Regras:
               {/* Relatório gerado */}
               {intelReport&&(()=>{
                 const clientes = intelReport.clientes||[];
-                const resumo = intelReport.resumo_executivo||{};
-                const plano = intelReport.plano_acao||{};
+                const isRSS = intelReport.modo==="rss_gratuito";
                 return (
                   <>
-                    {/* TABELA DE CLIENTES */}
-                    <div style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"10px",overflow:"hidden"}}>
-                      <div style={{padding:"12px 16px",borderBottom:"1px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                        <div style={{fontSize:"13px",fontWeight:700,color:"var(--text-primary)"}}>Análise por cliente · {clientes.length} analisados</div>
-                        <div style={{fontSize:"10px",color:"var(--text-muted)"}}>{intelReport.gerado_em}</div>
-                      </div>
-                      <div style={{overflowX:"auto"}}>
-                        <table style={{width:"100%",borderCollapse:"collapse",fontSize:"11px",tableLayout:"auto"}}>
-                          <thead>
-                            <tr style={{background:"var(--bg-card2)"}}>
-                              {["Cliente","Setor","Sinais encontrados","Classificação","Score\nEmp.","Cenário\nSetor","Score\nSetor","Score\nFinal","Frequência\nsugerida","Próxima ação","Confiança"].map(h=>(
-                                <th key={h} style={{padding:"8px 10px",textAlign:"left",color:"var(--text-secondary)",fontWeight:600,fontSize:"9px",borderBottom:"1px solid var(--border)",whiteSpace:"pre-line",verticalAlign:"top"}}>{h}</th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {clientes.map((c,i)=>(
-                              <tr key={i} style={{borderBottom:"1px solid var(--border2)",background:i%2===0?"transparent":"rgba(255,255,255,0.02)"}}>
-                                <td style={{padding:"8px 10px",fontWeight:700,color:"var(--text-primary)",whiteSpace:"nowrap"}}>{c.alias}</td>
-                                <td style={{padding:"8px 10px",color:"var(--text-secondary)",whiteSpace:"nowrap",fontSize:"10px"}}>{c.setor||"—"}</td>
-                                <td style={{padding:"8px 10px",color:"var(--text-primary)",maxWidth:"220px",lineHeight:1.4,fontSize:"10px"}}>{c.sinais_encontrados||"sem sinal recente relevante"}</td>
-                                <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>
-                                  <span style={{fontSize:"9px",padding:"2px 7px",borderRadius:"6px",background:clasColor(c.classificacao)+"22",color:clasColor(c.classificacao),fontWeight:700}}>{c.classificacao||"—"}</span>
-                                </td>
-                                <td style={{padding:"8px 10px",textAlign:"center",fontWeight:700,color:scoreColor(c.score_empresa||0)}}>{c.score_empresa>=0?"+":""}{c.score_empresa||0}</td>
-                                <td style={{padding:"8px 10px",color:"var(--text-secondary)",fontSize:"10px",maxWidth:"120px"}}>{c.cenario_setor||"—"}</td>
-                                <td style={{padding:"8px 10px",textAlign:"center",fontWeight:700,color:scoreColor(c.score_setor||0)}}>{c.score_setor>=0?"+":""}{c.score_setor||0}</td>
-                                <td style={{padding:"8px 10px",textAlign:"center"}}>
-                                  <span style={{fontSize:"13px",fontWeight:700,color:scoreColor(c.score_final||0)}}>{c.score_final>=0?"+":""}{c.score_final||0}</span>
-                                </td>
-                                <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>
-                                  <span style={{fontSize:"9px",padding:"2px 7px",borderRadius:"6px",background:freqColor(c.frequencia_sugerida)+"22",color:freqColor(c.frequencia_sugerida),fontWeight:700}}>{c.frequencia_sugerida||"—"}</span>
-                                </td>
-                                <td style={{padding:"8px 10px",color:"var(--text-primary)",maxWidth:"160px",fontSize:"10px",lineHeight:1.4}}>{c.proxima_acao||"—"}</td>
-                                <td style={{padding:"8px 10px",textAlign:"center"}}>
-                                  <span style={{fontSize:"9px",padding:"2px 6px",borderRadius:"6px",background:c.confianca==="Alto"?"rgba(29,158,117,0.15)":c.confianca==="Médio"?"rgba(239,159,39,0.15)":"rgba(136,136,136,0.15)",color:c.confianca==="Alto"?"#1D9E75":c.confianca==="Médio"?"#EF9F27":"#888",fontWeight:600}}>{c.confianca||"—"}</span>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-
-                    {/* FONTES */}
-                    {clientes.some(c=>(c.fontes||[]).length>0)&&(
-                      <div style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"14px 16px"}}>
-                        <div style={{fontSize:"12px",fontWeight:700,color:"var(--text-primary)",marginBottom:"10px"}}>📎 Fontes consultadas</div>
-                        <div style={{display:"flex",flexWrap:"wrap",gap:"6px"}}>
-                          {clientes.flatMap(c=>(c.fontes||[]).map((url,i)=>({url,alias:c.alias,i}))).filter(f=>f.url&&f.url.startsWith("http")).map((f,idx)=>(
-                            <a key={idx} href={f.url} target="_blank" rel="noopener noreferrer"
-                              style={{fontSize:"10px",padding:"3px 9px",borderRadius:"6px",background:"rgba(24,95,165,0.1)",color:"#185FA5",textDecoration:"none",border:"1px solid rgba(24,95,165,0.2)"}}>
-                              {f.alias} ↗
-                            </a>
-                          ))}
+                    {/* HEADER DO RELATÓRIO */}
+                    <div style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"8px"}}>
+                      <div>
+                        <div style={{fontSize:"13px",fontWeight:700,color:"var(--text-primary)"}}>
+                          📰 {isRSS?"Notícias encontradas (Google News RSS)":"Análise por cliente"} · {clientes.length} clientes
+                        </div>
+                        <div style={{fontSize:"10px",color:"var(--text-muted)",marginTop:"2px"}}>
+                          {isRSS?"Gratuito · sem API · dados do Google News em tempo real · ":""}
+                          Gerado em {intelReport.gerado_em}
                         </div>
                       </div>
-                    )}
+                      <button onClick={()=>saveIntelReport(null)} style={{fontSize:"10px",padding:"4px 10px",borderRadius:"6px",border:"1px solid var(--border)",background:"transparent",color:"var(--text-muted)",cursor:"pointer"}}>
+                        🗑 Limpar
+                      </button>
+                    </div>
 
-                    {/* RESUMO EXECUTIVO + PLANO DE AÇÃO lado a lado */}
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"14px"}}>
-                      {/* Resumo Executivo */}
-                      <div style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"16px"}}>
-                        <div style={{fontSize:"13px",fontWeight:700,color:"var(--text-primary)",marginBottom:"12px"}}>📊 Resumo Executivo</div>
-                        {[
-                          ["🔥 Mais energia agora", resumo.mais_energia_agora, "#E24B4A"],
-                          ["✅ Acompanhamento normal", resumo.acompanhamento_normal, "#185FA5"],
-                          ["💤 Menos visitas por enquanto", resumo.menos_visitas, "#888"],
-                          ["📈 Setores aquecidos", resumo.setores_aquecidos, "#1D9E75"],
-                          ["📉 Setores em retração", resumo.setores_retração||resumo["setores_retracao"], "#E24B4A"],
-                        ].map(([label,value,color])=>{
-                          if(!value||(Array.isArray(value)&&value.length===0)) return null;
-                          return (
-                            <div key={label} style={{marginBottom:"10px"}}>
-                              <div style={{fontSize:"10px",fontWeight:700,color,marginBottom:"4px"}}>{label}</div>
-                              {Array.isArray(value)
-                                ?<div style={{display:"flex",flexWrap:"wrap",gap:"4px"}}>
-                                  {value.map(v=><span key={v} style={{fontSize:"10px",padding:"2px 7px",borderRadius:"6px",background:color+"18",color}}>{v}</span>)}
-                                </div>
-                                :<div style={{fontSize:"11px",color:"var(--text-secondary)",lineHeight:1.5}}>{value}</div>}
+                    {/* CARDS DE NOTÍCIAS POR CLIENTE */}
+                    <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
+                      {clientes.map((cli,idx)=>{
+                        const allNews = [
+                          ...(cli.newsEmpresa||[]).map(n=>({...n,tipo:"empresa"})),
+                          ...(cli.newsSetor||[]).map(n=>({...n,tipo:"setor"})),
+                        ];
+                        const hasNews = allNews.length > 0;
+                        return (
+                          <div key={idx} style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"10px",overflow:"hidden"}}>
+                            {/* Header do cliente */}
+                            <div style={{padding:"10px 14px",borderBottom:"1px solid var(--border2)",display:"flex",alignItems:"center",gap:"10px",background:"var(--bg-card2)"}}>
+                              <div style={{width:"32px",height:"32px",borderRadius:"8px",background:"rgba(140,26,26,0.12)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,overflow:"hidden"}}>
+                                {(()=>{const cl=clientsData.find(c=>c.alias===cli.alias);return cl?.logo?<img src={cl.logo} style={{width:"32px",height:"32px",objectFit:"contain"}} alt=""/>:<span style={{fontSize:"14px",fontWeight:700,color:"var(--text-accent)"}}>{cli.alias?.[0]}</span>;})()}
+                              </div>
+                              <div style={{flex:1,minWidth:0}}>
+                                <div style={{fontSize:"13px",fontWeight:700,color:"var(--text-primary)"}}>{cli.alias}</div>
+                                <div style={{fontSize:"10px",color:"var(--text-secondary)"}}>{cli.setor}{cli.city?` · ${cli.city}/${cli.state}`:""}</div>
+                              </div>
+                              <div style={{textAlign:"right",flexShrink:0}}>
+                                <span style={{fontSize:"11px",fontWeight:700,color:hasNews?"#2563EB":"var(--text-muted)",padding:"2px 8px",borderRadius:"8px",background:hasNews?"rgba(37,99,235,0.1)":"var(--bg-card2)"}}>
+                                  {allNews.length} notícia{allNews.length!==1?"s":""}
+                                </span>
+                              </div>
                             </div>
-                          );
-                        })}
-                        {resumo.oportunidades_indiretas&&(
-                          <div style={{marginBottom:"10px"}}>
-                            <div style={{fontSize:"10px",fontWeight:700,color:"#7F77DD",marginBottom:"4px"}}>🤝 Oportunidades indiretas</div>
-                            <div style={{fontSize:"11px",color:"var(--text-secondary)",lineHeight:1.5}}>{resumo.oportunidades_indiretas}</div>
-                          </div>
-                        )}
-                        {resumo.alertas&&(
-                          <div style={{padding:"8px 10px",borderRadius:"6px",background:"rgba(226,75,74,0.08)",border:"1px solid rgba(226,75,74,0.2)"}}>
-                            <div style={{fontSize:"10px",fontWeight:700,color:"#E24B4A",marginBottom:"3px"}}>⚠️ Alertas</div>
-                            <div style={{fontSize:"11px",color:"var(--text-secondary)",lineHeight:1.5}}>{resumo.alertas}</div>
-                          </div>
-                        )}
-                      </div>
 
-                      {/* Plano de Ação */}
-                      <div style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"16px"}}>
-                        <div style={{fontSize:"13px",fontWeight:700,color:"var(--text-primary)",marginBottom:"12px"}}>🗓️ Plano de Ação Comercial</div>
-                        {[
-                          ["🚀 Visitar esta semana", plano.visitar_esta_semana, "#1D9E75"],
-                          ["📱 Contatar WhatsApp/E-mail", plano.contatar_wpp_email, "#185FA5"],
-                          ["👁️ Monitorar sem visita", plano.monitorar_sem_visita, "#EF9F27"],
-                          ["⏸️ Reduzir esforço", plano.reduzir_esforco, "#888"],
-                        ].map(([label,value,color])=>{
-                          if(!value||(Array.isArray(value)&&value.length===0)) return null;
-                          return (
-                            <div key={label} style={{marginBottom:"12px"}}>
-                              <div style={{fontSize:"10px",fontWeight:700,color,marginBottom:"5px"}}>{label}</div>
-                              {Array.isArray(value)
-                                ?<div style={{display:"flex",flexWrap:"wrap",gap:"4px"}}>
-                                  {value.map(v=><span key={v} style={{fontSize:"11px",padding:"3px 9px",borderRadius:"6px",background:"var(--bg-card2)",color:"var(--text-primary)",border:`1px solid ${color}44`}}>{v}</span>)}
-                                </div>
-                                :<div style={{fontSize:"11px",color:"var(--text-secondary)",lineHeight:1.5}}>{value}</div>}
-                            </div>
-                          );
-                        })}
-                      </div>
+                            {/* Notícias */}
+                            {!hasNews?(
+                              <div style={{padding:"14px",fontSize:"11px",color:"var(--text-muted)",textAlign:"center"}}>
+                                Nenhuma notícia encontrada para este cliente no período recente.
+                              </div>
+                            ):(
+                              <div style={{padding:"10px 14px",display:"flex",flexDirection:"column",gap:"0"}}>
+                                {/* Notícias da empresa */}
+                                {(cli.newsEmpresa||[]).length>0&&(
+                                  <div style={{marginBottom:"8px"}}>
+                                    <div style={{fontSize:"10px",fontWeight:700,color:"#2563EB",textTransform:"uppercase",letterSpacing:".06em",marginBottom:"5px"}}>🏭 Empresa</div>
+                                    {(cli.newsEmpresa||[]).map((n,i)=>(
+                                      <div key={i} style={{display:"flex",gap:"8px",padding:"6px 0",borderBottom:"1px solid var(--border2)",alignItems:"flex-start"}}>
+                                        <div style={{flex:1,minWidth:0}}>
+                                          {n.link
+                                            ?<a href={n.link} target="_blank" rel="noopener noreferrer" style={{fontSize:"12px",fontWeight:500,color:"var(--text-primary)",textDecoration:"none",lineHeight:1.4,display:"block"}}
+                                              onMouseEnter={e=>e.target.style.color="#2563EB"} onMouseLeave={e=>e.target.style.color="var(--text-primary)"}>
+                                              {n.title} ↗
+                                            </a>
+                                            :<div style={{fontSize:"12px",fontWeight:500,color:"var(--text-primary)",lineHeight:1.4}}>{n.title}</div>}
+                                          <div style={{display:"flex",gap:"8px",marginTop:"2px",fontSize:"10px",color:"var(--text-muted)"}}>
+                                            {n.src&&<span>{n.src}</span>}
+                                            {n.pub&&<span>· {new Date(n.pub).toLocaleDateString("pt-BR")}</span>}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                {/* Notícias do setor */}
+                                {(cli.newsSetor||[]).length>0&&(
+                                  <div>
+                                    <div style={{fontSize:"10px",fontWeight:700,color:"#7F77DD",textTransform:"uppercase",letterSpacing:".06em",marginBottom:"5px"}}>📊 Setor · {cli.setor}</div>
+                                    {(cli.newsSetor||[]).map((n,i)=>(
+                                      <div key={i} style={{display:"flex",gap:"8px",padding:"6px 0",borderBottom:"1px solid var(--border2)",alignItems:"flex-start"}}>
+                                        <div style={{flex:1,minWidth:0}}>
+                                          {n.link
+                                            ?<a href={n.link} target="_blank" rel="noopener noreferrer" style={{fontSize:"12px",fontWeight:500,color:"var(--text-primary)",textDecoration:"none",lineHeight:1.4,display:"block"}}
+                                              onMouseEnter={e=>e.target.style.color="#7F77DD"} onMouseLeave={e=>e.target.style.color="var(--text-primary)"}>
+                                              {n.title} ↗
+                                            </a>
+                                            :<div style={{fontSize:"12px",fontWeight:500,color:"var(--text-primary)",lineHeight:1.4}}>{n.title}</div>}
+                                          <div style={{display:"flex",gap:"8px",marginTop:"2px",fontSize:"10px",color:"var(--text-muted)"}}>
+                                            {n.src&&<span>{n.src}</span>}
+                                            {n.pub&&<span>· {new Date(n.pub).toLocaleDateString("pt-BR")}</span>}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* RODAPÉ INFO */}
+                    <div style={{background:"var(--bg-card2)",borderRadius:"8px",padding:"10px 14px",fontSize:"10px",color:"var(--text-muted)",lineHeight:1.6}}>
+                      💡 <strong>Como usar:</strong> Clique nos títulos para abrir a notícia completa. "🏭 Empresa" = notícias sobre o cliente específico. "📊 Setor" = tendências do mercado onde ele atua. Execute novamente a qualquer momento para atualizar.
+                      <br/>🆓 <strong>100% gratuito</strong> — usa Google News RSS via proxy público. Sem API key, sem limite, sem cobrança.
                     </div>
                   </>
                 );
+              })()}
+
               })()}
             </div>
           );
