@@ -968,7 +968,7 @@ function App() {
   const [relText, setRelText] = useState("");
   const [relLoading, setRelLoading] = useState(false);
   const [relWeekFilter, setRelWeekFilter] = useState("all");
-  // Seleção única — se já estiver selecionada, desmarca; caso contrário substitui
+  const [relMode, setRelMode] = useState("single"); // "single" | "multi"
   function toggleRelOpp(id){ setRelSelected(s=>s.includes(id)?[]:[id]); setRelText(""); }
 
   // ===== FOLLOW-UPS =====
@@ -1087,25 +1087,15 @@ function App() {
   // Gera texto do relatório no layout solicitado
   function buildRelatorioTexto(opp){
     const d = buildRelatorioData(opp);
-    const linha = "─".repeat(70);
-    const monthsTxt = d.monthsMarked.map(m=>`${m.label}${m.marked?"[X]":"[ ]"}`).join("  ");
-    const forecastLine = [
-      `NEG: ${d.negType}`,
-      `RESP: ${d.resp}`,
-      `CUSTOMER: ${opp.company||"—"}`,
-      `SUPPLIER: ${d.supplier}`,
-      `DESCRIPTION: ${opp.title||"—"}`,
-      `AMOUNT: ${d.valor}`,
-      `CONF: ${d.confPct}`,
-      `PREVISÃO: ${monthsTxt}`
-    ].join("  |  ");
-
+    const linha = "─".repeat(55);
+    const monthsTxt = d.monthsMarked.map(m=>`${m.label}:${m.marked?"X":"_"}`).join(" ");
+    const forecastLine = `${d.negType} | ${d.resp} | ${opp.company||"—"} | ${d.supplier} | ${d.valor} | ${d.confPct} | ${monthsTxt}`;
     const hist = Array.isArray(opp.visitHistory)?opp.visitHistory:[];
     const histTxt = hist.length
-      ? hist.slice().reverse().map((h,i)=>{
+      ? hist.slice().reverse().map(h=>{
           const data = h.date||h.createdAt||"—";
           const partes = [];
-          if(h.summary) partes.push(`Resumo: ${h.summary}`);
+          if(h.summary) partes.push(h.summary);
           if(h.what)    partes.push(`O quê: ${h.what}`);
           if(h.why)     partes.push(`Por quê: ${h.why}`);
           if(h.who)     partes.push(`Quem: ${h.who}`);
@@ -1113,45 +1103,36 @@ function App() {
           if(h.when)    partes.push(`Quando: ${h.when}`);
           if(h.how)     partes.push(`Como: ${h.how}`);
           if(h.howMuch) partes.push(`Quanto: ${h.howMuch}`);
-          if(h.nextStep) partes.push(`Próximo passo: ${h.nextStep}`);
-          return `[${data}]\n  ${partes.join("\n  ")}`;
-        }).join("\n\n")
+          if(h.nextStep) partes.push(`Próx: ${h.nextStep}`);
+          return `[${data}] ${partes.join(" · ")}`;
+        }).join("\n")
       : "Sem visitas registradas.";
-
     return [
-      `${opp.company||"—"}`,
-      `OPORTUNIDADE: ${opp.title||"—"}`,
-      `RESPONSÁVEL: ${opp.contact||"—"}`,
-      "",
+      `${opp.company||"—"} · ${opp.contact||"—"}`,
+      `Oportunidade: ${opp.title||"—"}`,
       linha,
-      "",
-      "FORECAST:",
-      forecastLine,
-      "",
+      `FORECAST: ${forecastLine}`,
       linha,
-      "",
       `HISTÓRICO:`,
       histTxt,
-      "",
       linha,
-      "",
       `FOLLOW-UP:`,
-      formatFollowUpsAsText(getFollowUps(opp)),
-      "",
-      linha,
-      "",
-      `PRÓXIMA AÇÃO:`,
       opp.nextAction||"—",
+      linha,
+      `PRÓXIMA AÇÃO: ${opp.notes||"—"}`,
     ].join("\n");
   }
 
   async function gerarRelatorio(){
-    if(!relSelected || relSelected.length !== 1) return;
+    if(!relSelected || relSelected.length === 0) return;
     setRelLoading(true);
     setRelText("");
-    const opp = opps.find(o=>o.id===relSelected[0]);
-    if(!opp){ setRelText("Oportunidade não encontrada."); setRelLoading(false); return; }
-    setRelText(buildRelatorioTexto(opp));
+    const selOpps = relSelected.map(id=>opps.find(o=>o.id===id)).filter(Boolean);
+    if(selOpps.length===0){ setRelText("Oportunidades não encontradas."); setRelLoading(false); return; }
+    // Gerar texto para cada oportunidade e concatenar com separador
+    const sep = "═".repeat(60);
+    const texts = selOpps.map(opp=>buildRelatorioTexto(opp));
+    setRelText(selOpps.length===1 ? texts[0] : texts.join("\n\n"+sep+"\n\n"));
     setRelLoading(false);
   }
 
@@ -1259,7 +1240,7 @@ function App() {
       doc.setFont("helvetica","bold"); doc.setFontSize(11);
       doc.text("FOLLOW-UP:", M, y); y += 14;
       doc.setFont("helvetica","normal"); doc.setFontSize(9);
-      const followText = formatFollowUpsAsText(getFollowUps(opp));
+      const followText = opp.nextAction||"—";
       const followLines = doc.splitTextToSize(followText, W-2*M);
       followLines.forEach(l=>{
         if(y > 800){ doc.addPage(); y = M; }
@@ -1273,7 +1254,7 @@ function App() {
       doc.setFont("helvetica","bold"); doc.setFontSize(11);
       doc.text("PRÓXIMA AÇÃO:", M, y); y += 14;
       doc.setFont("helvetica","normal"); doc.setFontSize(9);
-      const nextLines = doc.splitTextToSize(opp.nextAction||"—", W-2*M);
+      const nextLines = doc.splitTextToSize(opp.notes||"—", W-2*M);
       nextLines.forEach(l=>{
         if(y > 800){ doc.addPage(); y = M; }
         doc.text(l, M, y); y += 11;
@@ -1366,10 +1347,10 @@ function App() {
         ...histChildren,
         sep(),
         new Paragraph({children:[new TextRun({text:"FOLLOW-UP:", bold:true, size:22})], spacing:{after:120}}),
-        ...(formatFollowUpsAsText(getFollowUps(opp)).split("\n").map(l=>para(l))),
+        ...((opp.nextAction||"—").split("\n").map(l=>para(l))),
         sep(),
         new Paragraph({children:[new TextRun({text:"PRÓXIMA AÇÃO:", bold:true, size:22})], spacing:{after:120}}),
-        ...((opp.nextAction||"—").split("\n").map(l=>para(l))),
+        ...((opp.notes||"—").split("\n").map(l=>para(l))),
       ]}]});
       const blob = await Packer.toBlob(doc);
       const safeName = (opp.company||"Oportunidade").replace(/[^\w\-]+/g,"_");
@@ -1414,14 +1395,14 @@ function App() {
       window.XLSX.utils.book_append_sheet(wb, ws2, "Histórico");
 
       // Aba 3: Follow-up + Próxima ação
-      const fupsList = getFollowUps(opp);
+      const fupsList = (opp.nextAction||"").split("\n").filter(l=>l.trim()).map((l,i)=>{const m=l.match(/^(\d{2}[.\/\-]\d{2}[.\/\-]\d{2,4})\s*[-–]\s*(.*)/);return m?{date:m[1],text:m[2].trim()}:{date:"",text:l.trim()};});
       const a3 = [
         ["FOLLOW-UP"],
         ["Data","Resumo"],
         ...(fupsList.length ? fupsList.map(f=>[f.date||"—", f.text||""]) : [["—","Sem follow-ups registrados."]]),
         [],
         ["PRÓXIMA AÇÃO"],
-        ...((opp.nextAction||"—").split("\n").map(l=>[l])),
+        ...((opp.notes||"—").split("\n").map(l=>[l])),
       ];
       const ws3 = window.XLSX.utils.aoa_to_sheet(a3);
       ws3["!cols"] = [{wch:14},{wch:80}];
@@ -1667,9 +1648,11 @@ function App() {
         <span style={{fontSize:"13px",fontWeight:700,letterSpacing:".12em",color:"var(--text-primary)",textTransform:"uppercase",textAlign:"center"}}>
           {{"kanban":"FORECAST","tasks":"Tarefas","clients":"Clientes","relatorio":"Relatório","posvendas":"Pós-venda","budget":"Budget / Metas","orcamentos":"Orçamentos","projetos":"Projetos","intel":"🧠 Radar de Mercado"}[view]||view.toUpperCase()}
         </span>
-        <span style={{position:"absolute",right:"20px",fontSize:"13px",fontWeight:700,letterSpacing:".08em",color:"var(--text-primary)",opacity:.18,userSelect:"none",pointerEvents:"none"}}>
-          CRM-FORECAST
-        </span>
+        {/* Logo + nome como marca d'água à direita */}
+        <div style={{position:"absolute",right:"16px",display:"flex",alignItems:"center",gap:"6px",opacity:.22,userSelect:"none",pointerEvents:"none"}}>
+          <img src="data:image/png;base64,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" style={{width:"18px",height:"18px",objectFit:"contain",filter:"var(--logo-filter,none)"}} alt=""/>
+          <span style={{fontSize:"12px",fontWeight:700,letterSpacing:".1em",color:"var(--text-primary)"}}>CRM-FORECAST</span>
+        </div>
       </div>
 
       {/* CONTENT */}
@@ -2422,80 +2405,113 @@ function App() {
         {/* ===== RELATÓRIO SEMANAL ===== */}
         {view==="relatorio" && (
           <div style={{flex:1,display:"flex",gap:"14px",flexWrap:"wrap"}}>
-            {/* Coluna esquerda: seleção (1 oportunidade por vez) */}
-            <div style={{width:"320px",flexShrink:0}}>
-              <div style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"8px",padding:"14px",marginBottom:"10px"}}>
-                <div style={{fontSize:"13px",fontWeight:600,color:"var(--text-primary)",marginBottom:"4px"}}>Selecionar oportunidade</div>
-                <div style={{fontSize:"11px",color:"var(--text-muted)",marginBottom:"10px"}}>Escolha uma oportunidade para gerar o relatório.</div>
-                <div style={{display:"flex",flexDirection:"column",gap:"4px",maxHeight:"480px",overflowY:"auto"}}>
+
+            {/* Coluna esquerda: seleção */}
+            <div style={{width:"300px",flexShrink:0}}>
+              <div style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"8px",padding:"12px",marginBottom:"10px"}}>
+
+                {/* Modo de seleção */}
+                <div style={{display:"flex",gap:"4px",marginBottom:"10px"}}>
+                  {[["single","📋 Único"],["multi","📧 E-mail Outlook"]].map(([m,l])=>(
+                    <button key={m} onClick={()=>{setRelMode(m);setRelSelected([]);setRelText("");}}
+                      style={{flex:1,padding:"5px 8px",fontSize:"11px",borderRadius:"6px",border:`1px solid ${relMode===m?"#8C1A1A":"var(--border)"}`,background:relMode===m?"rgba(140,26,26,0.12)":"transparent",color:relMode===m?"#8C1A1A":"var(--text-secondary)",cursor:"pointer",fontWeight:relMode===m?700:400}}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+                <div style={{fontSize:"10px",color:"var(--text-muted)",marginBottom:"8px"}}>
+                  {relMode==="single"?"Selecione 1 oportunidade":"Selecione várias → gera relatório consolidado para Outlook"}
+                </div>
+
+                {/* Lista */}
+                <div style={{display:"flex",flexDirection:"column",gap:"3px",maxHeight:"440px",overflowY:"auto"}}>
                   {opps.filter(o=>o.stage!=="fechado").map(o=>{
-                    const sel = relSelected.includes(o.id);
+                    const isSel = relSelected.includes(o.id);
                     const stage = STAGES.find(s=>s.id===o.stage);
                     const hasHistory = (o.visitHistory||[]).length>0;
                     return (
-                      <div key={o.id} onClick={()=>toggleRelOpp(o.id)}
-                        style={{display:"flex",alignItems:"center",gap:"8px",padding:"7px 9px",borderRadius:"6px",background:sel?"rgba(140,26,26,0.12)":"var(--bg-card2)",border:`1px solid ${sel?"#8C1A1A":"var(--border)"}`,cursor:"pointer"}}>
-                        <div style={{width:"14px",height:"14px",borderRadius:"50%",border:`2px solid ${sel?"#8C1A1A":"var(--border)"}`,background:sel?"#8C1A1A":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                          {sel&&<div style={{width:"5px",height:"5px",borderRadius:"50%",background:"#fff"}}></div>}
+                      <div key={o.id} onClick={()=>{
+                        if(relMode==="single") setRelSelected(s=>s.includes(o.id)?[]:[o.id]);
+                        else setRelSelected(s=>s.includes(o.id)?s.filter(x=>x!==o.id):[...s,o.id]);
+                        setRelText("");
+                      }} style={{display:"flex",alignItems:"center",gap:"7px",padding:"6px 8px",borderRadius:"6px",background:isSel?"rgba(140,26,26,0.1)":"var(--bg-card2)",border:`1px solid ${isSel?"#8C1A1A":"var(--border)"}`,cursor:"pointer"}}>
+                        <div style={{width:"14px",height:"14px",borderRadius:relMode==="single"?"50%":"3px",border:`2px solid ${isSel?"#8C1A1A":"var(--border)"}`,background:isSel?"#8C1A1A":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                          {isSel&&<div style={{width:"5px",height:"5px",borderRadius:relMode==="single"?"50%":"1px",background:"#fff"}}/>}
                         </div>
                         <div style={{flex:1,minWidth:0}}>
                           <div style={{fontSize:"11px",fontWeight:600,color:"var(--text-primary)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.company}</div>
                           <div style={{fontSize:"10px",color:"var(--text-secondary)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.title}</div>
                         </div>
-                        <div style={{display:"flex",gap:"4px",alignItems:"center",flexShrink:0}}>
-                          {hasHistory&&<span style={{fontSize:"9px",color:"var(--text-blue)"}} title={`${o.visitHistory.length} visita(s) registrada(s)`}>📝</span>}
+                        <div style={{display:"flex",gap:"3px",alignItems:"center",flexShrink:0}}>
+                          {hasHistory&&<span style={{fontSize:"9px",color:"var(--text-blue)"}}>📝</span>}
                           <span style={{fontSize:"9px",padding:"1px 5px",borderRadius:"6px",background:(stage?.color||"#888")+"22",color:stage?.color||"#888",fontWeight:600}}>{stage?.tag||"—"}</span>
                         </div>
                       </div>
                     );
                   })}
                 </div>
-                {relSelected.length===1&&(
+
+                {relSelected.length>0&&(
                   <button onClick={gerarRelatorio} disabled={relLoading}
-                    style={{width:"100%",marginTop:"12px",padding:"10px",fontSize:"13px",borderRadius:"6px",border:"none",background:!relLoading?"#8C1A1A":"#4A2A2A",color:!relLoading?"#FFD0D0":"#7A5050",cursor:!relLoading?"pointer":"default",fontWeight:600}}>
-                    {relLoading?"Gerando relatório...":"Gerar relatório"}
+                    style={{width:"100%",marginTop:"10px",padding:"9px",fontSize:"12px",borderRadius:"6px",border:"none",background:!relLoading?"#8C1A1A":"#4A2A2A",color:!relLoading?"#FFD0D0":"#7A5050",cursor:!relLoading?"pointer":"default",fontWeight:600}}>
+                    {relLoading?"Gerando...":relMode==="single"?"Gerar relatório":`Gerar relatório (${relSelected.length})`}
                   </button>
                 )}
               </div>
             </div>
-            {/* Coluna direita: relatório gerado */}
+
+            {/* Coluna direita: relatório */}
             <div style={{flex:1,minWidth:"300px"}}>
               {relText&&(
-                <div style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"8px",padding:"16px"}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px",flexWrap:"wrap",gap:"8px"}}>
-                    <div style={{fontSize:"13px",fontWeight:600,color:"var(--text-primary)"}}>Relatório de oportunidade</div>
-                    <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
-                      <button onClick={()=>{navigator.clipboard.writeText(relText); alert("Texto copiado para a área de transferência.");}}
-                        style={{fontSize:"11px",padding:"6px 12px",borderRadius:"6px",border:"1px solid #185FA5",background:"rgba(24,95,165,0.12)",color:"#185FA5",cursor:"pointer",fontWeight:600}}>📋 Copiar texto</button>
+                <div style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"8px",padding:"14px"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px",flexWrap:"wrap",gap:"6px"}}>
+                    <div style={{fontSize:"12px",fontWeight:600,color:"var(--text-primary)"}}>
+                      {relSelected.length>1?`${relSelected.length} oportunidades`:"Relatório"} · {new Date().toLocaleDateString("pt-BR")}
+                    </div>
+                    <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
+                      <button onClick={()=>navigator.clipboard.writeText(relText)}
+                        style={{fontSize:"11px",padding:"5px 10px",borderRadius:"6px",border:"1px solid #185FA5",background:"rgba(24,95,165,0.12)",color:"#185FA5",cursor:"pointer",fontWeight:600}}>📋 Copiar</button>
                       <button onClick={()=>window.print()}
-                        style={{fontSize:"11px",padding:"6px 12px",borderRadius:"6px",border:"1px solid var(--border)",background:"var(--bg-card2)",color:"var(--text-secondary)",cursor:"pointer"}}>🖨 Imprimir</button>
+                        style={{fontSize:"11px",padding:"5px 10px",borderRadius:"6px",border:"1px solid var(--border)",background:"var(--bg-card2)",color:"var(--text-secondary)",cursor:"pointer"}}>🖨 Imprimir</button>
                       <button onClick={exportRelPDF}
-                        style={{fontSize:"11px",padding:"6px 12px",borderRadius:"6px",border:"1px solid #E24B4A",background:"rgba(226,75,74,0.12)",color:"#E24B4A",cursor:"pointer",fontWeight:600}}>📄 PDF</button>
+                        style={{fontSize:"11px",padding:"5px 10px",borderRadius:"6px",border:"1px solid #E24B4A",background:"rgba(226,75,74,0.12)",color:"#E24B4A",cursor:"pointer",fontWeight:600}}>📄 PDF</button>
                       <button onClick={exportRelDOCX}
-                        style={{fontSize:"11px",padding:"6px 12px",borderRadius:"6px",border:"1px solid #185FA5",background:"rgba(24,95,165,0.12)",color:"#185FA5",cursor:"pointer",fontWeight:600}}>📝 DOCX</button>
+                        style={{fontSize:"11px",padding:"5px 10px",borderRadius:"6px",border:"1px solid #185FA5",background:"rgba(24,95,165,0.12)",color:"#185FA5",cursor:"pointer",fontWeight:600}}>📝 DOCX</button>
                       <button onClick={exportRelXLSX}
-                        style={{fontSize:"11px",padding:"6px 12px",borderRadius:"6px",border:"1px solid #1D9E75",background:"rgba(29,158,117,0.12)",color:"#1D9E75",cursor:"pointer",fontWeight:600}}>📊 XLSX</button>
+                        style={{fontSize:"11px",padding:"5px 10px",borderRadius:"6px",border:"1px solid #1D9E75",background:"rgba(29,158,117,0.12)",color:"#1D9E75",cursor:"pointer",fontWeight:600}}>📊 XLSX</button>
+                      <button onClick={()=>{
+                        const selOpps = relSelected.map(id=>opps.find(o=>o.id===id)).filter(Boolean);
+                        const subject = encodeURIComponent(selOpps.length>1
+                          ? `Relatório de Oportunidades Sinuelo (${selOpps.length})`
+                          : `Oportunidade: ${selOpps[0]?.company||""} · ${selOpps[0]?.title?.slice(0,40)||""}`);
+                        const bodyRaw = relText;
+                        // Outlook suporta ~2000 chars no mailto body
+                        const bodyEnc = encodeURIComponent(bodyRaw.length>1900?bodyRaw.slice(0,1890)+"\n\n[relatório truncado — copie o texto completo do CRM]":bodyRaw);
+                        window.location.href = "mailto:?subject="+subject+"&body="+bodyEnc;
+                      }} style={{fontSize:"11px",padding:"5px 10px",borderRadius:"6px",border:"1px solid #0078D4",background:"rgba(0,120,212,0.12)",color:"#0078D4",cursor:"pointer",fontWeight:700,display:"flex",alignItems:"center",gap:"4px"}}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><rect x="1" y="4" width="22" height="16" rx="2" fill="#0078D4"/><path d="M1 6l9.5 6.5a2 2 0 0 0 3 0L23 6" stroke="white" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                        Outlook
+                      </button>
                     </div>
                   </div>
-                  <pre style={{fontSize:"12px",color:"var(--text-primary)",lineHeight:1.7,whiteSpace:"pre-wrap",fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",margin:0}}>{relText}</pre>
+                  <pre style={{fontSize:"11px",color:"var(--text-primary)",lineHeight:1.45,whiteSpace:"pre-wrap",fontFamily:"'Courier New',monospace",margin:0}}>{relText}</pre>
                 </div>
               )}
               {!relText&&relSelected.length===0&&(
-                <div style={{textAlign:"center",padding:"60px 20px",color:"var(--text-muted)"}}>
-                  <div style={{fontSize:"32px",marginBottom:"12px"}}>📋</div>
-                  <div style={{fontSize:"13px"}}>Selecione uma oportunidade à esquerda e clique em <b>Gerar relatório</b></div>
+                <div style={{textAlign:"center",padding:"50px 20px",color:"var(--text-muted)"}}>
+                  <div style={{fontSize:"28px",marginBottom:"10px"}}>📋</div>
+                  <div style={{fontSize:"12px",lineHeight:1.6}}>
+                    <b>📋 Único</b> → relatório detalhado de 1 oportunidade<br/>
+                    <b>📧 E-mail Outlook</b> → selecione várias e envie direto
+                  </div>
                 </div>
               )}
-              {!relText&&relSelected.length===1&&!relLoading&&(
-                <div style={{textAlign:"center",padding:"60px 20px",color:"var(--text-muted)"}}>
-                  <div style={{fontSize:"13px"}}>1 oportunidade selecionada. Clique em <b>Gerar relatório</b>.</div>
+              {!relText&&relSelected.length>0&&!relLoading&&(
+                <div style={{textAlign:"center",padding:"40px 20px",color:"var(--text-muted)",fontSize:"12px"}}>
+                  {relSelected.length} oportunidade{relSelected.length>1?"s":""} selecionada{relSelected.length>1?"s":""}. Clique em <b>Gerar relatório</b>.
                 </div>
               )}
-              {relLoading&&(
-                <div style={{textAlign:"center",padding:"60px 20px",color:"var(--text-secondary)"}}>
-                  <div style={{fontSize:"13px"}}>Gerando relatório...</div>
-                </div>
-              )}
+              {relLoading&&<div style={{textAlign:"center",padding:"40px 20px",color:"var(--text-secondary)",fontSize:"12px"}}>Gerando relatório...</div>}
             </div>
           </div>
         )}
@@ -3216,7 +3232,7 @@ function App() {
         )}
         {/* PAINEL DETALHE */}
         {sel && (
-          <div style={{width:"300px",flexShrink:0,background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"8px",position:"sticky",top:"60px",display:"flex",flexDirection:"column",maxHeight:"calc(100vh - 130px)"}}>
+          <div style={{width:"300px",flexShrink:0,background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"8px",position:"sticky",top:"0px",alignSelf:"flex-start",display:"flex",flexDirection:"column",maxHeight:"calc(100vh - 80px)"}}>
             {/* Header fixo */}
             <div style={{padding:"12px 14px 0",flexShrink:0}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"8px"}}>
@@ -3299,8 +3315,16 @@ function App() {
                           {list.map((f,idx)=>{
                             const fullLine = f.date?`${f.date} - ${f.text}`:f.text;
                             return (
-                              <div key={idx} style={{display:"flex",alignItems:"center",gap:"6px",padding:"4px 7px",borderRadius:"4px",background:"var(--bg-card2)",fontSize:"11px",fontFamily:"monospace"}}>
-                                <div style={{flex:1,minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:"var(--text-primary)"}} title={fullLine}>
+                              <div key={idx} style={{display:"flex",alignItems:"center",gap:"6px",padding:"3px 7px",borderRadius:"4px",background:"var(--bg-card2)",fontSize:"11px",fontFamily:"monospace",cursor:"text"}}
+                                onDoubleClick={()=>{
+                                  const newTxt = window.prompt("Editar follow-up (máx 60 chars incluindo data):", fullLine);
+                                  if(newTxt===null) return;
+                                  if(newTxt.length>60){ alert("Máximo 60 caracteres."); return; }
+                                  const rawLines=(sel.nextAction||"").split("\n").filter(l=>l.trim());
+                                  rawLines[idx]=newTxt;
+                                  updateOpp({...sel,nextAction:rawLines.join("\n"),followUps:undefined});
+                                }}>
+                                <div style={{flex:1,minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:"var(--text-primary)"}} title={fullLine+" (duplo clique para editar)"}>
                                   {f.date && <span style={{color:"#185FA5",fontWeight:700,marginRight:"4px"}}>{f.date}</span>}
                                   <span style={{color:"var(--text-secondary)"}}>{f.date?"- ":""}</span>
                                   <span>{f.text}</span>
@@ -4532,11 +4556,7 @@ function App() {
                       {clientNewsLoading?"⏳ buscando...":"🔍 Buscar agora"}
                     </button>
                   </div>
-                  {!braveKey&&(
-                    <div style={{background:"rgba(239,159,39,0.1)",border:"1px solid rgba(239,159,39,0.3)",borderRadius:"8px",padding:"12px",marginBottom:"12px",fontSize:"11px",color:"#EF9F27",lineHeight:1.5}}>
-                      ⚠️ Configure a <strong>Brave Search API Key</strong> em<br/>Configurações → Integrações para habilitar as notícias.
-                    </div>
-                  )}
+
                   {clientNews.length===0&&!clientNewsLoading&&(
                     <div style={{textAlign:"center",padding:"48px 0",color:"var(--text-muted)"}}>
                       <div style={{fontSize:"32px",marginBottom:"12px"}}>📰</div>
