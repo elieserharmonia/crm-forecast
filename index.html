@@ -320,31 +320,41 @@ function saveData(d) {
 
 // ── TELA DE LOGIN ─────────────────────────────────────────────────────
 function LoginScreen({users, onLogin, onCreateAccount}){
-  const [mode, setMode] = React.useState("login"); // "login" | "new"
-  const [selUser, setSelUser] = React.useState("");
+  const [mode, setMode] = React.useState("login");
+  const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
 
   // Campos nova conta
-  const [newName, setNewName] = React.useState("");
-  const [newCode, setNewCode] = React.useState("");
-  const [newRole, setNewRole] = React.useState("vendedor");
-  const [newPass, setNewPass] = React.useState("");
+  const [newName, setNewName]   = React.useState("");
+  const [newEmail, setNewEmail] = React.useState("");
+  const [newCode, setNewCode]   = React.useState("");
+  const [newRole, setNewRole]   = React.useState("vendedor");
+  const [newPass, setNewPass]   = React.useState("");
   const [newPass2, setNewPass2] = React.useState("");
   const [newSuccess, setNewSuccess] = React.useState(false);
 
   const ROLE_LABELS = {gestor:"Gestor",consultor:"Consultor",vendedor:"Vendedor",engenheiro:"Engenheiro de Aplicação"};
   const ROLE_COLORS = {gestor:"#8C1A1A",consultor:"#185FA5",vendedor:"#1D9E75",engenheiro:"#7F77DD"};
 
+  // Checar se há contas pendentes (para mostrar aviso de suporte)
+  const pendentes = users.filter(u=>u.pendente&&!u.active);
+
   function handleLogin(e){
     e.preventDefault();
-    if(!selUser){ setError("Selecione um usuário."); return; }
-    if(!password){ setError("Digite a senha."); return; }
+    if(!email.trim()){ setError("Digite seu e-mail."); return; }
+    if(!password){ setError("Digite sua senha."); return; }
+    // Checar se o e-mail existe mas está pendente
+    const emailLower = email.trim().toLowerCase();
+    const userPendente = users.find(u=>(u.email||"").toLowerCase()===emailLower && u.pendente && !u.active);
+    if(userPendente){ setError("Sua conta está aguardando ativação pelo gestor. Entre em contato com o administrador."); return; }
+    const userInativo = users.find(u=>(u.email||"").toLowerCase()===emailLower && !u.active && !u.pendente);
+    if(userInativo){ setError("Conta inativa. Fale com o administrador."); return; }
     setLoading(true);
     setTimeout(()=>{
-      const ok = onLogin(selUser, password);
-      if(!ok){ setError("Senha incorreta. Tente novamente."); setPassword(""); }
+      const ok = onLogin(email, password);
+      if(!ok){ setError("E-mail ou senha incorretos. Verifique e tente novamente."); setPassword(""); }
       setLoading(false);
     }, 400);
   }
@@ -352,28 +362,21 @@ function LoginScreen({users, onLogin, onCreateAccount}){
   function handleCreate(e){
     e.preventDefault();
     if(!newName.trim()){ setError("Digite seu nome completo."); return; }
-    if(!newCode.trim()){ setError("Digite suas iniciais (ex: AB)."); return; }
+    if(!newEmail.trim()||!newEmail.includes("@")){ setError("Digite um e-mail válido."); return; }
+    if(!newCode.trim()){ setError("Digite suas iniciais (ex: ER)."); return; }
     if(!newPass){ setError("Digite uma senha."); return; }
-    if(newPass !== newPass2){ setError("As senhas não coincidem."); return; }
-    if(newPass.length < 6){ setError("Senha deve ter ao menos 6 caracteres."); return; }
+    if(newPass.length<6){ setError("Senha deve ter ao menos 6 caracteres."); return; }
+    if(newPass!==newPass2){ setError("As senhas não coincidem."); return; }
+    const emailLower = newEmail.trim().toLowerCase();
+    if(users.find(u=>(u.email||"").toLowerCase()===emailLower)){ setError("E-mail já cadastrado. Faça login ou use outro e-mail."); return; }
     const codeUp = newCode.toUpperCase().slice(0,4);
     if(users.find(u=>u.code===codeUp)){ setError(`Iniciais "${codeUp}" já estão em uso. Escolha outras.`); return; }
-    onCreateAccount({
-      id: "user_"+Date.now(),
-      name: newName.trim(),
-      code: codeUp,
-      role: newRole,
-      password: newPass,
-      active: true,
-    });
-    setNewSuccess(true);
-    setError("");
-    setTimeout(()=>{ setMode("login"); setNewSuccess(false); setNewName(""); setNewCode(""); setNewPass(""); setNewPass2(""); }, 2000);
+    onCreateAccount({id:"user_"+Date.now(), name:newName.trim(), email:emailLower, code:codeUp, role:newRole, password:newPass, active:false, pendente:true});
+    setNewSuccess(true); setError("");
+    setTimeout(()=>{ setMode("login"); setNewSuccess(false); setNewName(""); setNewEmail(""); setNewCode(""); setNewPass(""); setNewPass2(""); }, 2500);
   }
 
-  const selectedUser = users.find(u=>u.id===selUser);
-
-  const logoSvg = (
+  const logoEl = (
     <div style={{width:"64px",height:"64px",borderRadius:"14px",background:"rgba(140,26,26,0.12)",border:"1px solid rgba(140,26,26,0.25)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px"}}>
       <svg width="36" height="36" viewBox="0 0 100 100" fill="none">
         <circle cx="50" cy="42" r="28" stroke="#DC2626" strokeWidth="5" fill="none"/>
@@ -387,117 +390,139 @@ function LoginScreen({users, onLogin, onCreateAccount}){
     </div>
   );
 
-  const cardStyle = {background:"rgba(255,255,255,0.92)",border:"1px solid rgba(0,0,0,0.08)",borderRadius:"14px",padding:"24px",boxShadow:"0 4px 24px rgba(0,0,0,0.10)"};
-  const inputStyle = {width:"100%",padding:"10px 13px",fontSize:"13px",borderRadius:"8px",border:"1px solid rgba(0,0,0,0.12)",background:"#fff",color:"#1E293B",outline:"none",boxSizing:"border-box"};
-  const labelStyle = {fontSize:"11px",color:"#475569",display:"block",marginBottom:"5px",textTransform:"uppercase",letterSpacing:".07em"};
+  const card  = {background:"rgba(255,255,255,0.92)",border:"1px solid rgba(0,0,0,0.08)",borderRadius:"14px",padding:"24px",boxShadow:"0 4px 24px rgba(0,0,0,0.10)"};
+  const inp2  = {width:"100%",padding:"10px 13px",fontSize:"13px",borderRadius:"8px",border:"1px solid rgba(0,0,0,0.12)",background:"#fff",color:"#1E293B",outline:"none",boxSizing:"border-box"};
+  const lbl2  = {fontSize:"11px",color:"#475569",display:"block",marginBottom:"5px",textTransform:"uppercase",letterSpacing:".07em"};
 
   return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#C8CDD5 0%,#DDE1E7 50%,#C8CDD5 100%)",fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"}}>
       <div style={{width:"100%",maxWidth:"420px",padding:"16px"}}>
 
         {/* Header */}
-        <div style={{textAlign:"center",marginBottom:"24px"}}>
-          {logoSvg}
+        <div style={{textAlign:"center",marginBottom:"22px"}}>
+          {logoEl}
           <div style={{fontSize:"21px",fontWeight:700,color:"#1E293B",letterSpacing:"-.02em"}}>CRM-FORECAST B2B</div>
           <div style={{fontSize:"12px",color:"#64748B",marginTop:"3px"}}>Sinuelo Torque+Controle</div>
         </div>
 
-        {/* Tabs Login / Nova conta */}
-        <div style={{display:"flex",gap:"4px",marginBottom:"16px",background:"rgba(0,0,0,0.06)",borderRadius:"10px",padding:"4px"}}>
-          {[["login","Entrar"],["new","Nova conta"]].map(([m,l])=>(
-            <button key={m} onClick={()=>{setMode(m);setError("");setPassword("");setSelUser("");}}
-              style={{flex:1,padding:"8px",fontSize:"13px",fontWeight:mode===m?700:500,borderRadius:"7px",border:"none",background:mode===m?"#fff":"transparent",color:mode===m?"#1E293B":"#64748B",cursor:"pointer",boxShadow:mode===m?"0 1px 4px rgba(0,0,0,0.12)":"none",transition:"all .15s"}}>
-              {m==="login"?"🔐 "+l:"✨ "+l}
+        {/* Tabs */}
+        <div style={{display:"flex",gap:"4px",marginBottom:"14px",background:"rgba(0,0,0,0.06)",borderRadius:"10px",padding:"4px"}}>
+          {[["login","🔐 Entrar"],["new","✨ Nova conta"]].map(([m,l])=>(
+            <button key={m} onClick={()=>{setMode(m);setError("");setPassword("");}}
+              style={{flex:1,padding:"8px",fontSize:"13px",fontWeight:mode===m?700:500,borderRadius:"7px",border:"none",background:mode===m?"#fff":"transparent",color:mode===m?"#1E293B":"#64748B",cursor:"pointer",boxShadow:mode===m?"0 1px 4px rgba(0,0,0,0.1)":"none",transition:"all .15s"}}>
+              {l}
             </button>
           ))}
         </div>
 
         {/* ===== LOGIN ===== */}
         {mode==="login"&&(
-          <form onSubmit={handleLogin} style={cardStyle}>
-            <div style={{marginBottom:"16px"}}>
-              <label style={labelStyle}>Selecione seu usuário</label>
-              <div style={{display:"flex",flexDirection:"column",gap:"5px"}}>
-                {users.filter(u=>u.active).map(u=>(
-                  <div key={u.id} onClick={()=>{setSelUser(u.id);setError("");setPassword("");}}
-                    style={{display:"flex",alignItems:"center",gap:"10px",padding:"9px 12px",borderRadius:"8px",background:selUser===u.id?"rgba(140,26,26,0.08)":"rgba(0,0,0,0.02)",border:`1px solid ${selUser===u.id?"rgba(140,26,26,0.4)":"rgba(0,0,0,0.08)"}`,cursor:"pointer",transition:"all .12s"}}>
-                    <div style={{width:"30px",height:"30px",borderRadius:"7px",background:ROLE_COLORS[u.role]+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                      <span style={{fontSize:"11px",fontWeight:700,color:ROLE_COLORS[u.role]}}>{u.code}</span>
-                    </div>
-                    <div style={{flex:1}}>
-                      <div style={{fontSize:"13px",fontWeight:600,color:"#1E293B"}}>{u.name}</div>
-                      <div style={{fontSize:"10px",color:"#64748B"}}>{ROLE_LABELS[u.role]||u.role}</div>
-                    </div>
-                    <div style={{width:"15px",height:"15px",borderRadius:"50%",border:`2px solid ${selUser===u.id?"#8C1A1A":"rgba(0,0,0,0.15)"}`,background:selUser===u.id?"#8C1A1A":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                      {selUser===u.id&&<div style={{width:"5px",height:"5px",borderRadius:"50%",background:"#fff"}}/>}
-                    </div>
-                  </div>
-                ))}
-              </div>
+          <form onSubmit={handleLogin} style={card}>
+            <div style={{marginBottom:"14px"}}>
+              <label style={lbl2}>E-mail</label>
+              <input type="email" value={email} onChange={e=>{setEmail(e.target.value);setError("");}}
+                placeholder="seu@email.com.br" autoFocus autoComplete="email"
+                style={inp2}/>
+            </div>
+            <div style={{marginBottom:"6px"}}>
+              <label style={lbl2}>Senha</label>
+              <input type="password" value={password} onChange={e=>{setPassword(e.target.value);setError("");}}
+                placeholder="Digite sua senha" autoComplete="current-password"
+                style={inp2}/>
             </div>
 
-            {selectedUser&&(
-              <div style={{marginBottom:"16px"}}>
-                <label style={labelStyle}>Senha</label>
-                <input type="password" value={password} onChange={e=>{setPassword(e.target.value);setError("");}}
-                  placeholder="Digite sua senha..." autoFocus style={inputStyle}/>
-              </div>
-            )}
+            {/* Esqueci a senha — preparado para o futuro */}
+            <div style={{textAlign:"right",marginBottom:"16px"}}>
+              <span style={{fontSize:"11px",color:"#94A3B8",cursor:"default"}} title="Em breve">
+                Esqueci minha senha
+              </span>
+            </div>
 
             {error&&<div style={{fontSize:"12px",color:"#EF4444",marginBottom:"12px",padding:"8px 12px",borderRadius:"6px",background:"rgba(239,68,68,0.08)"}}>{error}</div>}
 
-            <button type="submit" disabled={!selUser||!password||loading}
-              style={{width:"100%",padding:"11px",fontSize:"14px",fontWeight:700,borderRadius:"8px",border:"none",background:!selUser||!password?"rgba(140,26,26,0.25)":"#8C1A1A",color:!selUser||!password?"rgba(255,208,208,0.5)":"#FFD0D0",cursor:!selUser||!password?"not-allowed":"pointer",transition:"all .15s"}}>
+            <button type="submit" disabled={!email||!password||loading}
+              style={{width:"100%",padding:"11px",fontSize:"14px",fontWeight:700,borderRadius:"8px",border:"none",background:!email||!password?"rgba(140,26,26,0.25)":"#8C1A1A",color:!email||!password?"rgba(255,208,208,0.5)":"#FFD0D0",cursor:!email||!password?"not-allowed":"pointer",transition:"all .15s"}}>
               {loading?"Entrando...":"Entrar →"}
             </button>
+
+            {/* Referência rápida de e-mails */}
+            <div style={{marginTop:"16px",padding:"10px",borderRadius:"8px",background:"rgba(0,0,0,0.03)",border:"1px solid rgba(0,0,0,0.06)"}}>
+              <div style={{fontSize:"10px",color:"#94A3B8",marginBottom:"6px",fontWeight:600,textTransform:"uppercase",letterSpacing:".06em"}}>Usuários cadastrados</div>
+              {users.filter(u=>u.active).map(u=>(
+                <div key={u.id} onClick={()=>{setEmail(u.email||"");setError("");}}
+                  style={{display:"flex",alignItems:"center",gap:"8px",padding:"5px 6px",borderRadius:"6px",cursor:"pointer",transition:"background .1s"}}
+                  onMouseEnter={e=>e.currentTarget.style.background="rgba(0,0,0,0.04)"}
+                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                  <div style={{width:"22px",height:"22px",borderRadius:"5px",background:ROLE_COLORS[u.role]+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <span style={{fontSize:"9px",fontWeight:700,color:ROLE_COLORS[u.role]}}>{u.code}</span>
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <span style={{fontSize:"11px",fontWeight:600,color:"#334155"}}>{u.name}</span>
+                    <span style={{fontSize:"10px",color:"#94A3B8",marginLeft:"6px"}}>{u.email||"—"}</span>
+                  </div>
+                  <span style={{fontSize:"9px",color:"#CBD5E1"}}>{ROLE_LABELS[u.role]}</span>
+                </div>
+              ))}
+              {pendentes.length>0&&(
+                <div style={{marginTop:"6px",padding:"6px 8px",borderRadius:"6px",background:"rgba(239,159,39,0.08)",border:"1px solid rgba(239,159,39,0.2)"}}>
+                  <div style={{fontSize:"10px",color:"#EF9F27",fontWeight:600}}>⏳ {pendentes.length} conta{pendentes.length>1?"s":""} aguardando ativação:</div>
+                  {pendentes.map(u=><div key={u.id} style={{fontSize:"10px",color:"#92400E",marginTop:"2px"}}>• {u.name} ({u.email||u.code})</div>)}
+                </div>
+              )}
+            </div>
           </form>
         )}
 
         {/* ===== NOVA CONTA ===== */}
         {mode==="new"&&(
-          <form onSubmit={handleCreate} style={cardStyle}>
+          <form onSubmit={handleCreate} style={card}>
             {newSuccess?(
-              <div style={{textAlign:"center",padding:"20px 0"}}>
-                <div style={{fontSize:"36px",marginBottom:"12px"}}>✅</div>
-                <div style={{fontSize:"14px",fontWeight:600,color:"#1D9E75"}}>Conta criada com sucesso!</div>
-                <div style={{fontSize:"12px",color:"#64748B",marginTop:"4px"}}>Redirecionando para o login...</div>
+              <div style={{textAlign:"center",padding:"24px 0"}}>
+                <div style={{fontSize:"40px",marginBottom:"12px"}}>✅</div>
+                <div style={{fontSize:"14px",fontWeight:700,color:"#1D9E75"}}>Cadastro enviado!</div>
+                <div style={{fontSize:"12px",color:"#64748B",marginTop:"6px",lineHeight:1.6}}>Sua conta está <strong>aguardando ativação</strong> pelo gestor.<br/>Você receberá acesso em breve.</div>
               </div>
             ):(
               <>
-                <div style={{fontSize:"11px",color:"#64748B",marginBottom:"16px",padding:"8px 12px",borderRadius:"6px",background:"rgba(24,95,165,0.06)",border:"1px solid rgba(24,95,165,0.15)"}}>
-                  ℹ️ A conta ficará <strong>pendente de ativação</strong> pelo gestor antes de poder acessar o sistema.
+                <div style={{fontSize:"11px",color:"#475569",marginBottom:"14px",padding:"8px 12px",borderRadius:"6px",background:"rgba(24,95,165,0.06)",border:"1px solid rgba(24,95,165,0.12)",lineHeight:1.5}}>
+                  ℹ️ Após o cadastro, o gestor precisa <strong>ativar sua conta</strong> antes do primeiro acesso.
+                </div>
+
+                <div style={{marginBottom:"12px"}}>
+                  <label style={lbl2}>Nome completo</label>
+                  <input value={newName} onChange={e=>setNewName(e.target.value)} style={inp2} placeholder="Ex: Ester Regina Fernandes"/>
+                </div>
+
+                <div style={{marginBottom:"12px"}}>
+                  <label style={lbl2}>E-mail corporativo</label>
+                  <input type="email" value={newEmail} onChange={e=>setNewEmail(e.target.value)} style={inp2} placeholder="ester@sinuelo.com.br" autoComplete="email"/>
                 </div>
 
                 <div style={{display:"grid",gridTemplateColumns:"1fr 80px",gap:"10px",marginBottom:"12px"}}>
                   <div>
-                    <label style={labelStyle}>Nome completo</label>
-                    <input value={newName} onChange={e=>setNewName(e.target.value)} style={inputStyle} placeholder="Ex: João da Silva"/>
+                    <label style={lbl2}>Perfil de acesso</label>
+                    <select value={newRole} onChange={e=>setNewRole(e.target.value)}
+                      style={{...inp2,cursor:"pointer"}}>
+                      <option value="vendedor">Vendedor</option>
+                      <option value="engenheiro">Engenheiro de Aplicação</option>
+                      <option value="consultor">Consultor</option>
+                      <option value="gestor">Gestor</option>
+                    </select>
                   </div>
                   <div>
-                    <label style={labelStyle}>Iniciais</label>
-                    <input value={newCode} onChange={e=>setNewCode(e.target.value.toUpperCase().slice(0,4))} style={inputStyle} placeholder="JS" maxLength={4}/>
+                    <label style={lbl2}>Iniciais</label>
+                    <input value={newCode} onChange={e=>setNewCode(e.target.value.toUpperCase().slice(0,4))} style={inp2} placeholder="ERF" maxLength={4}/>
                   </div>
-                </div>
-
-                <div style={{marginBottom:"12px"}}>
-                  <label style={labelStyle}>Perfil de acesso</label>
-                  <select value={newRole} onChange={e=>setNewRole(e.target.value)}
-                    style={{...inputStyle,appearance:"none",cursor:"pointer"}}>
-                    <option value="vendedor">Vendedor — vê suas oportunidades</option>
-                    <option value="engenheiro">Engenheiro de Aplicação — vê seus projetos</option>
-                    <option value="consultor">Consultor — vê toda a equipe</option>
-                    <option value="gestor">Gestor — acesso total</option>
-                  </select>
                 </div>
 
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px",marginBottom:"16px"}}>
                   <div>
-                    <label style={labelStyle}>Senha</label>
-                    <input type="password" value={newPass} onChange={e=>setNewPass(e.target.value)} style={inputStyle} placeholder="Mín. 6 caracteres"/>
+                    <label style={lbl2}>Senha</label>
+                    <input type="password" value={newPass} onChange={e=>setNewPass(e.target.value)} style={inp2} placeholder="Mín. 6 caracteres"/>
                   </div>
                   <div>
-                    <label style={labelStyle}>Confirmar senha</label>
-                    <input type="password" value={newPass2} onChange={e=>setNewPass2(e.target.value)} style={inputStyle} placeholder="Repita a senha"/>
+                    <label style={lbl2}>Confirmar senha</label>
+                    <input type="password" value={newPass2} onChange={e=>setNewPass2(e.target.value)} style={inp2} placeholder="Repita"/>
                   </div>
                 </div>
 
@@ -520,16 +545,17 @@ function LoginScreen({users, onLogin, onCreateAccount}){
   );
 }
 
+
 function App() {
   // ===== SISTEMA DE LOGIN =====
   const AUTH_KEY = "crm_session_v1";
   const USERS_KEY = "crm_users_v1";
 
   const DEFAULT_USERS = [
-    {id:"gestor1",  name:"Elieser Fernandes", code:"EF", role:"gestor",      password:"sinuelo2026", active:true},
-    {id:"consul1",  name:"Consultor",          code:"CS", role:"consultor",   password:"consul2026",  active:true, team:["EF","CS"]},
-    {id:"vend1",    name:"Vendedor",           code:"VD", role:"vendedor",    password:"vend2026",    active:true},
-    {id:"eng1",     name:"Engenheiro Aplic.",  code:"EA", role:"engenheiro",  password:"eng2026",     active:true},
+    {id:"gestor1", name:"Elieser Fernandes",   code:"EF", email:"ef@sinuelo.com.br",  role:"gestor",     password:"sinuelo2026", active:true},
+    {id:"consul1", name:"Consultor",            code:"CS", email:"cs@sinuelo.com.br",  role:"consultor",  password:"consul2026",  active:true, team:["EF","CS"]},
+    {id:"vend1",   name:"Vendedor",             code:"VD", email:"vd@sinuelo.com.br",  role:"vendedor",   password:"vend2026",    active:true},
+    {id:"eng1",    name:"Engenheiro Aplic.",    code:"EA", email:"ea@sinuelo.com.br",  role:"engenheiro", password:"eng2026",     active:true},
   ];
 
   const [users, setUsers] = React.useState(()=>{
@@ -541,10 +567,15 @@ function App() {
     try{ const r=localStorage.getItem(AUTH_KEY); return r?JSON.parse(r):null; }catch(e){ return null; }
   });
 
-  function doLogin(userId, password){
-    const user = users.find(u=>u.id===userId && u.password===password && u.active);
+  function doLogin(email, password){
+    const emailLower = (email||"").trim().toLowerCase();
+    const user = users.find(u=>
+      (u.email||"").toLowerCase()===emailLower &&
+      u.password===password &&
+      u.active
+    );
     if(!user) return false;
-    const s = {userId:user.id, role:user.role, code:user.code, name:user.name, team:user.team||[user.code]};
+    const s = {userId:user.id, role:user.role, code:user.code, name:user.name, email:user.email||"", team:user.team||[user.code]};
     setSession(s);
     try{ localStorage.setItem(AUTH_KEY,JSON.stringify(s)); }catch(e){}
     return true;
@@ -3931,6 +3962,10 @@ function App() {
                         <input value={u.name} onChange={e=>{ const upd=[...users]; upd[i]={...u,name:e.target.value}; saveUsers(upd); }}
                           style={{...inp,fontSize:"11px",padding:"3px 7px",flex:1}} placeholder="Nome"/>
                         {u.pendente&&<span style={{fontSize:"9px",padding:"1px 6px",borderRadius:"5px",background:"rgba(239,159,39,0.15)",color:"#EF9F27",fontWeight:700,flexShrink:0,whiteSpace:"nowrap"}}>⏳ Pendente</span>}
+                      </div>
+                      <div style={{marginBottom:"3px"}}>
+                        <input value={u.email||""} onChange={e=>{ const upd=[...users]; upd[i]={...u,email:e.target.value.toLowerCase()}; saveUsers(upd); }}
+                          style={{...inp,fontSize:"10px",padding:"2px 7px"}} placeholder="e-mail (login)"/>
                       </div>
                       <div style={{display:"flex",gap:"4px"}}>
                         <input value={u.code} onChange={e=>{ const upd=[...users]; upd[i]={...u,code:e.target.value.toUpperCase().slice(0,4)}; saveUsers(upd); }}
