@@ -445,31 +445,11 @@ function LoginScreen({users, onLogin, onCreateAccount}){
               {loading?"Entrando...":"Entrar →"}
             </button>
 
-            {/* Referência rápida de e-mails */}
-            <div style={{marginTop:"16px",padding:"10px",borderRadius:"8px",background:"rgba(0,0,0,0.03)",border:"1px solid rgba(0,0,0,0.06)"}}>
-              <div style={{fontSize:"10px",color:"#94A3B8",marginBottom:"6px",fontWeight:600,textTransform:"uppercase",letterSpacing:".06em"}}>Usuários cadastrados</div>
-              {users.filter(u=>u.active).map(u=>(
-                <div key={u.id} onClick={()=>{setEmail(u.email||"");setError("");}}
-                  style={{display:"flex",alignItems:"center",gap:"8px",padding:"5px 6px",borderRadius:"6px",cursor:"pointer",transition:"background .1s"}}
-                  onMouseEnter={e=>e.currentTarget.style.background="rgba(0,0,0,0.04)"}
-                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                  <div style={{width:"22px",height:"22px",borderRadius:"5px",background:ROLE_COLORS[u.role]+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                    <span style={{fontSize:"9px",fontWeight:700,color:ROLE_COLORS[u.role]}}>{u.code}</span>
-                  </div>
-                  <div style={{flex:1,minWidth:0}}>
-                    <span style={{fontSize:"11px",fontWeight:600,color:"#334155"}}>{u.name}</span>
-                    <span style={{fontSize:"10px",color:"#94A3B8",marginLeft:"6px"}}>{u.email||"—"}</span>
-                  </div>
-                  <span style={{fontSize:"9px",color:"#CBD5E1"}}>{ROLE_LABELS[u.role]}</span>
-                </div>
-              ))}
-              {pendentes.length>0&&(
-                <div style={{marginTop:"6px",padding:"6px 8px",borderRadius:"6px",background:"rgba(239,159,39,0.08)",border:"1px solid rgba(239,159,39,0.2)"}}>
-                  <div style={{fontSize:"10px",color:"#EF9F27",fontWeight:600}}>⏳ {pendentes.length} conta{pendentes.length>1?"s":""} aguardando ativação:</div>
-                  {pendentes.map(u=><div key={u.id} style={{fontSize:"10px",color:"#92400E",marginTop:"2px"}}>• {u.name} ({u.email||u.code})</div>)}
-                </div>
-              )}
-            </div>
+            {pendentes.length>0&&(
+              <div style={{marginTop:"14px",padding:"8px 12px",borderRadius:"8px",background:"rgba(239,159,39,0.08)",border:"1px solid rgba(239,159,39,0.2)"}}>
+                <div style={{fontSize:"10px",color:"#EF9F27",fontWeight:600}}>⏳ {pendentes.length} conta{pendentes.length>1?"s":""} aguardando ativação pelo gestor.</div>
+              </div>
+            )}
           </form>
         )}
 
