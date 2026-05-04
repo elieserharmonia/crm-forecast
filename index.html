@@ -319,11 +319,20 @@ function saveData(d) {
 }
 
 // ── TELA DE LOGIN ─────────────────────────────────────────────────────
-function LoginScreen({users, onLogin}){
+function LoginScreen({users, onLogin, onCreateAccount}){
+  const [mode, setMode] = React.useState("login"); // "login" | "new"
   const [selUser, setSelUser] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
+
+  // Campos nova conta
+  const [newName, setNewName] = React.useState("");
+  const [newCode, setNewCode] = React.useState("");
+  const [newRole, setNewRole] = React.useState("vendedor");
+  const [newPass, setNewPass] = React.useState("");
+  const [newPass2, setNewPass2] = React.useState("");
+  const [newSuccess, setNewSuccess] = React.useState(false);
 
   const ROLE_LABELS = {gestor:"Gestor",consultor:"Consultor",vendedor:"Vendedor",engenheiro:"Engenheiro de Aplicação"};
   const ROLE_COLORS = {gestor:"#8C1A1A",consultor:"#185FA5",vendedor:"#1D9E75",engenheiro:"#7F77DD"};
@@ -340,70 +349,170 @@ function LoginScreen({users, onLogin}){
     }, 400);
   }
 
+  function handleCreate(e){
+    e.preventDefault();
+    if(!newName.trim()){ setError("Digite seu nome completo."); return; }
+    if(!newCode.trim()){ setError("Digite suas iniciais (ex: AB)."); return; }
+    if(!newPass){ setError("Digite uma senha."); return; }
+    if(newPass !== newPass2){ setError("As senhas não coincidem."); return; }
+    if(newPass.length < 6){ setError("Senha deve ter ao menos 6 caracteres."); return; }
+    const codeUp = newCode.toUpperCase().slice(0,4);
+    if(users.find(u=>u.code===codeUp)){ setError(`Iniciais "${codeUp}" já estão em uso. Escolha outras.`); return; }
+    onCreateAccount({
+      id: "user_"+Date.now(),
+      name: newName.trim(),
+      code: codeUp,
+      role: newRole,
+      password: newPass,
+      active: true,
+    });
+    setNewSuccess(true);
+    setError("");
+    setTimeout(()=>{ setMode("login"); setNewSuccess(false); setNewName(""); setNewCode(""); setNewPass(""); setNewPass2(""); }, 2000);
+  }
+
   const selectedUser = users.find(u=>u.id===selUser);
 
-  return (
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#0F1117 0%,#1a1a2e 50%,#0F1117 100%)",fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"}}>
-      <div style={{width:"100%",maxWidth:"400px",padding:"16px"}}>
+  const logoSvg = (
+    <div style={{width:"64px",height:"64px",borderRadius:"14px",background:"rgba(140,26,26,0.12)",border:"1px solid rgba(140,26,26,0.25)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px"}}>
+      <svg width="36" height="36" viewBox="0 0 100 100" fill="none">
+        <circle cx="50" cy="42" r="28" stroke="#DC2626" strokeWidth="5" fill="none"/>
+        <path d="M50 14 L70 55" stroke="#DC2626" strokeWidth="5" strokeLinecap="round"/>
+        <rect x="30" y="55" width="8" height="16" rx="1" fill="#DC2626"/>
+        <rect x="42" y="48" width="8" height="23" rx="1" fill="#DC2626"/>
+        <rect x="54" y="41" width="8" height="30" rx="1" fill="#DC2626"/>
+        <path d="M25 70 Q40 78 50 78 Q60 78 75 70" stroke="#DC2626" strokeWidth="4" fill="none" strokeLinecap="round"/>
+        <path d="M20 70 Q35 82 50 82 Q65 82 80 70" stroke="#DC2626" strokeWidth="3" fill="none" strokeLinecap="round" opacity="0.5"/>
+      </svg>
+    </div>
+  );
 
-        {/* Logo e nome */}
-        <div style={{textAlign:"center",marginBottom:"32px"}}>
-          <div style={{width:"72px",height:"72px",borderRadius:"16px",background:"rgba(140,26,26,0.15)",border:"1px solid rgba(140,26,26,0.3)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}>
-            <svg width="40" height="40" viewBox="0 0 100 100" fill="none">
-              <circle cx="50" cy="42" r="28" stroke="#DC2626" strokeWidth="5" fill="none"/>
-              <path d="M50 14 L70 55" stroke="#DC2626" strokeWidth="5" strokeLinecap="round"/>
-              <rect x="30" y="55" width="8" height="16" rx="1" fill="#DC2626"/>
-              <rect x="42" y="48" width="8" height="23" rx="1" fill="#DC2626"/>
-              <rect x="54" y="41" width="8" height="30" rx="1" fill="#DC2626"/>
-              <path d="M25 70 Q40 78 50 78 Q60 78 75 70" stroke="#DC2626" strokeWidth="4" fill="none" strokeLinecap="round"/>
-              <path d="M20 70 Q35 82 50 82 Q65 82 80 70" stroke="#DC2626" strokeWidth="3" fill="none" strokeLinecap="round" opacity="0.5"/>
-            </svg>
-          </div>
-          <div style={{fontSize:"22px",fontWeight:700,color:"#fff",letterSpacing:"-.02em"}}>CRM-FORECAST B2B</div>
-          <div style={{fontSize:"12px",color:"rgba(255,255,255,0.4)",marginTop:"4px"}}>Sinuelo Torque+Controle</div>
+  const cardStyle = {background:"rgba(255,255,255,0.92)",border:"1px solid rgba(0,0,0,0.08)",borderRadius:"14px",padding:"24px",boxShadow:"0 4px 24px rgba(0,0,0,0.10)"};
+  const inputStyle = {width:"100%",padding:"10px 13px",fontSize:"13px",borderRadius:"8px",border:"1px solid rgba(0,0,0,0.12)",background:"#fff",color:"#1E293B",outline:"none",boxSizing:"border-box"};
+  const labelStyle = {fontSize:"11px",color:"#475569",display:"block",marginBottom:"5px",textTransform:"uppercase",letterSpacing:".07em"};
+
+  return (
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#C8CDD5 0%,#DDE1E7 50%,#C8CDD5 100%)",fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"}}>
+      <div style={{width:"100%",maxWidth:"420px",padding:"16px"}}>
+
+        {/* Header */}
+        <div style={{textAlign:"center",marginBottom:"24px"}}>
+          {logoSvg}
+          <div style={{fontSize:"21px",fontWeight:700,color:"#1E293B",letterSpacing:"-.02em"}}>CRM-FORECAST B2B</div>
+          <div style={{fontSize:"12px",color:"#64748B",marginTop:"3px"}}>Sinuelo Torque+Controle</div>
         </div>
 
-        {/* Card de login */}
-        <form onSubmit={handleLogin} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:"14px",padding:"28px"}}>
-          <div style={{marginBottom:"18px"}}>
-            <label style={{fontSize:"11px",color:"rgba(255,255,255,0.5)",display:"block",marginBottom:"8px",textTransform:"uppercase",letterSpacing:".08em"}}>Usuário</label>
-            <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
-              {users.filter(u=>u.active).map(u=>(
-                <div key={u.id} onClick={()=>{setSelUser(u.id);setError("");}}
-                  style={{display:"flex",alignItems:"center",gap:"10px",padding:"10px 12px",borderRadius:"8px",background:selUser===u.id?"rgba(140,26,26,0.2)":"rgba(255,255,255,0.04)",border:`1px solid ${selUser===u.id?"rgba(140,26,26,0.6)":"rgba(255,255,255,0.08)"}`,cursor:"pointer",transition:"all .15s"}}>
-                  <div style={{width:"32px",height:"32px",borderRadius:"8px",background:ROLE_COLORS[u.role]+"33",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                    <span style={{fontSize:"12px",fontWeight:700,color:ROLE_COLORS[u.role]}}>{u.code}</span>
+        {/* Tabs Login / Nova conta */}
+        <div style={{display:"flex",gap:"4px",marginBottom:"16px",background:"rgba(0,0,0,0.06)",borderRadius:"10px",padding:"4px"}}>
+          {[["login","Entrar"],["new","Nova conta"]].map(([m,l])=>(
+            <button key={m} onClick={()=>{setMode(m);setError("");setPassword("");setSelUser("");}}
+              style={{flex:1,padding:"8px",fontSize:"13px",fontWeight:mode===m?700:500,borderRadius:"7px",border:"none",background:mode===m?"#fff":"transparent",color:mode===m?"#1E293B":"#64748B",cursor:"pointer",boxShadow:mode===m?"0 1px 4px rgba(0,0,0,0.12)":"none",transition:"all .15s"}}>
+              {m==="login"?"🔐 "+l:"✨ "+l}
+            </button>
+          ))}
+        </div>
+
+        {/* ===== LOGIN ===== */}
+        {mode==="login"&&(
+          <form onSubmit={handleLogin} style={cardStyle}>
+            <div style={{marginBottom:"16px"}}>
+              <label style={labelStyle}>Selecione seu usuário</label>
+              <div style={{display:"flex",flexDirection:"column",gap:"5px"}}>
+                {users.filter(u=>u.active).map(u=>(
+                  <div key={u.id} onClick={()=>{setSelUser(u.id);setError("");setPassword("");}}
+                    style={{display:"flex",alignItems:"center",gap:"10px",padding:"9px 12px",borderRadius:"8px",background:selUser===u.id?"rgba(140,26,26,0.08)":"rgba(0,0,0,0.02)",border:`1px solid ${selUser===u.id?"rgba(140,26,26,0.4)":"rgba(0,0,0,0.08)"}`,cursor:"pointer",transition:"all .12s"}}>
+                    <div style={{width:"30px",height:"30px",borderRadius:"7px",background:ROLE_COLORS[u.role]+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                      <span style={{fontSize:"11px",fontWeight:700,color:ROLE_COLORS[u.role]}}>{u.code}</span>
+                    </div>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:"13px",fontWeight:600,color:"#1E293B"}}>{u.name}</div>
+                      <div style={{fontSize:"10px",color:"#64748B"}}>{ROLE_LABELS[u.role]||u.role}</div>
+                    </div>
+                    <div style={{width:"15px",height:"15px",borderRadius:"50%",border:`2px solid ${selUser===u.id?"#8C1A1A":"rgba(0,0,0,0.15)"}`,background:selUser===u.id?"#8C1A1A":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                      {selUser===u.id&&<div style={{width:"5px",height:"5px",borderRadius:"50%",background:"#fff"}}/>}
+                    </div>
                   </div>
-                  <div style={{flex:1}}>
-                    <div style={{fontSize:"13px",fontWeight:600,color:"#fff"}}>{u.name}</div>
-                    <div style={{fontSize:"10px",color:"rgba(255,255,255,0.4)"}}>{ROLE_LABELS[u.role]||u.role}</div>
+                ))}
+              </div>
+            </div>
+
+            {selectedUser&&(
+              <div style={{marginBottom:"16px"}}>
+                <label style={labelStyle}>Senha</label>
+                <input type="password" value={password} onChange={e=>{setPassword(e.target.value);setError("");}}
+                  placeholder="Digite sua senha..." autoFocus style={inputStyle}/>
+              </div>
+            )}
+
+            {error&&<div style={{fontSize:"12px",color:"#EF4444",marginBottom:"12px",padding:"8px 12px",borderRadius:"6px",background:"rgba(239,68,68,0.08)"}}>{error}</div>}
+
+            <button type="submit" disabled={!selUser||!password||loading}
+              style={{width:"100%",padding:"11px",fontSize:"14px",fontWeight:700,borderRadius:"8px",border:"none",background:!selUser||!password?"rgba(140,26,26,0.25)":"#8C1A1A",color:!selUser||!password?"rgba(255,208,208,0.5)":"#FFD0D0",cursor:!selUser||!password?"not-allowed":"pointer",transition:"all .15s"}}>
+              {loading?"Entrando...":"Entrar →"}
+            </button>
+          </form>
+        )}
+
+        {/* ===== NOVA CONTA ===== */}
+        {mode==="new"&&(
+          <form onSubmit={handleCreate} style={cardStyle}>
+            {newSuccess?(
+              <div style={{textAlign:"center",padding:"20px 0"}}>
+                <div style={{fontSize:"36px",marginBottom:"12px"}}>✅</div>
+                <div style={{fontSize:"14px",fontWeight:600,color:"#1D9E75"}}>Conta criada com sucesso!</div>
+                <div style={{fontSize:"12px",color:"#64748B",marginTop:"4px"}}>Redirecionando para o login...</div>
+              </div>
+            ):(
+              <>
+                <div style={{fontSize:"11px",color:"#64748B",marginBottom:"16px",padding:"8px 12px",borderRadius:"6px",background:"rgba(24,95,165,0.06)",border:"1px solid rgba(24,95,165,0.15)"}}>
+                  ℹ️ A conta ficará <strong>pendente de ativação</strong> pelo gestor antes de poder acessar o sistema.
+                </div>
+
+                <div style={{display:"grid",gridTemplateColumns:"1fr 80px",gap:"10px",marginBottom:"12px"}}>
+                  <div>
+                    <label style={labelStyle}>Nome completo</label>
+                    <input value={newName} onChange={e=>setNewName(e.target.value)} style={inputStyle} placeholder="Ex: João da Silva"/>
                   </div>
-                  <div style={{width:"16px",height:"16px",borderRadius:"50%",border:`2px solid ${selUser===u.id?"#8C1A1A":"rgba(255,255,255,0.2)"}`,background:selUser===u.id?"#8C1A1A":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                    {selUser===u.id&&<div style={{width:"5px",height:"5px",borderRadius:"50%",background:"#fff"}}/>}
+                  <div>
+                    <label style={labelStyle}>Iniciais</label>
+                    <input value={newCode} onChange={e=>setNewCode(e.target.value.toUpperCase().slice(0,4))} style={inputStyle} placeholder="JS" maxLength={4}/>
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
 
-          {selectedUser&&(
-            <div style={{marginBottom:"18px"}}>
-              <label style={{fontSize:"11px",color:"rgba(255,255,255,0.5)",display:"block",marginBottom:"6px",textTransform:"uppercase",letterSpacing:".08em"}}>Senha</label>
-              <input type="password" value={password} onChange={e=>{setPassword(e.target.value);setError("");}}
-                placeholder="Digite sua senha..." autoFocus
-                style={{width:"100%",padding:"11px 14px",fontSize:"14px",borderRadius:"8px",border:`1px solid ${error?"rgba(226,75,74,0.6)":"rgba(255,255,255,0.12)"}`,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none",boxSizing:"border-box"}}/>
-            </div>
-          )}
+                <div style={{marginBottom:"12px"}}>
+                  <label style={labelStyle}>Perfil de acesso</label>
+                  <select value={newRole} onChange={e=>setNewRole(e.target.value)}
+                    style={{...inputStyle,appearance:"none",cursor:"pointer"}}>
+                    <option value="vendedor">Vendedor — vê suas oportunidades</option>
+                    <option value="engenheiro">Engenheiro de Aplicação — vê seus projetos</option>
+                    <option value="consultor">Consultor — vê toda a equipe</option>
+                    <option value="gestor">Gestor — acesso total</option>
+                  </select>
+                </div>
 
-          {error&&<div style={{fontSize:"12px",color:"#EF4444",marginBottom:"14px",padding:"8px 12px",borderRadius:"6px",background:"rgba(239,68,68,0.1)"}}>{error}</div>}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px",marginBottom:"16px"}}>
+                  <div>
+                    <label style={labelStyle}>Senha</label>
+                    <input type="password" value={newPass} onChange={e=>setNewPass(e.target.value)} style={inputStyle} placeholder="Mín. 6 caracteres"/>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Confirmar senha</label>
+                    <input type="password" value={newPass2} onChange={e=>setNewPass2(e.target.value)} style={inputStyle} placeholder="Repita a senha"/>
+                  </div>
+                </div>
 
-          <button type="submit" disabled={!selUser||!password||loading}
-            style={{width:"100%",padding:"12px",fontSize:"14px",fontWeight:700,borderRadius:"8px",border:"none",background:!selUser||!password?"rgba(140,26,26,0.3)":"#8C1A1A",color:!selUser||!password?"rgba(255,208,208,0.4)":"#FFD0D0",cursor:!selUser||!password?"not-allowed":"pointer",transition:"all .15s"}}>
-            {loading?"Entrando...":"Entrar →"}
-          </button>
-        </form>
+                {error&&<div style={{fontSize:"12px",color:"#EF4444",marginBottom:"12px",padding:"8px 12px",borderRadius:"6px",background:"rgba(239,68,68,0.08)"}}>{error}</div>}
 
-        <div style={{textAlign:"center",marginTop:"20px",fontSize:"10px",color:"rgba(255,255,255,0.2)"}}>
+                <button type="submit"
+                  style={{width:"100%",padding:"11px",fontSize:"14px",fontWeight:700,borderRadius:"8px",border:"none",background:"#8C1A1A",color:"#FFD0D0",cursor:"pointer"}}>
+                  ✨ Criar minha conta
+                </button>
+              </>
+            )}
+          </form>
+        )}
+
+        <div style={{textAlign:"center",marginTop:"16px",fontSize:"10px",color:"#94A3B8"}}>
           Sinuelo Torque+Controle · CRM-FORECAST B2B · v2.0
         </div>
       </div>
@@ -440,6 +549,13 @@ function App() {
     try{ localStorage.setItem(AUTH_KEY,JSON.stringify(s)); }catch(e){}
     return true;
   }
+
+  function doCreateAccount(newUser){
+    // Nova conta criada como INATIVA — gestor precisa ativar em Configurações
+    const u = {...newUser, active:false, pendente:true};
+    saveUsers([...users, u]);
+  }
+
   function doLogout(){
     setSession(null);
     try{ localStorage.removeItem(AUTH_KEY); }catch(e){}
@@ -447,7 +563,7 @@ function App() {
 
   // Tela de login
   if(!session){
-    return <LoginScreen users={users} onLogin={doLogin}/>;
+    return <LoginScreen users={users} onLogin={doLogin} onCreateAccount={doCreateAccount}/>;
   }
 
   // Derivar permissões da sessão
@@ -506,7 +622,7 @@ function App() {
   const [profile, setProfile] = useState(() => { try { const r=localStorage.getItem(PROFILE_KEY); return r?JSON.parse(r):{companyName:"Sinuelo Torque+Controle",userName:"Elieser Fernandes",role:"Gestor Comercial",email:"",linkedin:"",phone:"",photo:"",region:"SP"}; } catch(e) { return {}; }});
   const [profileEdit, setProfileEdit] = useState(false);
   const [profileDraft, setProfileDraft] = useState({});
-  function saveProfile(p){ setProfile(p); try{ localStorage.setItem(PROFILE_KEY,JSON.stringify(p)); }catch{} setProfileEdit(false); }
+  function saveProfile(p){ setProfile(p); try{ localStorage.setItem(PROFILE_KEY,JSON.stringify(p)); }catch(e){} setProfileEdit(false); }
 
   // BUDGET
   const BUDGET_KEY = "crm_budget_v2";
@@ -519,7 +635,7 @@ function App() {
   const [selBudget, setSelBudget] = useState(null); // budget profile modal
   const [contactModal, setContactModal] = useState(false); // contact profile modal
   const [contactData, setContactData] = useState({name:"",phone:"",company:""}); // data shown in modal
-  function saveBudgets(b){ setBudgets(b); try{ localStorage.setItem(BUDGET_KEY,JSON.stringify(b)); }catch{}; }
+  function saveBudgets(b){ setBudgets(b); try{ localStorage.setItem(BUDGET_KEY,JSON.stringify(b)); }catch(e){}; }
   function addBudget(){
     if(!budgetForm.supplier&&!budgetForm.client) return;
     const b = {...budgetForm, id:Date.now(), targetAnual:Number(budgetForm.targetAnual)||0, target1s:Number(budgetForm.target1s)||0, target2s:Number(budgetForm.target2s)||0, realized1s:Number(budgetForm.realized1s)||0, realized2s:Number(budgetForm.realized2s)||0, realizedManual:Number(budgetForm.realizedManual)||0 };
@@ -556,7 +672,7 @@ function App() {
   const [posVendas, setPosVendas] = useState(() => { try { const r=localStorage.getItem(POSV_KEY); return r?JSON.parse(r):[]; } catch(e) { return []; }});
   const [posModal, setPosModal] = useState(false);
   const [posForm, setPosForm] = useState({client:"",contact:"",nf:"",po:"",orcamento:"",deliveryDate:"",status:"pendente",deliveryType:"total",value:0,notes:"",issue:""});
-  function savePosVendas(p){ setPosVendas(p); try{ localStorage.setItem(POSV_KEY,JSON.stringify(p)); }catch{}; }
+  function savePosVendas(p){ setPosVendas(p); try{ localStorage.setItem(POSV_KEY,JSON.stringify(p)); }catch(e){}; }
   function addPosVenda(){ if(!posForm.client) return; savePosVendas([...posVendas,{...posForm,id:Date.now(),value:Number(posForm.value)}]); setPosForm({client:"",contact:"",nf:"",po:"",orcamento:"",deliveryDate:"",status:"pendente",deliveryType:"total",value:0,notes:"",issue:""}); setPosModal(false); }
   function delPosVenda(id){ savePosVendas(posVendas.filter(p=>p.id!==id)); }
   function updatePosVenda(upd){ savePosVendas(posVendas.map(p=>p.id===upd.id?upd:p)); }
@@ -597,7 +713,7 @@ function App() {
     setItemSearchResults(results);
   }
   const [orcForm, setOrcForm] = useState({number:"",client:"",contact:"",supplier:"",value:0,valueComIPI:0,valueComICMS:0,date:"",status:"aberto",oppId:"",notes:"",fileName:"",items:[]});
-  function saveOrcamentos(o){ setOrcamentos(o); try{ localStorage.setItem(ORC_KEY,JSON.stringify(o)); }catch{}; }
+  function saveOrcamentos(o){ setOrcamentos(o); try{ localStorage.setItem(ORC_KEY,JSON.stringify(o)); }catch(e){}; }
   function addOrcamento(){ if(!orcForm.number||!orcForm.client) return; saveOrcamentos([...orcamentos,{...orcForm,id:Date.now(),value:Number(orcForm.value),valueComIPI:Number(orcForm.valueComIPI||0),valueComICMS:Number(orcForm.valueComICMS||0)}]); setOrcForm({number:"",client:"",contact:"",supplier:"",value:0,valueComIPI:0,valueComICMS:0,date:"",status:"aberto",oppId:"",notes:"",fileName:"",items:[]}); setOrcModal(false); }
   function delOrcamento(id){ saveOrcamentos(orcamentos.filter(o=>o.id!==id)); }
 
@@ -626,7 +742,7 @@ function App() {
   const [projModal, setProjModal] = useState(false);
   const [projForm, setProjForm] = useState(emptyProj);
   const [selProj, setSelProj] = useState(null);
-  function saveProjetos(p){ setProjetos(p); try{ localStorage.setItem(PROJ_KEY,JSON.stringify(p)); }catch{}; }
+  function saveProjetos(p){ setProjetos(p); try{ localStorage.setItem(PROJ_KEY,JSON.stringify(p)); }catch(e){}; }
   function addProjeto(){ if(!projForm.name) return; saveProjetos([...projetos,{...projForm,id:Date.now(),createdAt:new Date().toISOString().slice(0,10)}]); setProjForm(emptyProj); setProjModal(false); }
   function delProjeto(id){ saveProjetos(projetos.filter(p=>p.id!==id)); if(selProj?.id===id)setSelProj(null); }
   function updateProj(u){ saveProjetos(projetos.map(p=>p.id===u.id?u:p)); setSelProj(u); }
@@ -643,8 +759,8 @@ function App() {
   const [notifSettings, setNotifSettings] = useState(()=>{ try{ const r=localStorage.getItem(NOTIF_KEY); return r?JSON.parse(r):{enabled:true,minutesBefore:60,bellEnabled:true}; }catch{ return {enabled:true,minutesBefore:60,bellEnabled:true}; }});
   const [bellAlert, setBellAlert] = useState(null);
   const [taskSearch, setTaskSearch] = useState("");
-  function saveTasks(t){ setTasks(t); try{ localStorage.setItem(TASKS_KEY,JSON.stringify(t)); }catch{}; }
-  function saveNotifSettings(n){ setNotifSettings(n); try{ localStorage.setItem(NOTIF_KEY,JSON.stringify(n)); }catch{}; }
+  function saveTasks(t){ setTasks(t); try{ localStorage.setItem(TASKS_KEY,JSON.stringify(t)); }catch(e){}; }
+  function saveNotifSettings(n){ setNotifSettings(n); try{ localStorage.setItem(NOTIF_KEY,JSON.stringify(n)); }catch(e){}; }
   function addTask(){ if(!taskForm.title) return; saveTasks([...tasks,{...taskForm,id:Date.now().toString(),createdAt:new Date().toISOString().slice(0,10),history:[]}]); setTaskForm(emptyTask); setTaskModal(false); }
   function delTask(id){ saveTasks(tasks.filter(t=>t.id!==id)); }
   function toggleTaskDone(id){ saveTasks(tasks.map(t=>t.id===id?{...t,done:!t.done}:t)); }
@@ -742,7 +858,7 @@ function App() {
       return s;
     }catch{ return defaultSettings; }
   });
-  function saveSettings(s){ setSettings(s); try{ localStorage.setItem(SETTINGS_KEY,JSON.stringify(s)); }catch{}; }
+  function saveSettings(s){ setSettings(s); try{ localStorage.setItem(SETTINGS_KEY,JSON.stringify(s)); }catch(e){}; }
   // Draft local para larguras das colunas (sincroniza com settings já migrado)
   const [colWidthDraft, setColWidthDraft] = useState(()=>{
     try{
@@ -774,7 +890,7 @@ function App() {
   const [intelReport, setIntelReport] = useState(()=>{ try{ const r=localStorage.getItem(INTEL_KEY); return r?JSON.parse(r):null; }catch{ return null; } });
   const [intelLoading, setIntelLoading] = useState(false);
   const [intelError, setIntelError] = useState("");
-  function saveIntelReport(r){ setIntelReport(r); try{ localStorage.setItem(INTEL_KEY,JSON.stringify(r)); }catch{}; }
+  function saveIntelReport(r){ setIntelReport(r); try{ localStorage.setItem(INTEL_KEY,JSON.stringify(r)); }catch(e){}; }
 
   // Função principal: executa a análise diária de inteligência comercial
   async function runIntelAnalysis(){
@@ -866,7 +982,7 @@ function App() {
     saveIntelReport(report);
     setIntelLoading(false);
   }
-  function saveClients(c){ setClientsData(c); try{ localStorage.setItem(CLIENTS_KEY,JSON.stringify(c)); }catch{}; }
+  function saveClients(c){ setClientsData(c); try{ localStorage.setItem(CLIENTS_KEY,JSON.stringify(c)); }catch(e){}; }
 
   // Salva foto/linkedin em um contato específico
   function updateClientContact(clientAlias, contactIdx, updates){
@@ -3806,13 +3922,16 @@ function App() {
               <div style={{fontSize:"12px",fontWeight:600,color:"var(--text-secondary)",textTransform:"uppercase",letterSpacing:".08em",marginBottom:"8px"}}>Usuários / Acessos</div>
               <div style={{background:"var(--bg-card2)",borderRadius:"8px",overflow:"hidden"}}>
                 {users.map((u,i)=>(
-                  <div key={u.id} style={{padding:"10px 12px",borderBottom:"1px solid var(--border2)",display:"flex",gap:"8px",alignItems:"center"}}>
+                  <div key={u.id} style={{padding:"10px 12px",borderBottom:"1px solid var(--border2)",display:"flex",gap:"8px",alignItems:"center",background:u.pendente?"rgba(239,159,39,0.06)":"transparent"}}>
                     <div style={{width:"28px",height:"28px",borderRadius:"6px",background:`rgba(${u.role==="gestor"?"140,26,26":u.role==="consultor"?"24,95,165":u.role==="vendedor"?"29,158,117":"127,119,221"},0.15)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"10px",fontWeight:700,color:`${u.role==="gestor"?"#8C1A1A":u.role==="consultor"?"#185FA5":u.role==="vendedor"?"#1D9E75":"#7F77DD"}`,flexShrink:0}}>
                       {u.code}
                     </div>
                     <div style={{flex:1,minWidth:0}}>
-                      <input value={u.name} onChange={e=>{ const upd=[...users]; upd[i]={...u,name:e.target.value}; saveUsers(upd); }}
-                        style={{...inp,fontSize:"11px",padding:"3px 7px",marginBottom:"2px"}} placeholder="Nome"/>
+                      <div style={{display:"flex",alignItems:"center",gap:"5px",marginBottom:"2px"}}>
+                        <input value={u.name} onChange={e=>{ const upd=[...users]; upd[i]={...u,name:e.target.value}; saveUsers(upd); }}
+                          style={{...inp,fontSize:"11px",padding:"3px 7px",flex:1}} placeholder="Nome"/>
+                        {u.pendente&&<span style={{fontSize:"9px",padding:"1px 6px",borderRadius:"5px",background:"rgba(239,159,39,0.15)",color:"#EF9F27",fontWeight:700,flexShrink:0,whiteSpace:"nowrap"}}>⏳ Pendente</span>}
+                      </div>
                       <div style={{display:"flex",gap:"4px"}}>
                         <input value={u.code} onChange={e=>{ const upd=[...users]; upd[i]={...u,code:e.target.value.toUpperCase().slice(0,4)}; saveUsers(upd); }}
                           style={{...inp,fontSize:"10px",padding:"2px 6px",width:"50px"}} placeholder="Cód"/>
@@ -3825,9 +3944,9 @@ function App() {
                         </select>
                         <input value={u.password} onChange={e=>{ const upd=[...users]; upd[i]={...u,password:e.target.value}; saveUsers(upd); }}
                           style={{...inp,fontSize:"10px",padding:"2px 6px",width:"90px"}} placeholder="Senha"/>
-                        <button onClick={()=>{ const upd=[...users]; upd[i]={...u,active:!u.active}; saveUsers(upd); }}
-                          style={{padding:"2px 8px",fontSize:"10px",borderRadius:"4px",border:`1px solid ${u.active?"#1D9E75":"var(--border)"}`,background:u.active?"rgba(29,158,117,0.1)":"transparent",color:u.active?"#1D9E75":"var(--text-muted)",cursor:"pointer",flexShrink:0}}>
-                          {u.active?"Ativo":"Inativo"}
+                        <button onClick={()=>{ const upd=[...users]; upd[i]={...u,active:!u.active,pendente:false}; saveUsers(upd); }}
+                          style={{padding:"2px 8px",fontSize:"10px",borderRadius:"4px",border:`1px solid ${u.active?"#1D9E75":u.pendente?"#EF9F27":"var(--border)"}`,background:u.active?"rgba(29,158,117,0.1)":u.pendente?"rgba(239,159,39,0.12)":"transparent",color:u.active?"#1D9E75":u.pendente?"#EF9F27":"var(--text-muted)",cursor:"pointer",flexShrink:0,fontWeight:600}}>
+                          {u.active?"Ativo":u.pendente?"✓ Ativar":"Inativo"}
                         </button>
                       </div>
                     </div>
