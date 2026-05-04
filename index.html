@@ -431,9 +431,19 @@ function LoginScreen({users, onLogin, onCreateAccount}){
                 style={inp2}/>
             </div>
 
-            {/* Esqueci a senha — preparado para o futuro */}
+            {/* Esqueci a senha */}
             <div style={{textAlign:"right",marginBottom:"16px"}}>
-              <span style={{fontSize:"11px",color:"#94A3B8",cursor:"default"}} title="Em breve">
+              <span onClick={()=>{
+                const emailInput = email.trim();
+                if(!emailInput){ setError("Digite seu e-mail primeiro, depois clique em Esqueci minha senha."); return; }
+                const user = users.find(u=>(u.email||"").toLowerCase()===emailInput.toLowerCase());
+                if(!user){ setError("E-mail não encontrado. Verifique ou cadastre uma nova conta."); return; }
+                const novaSenha = window.prompt(`Redefinição de senha para: ${user.name}\n\nDigite uma nova senha (mínimo 6 caracteres):`);
+                if(novaSenha===null) return;
+                if(novaSenha.length<6){ alert("Senha deve ter ao menos 6 caracteres."); return; }
+                onCreateAccount({...user, password:novaSenha, _reset:true});
+                alert(`✅ Senha redefinida com sucesso!\n\nUsuário: ${user.name}\nNova senha salva.`);
+              }} style={{fontSize:"11px",color:"#8C1A1A",cursor:"pointer",textDecoration:"underline",textUnderlineOffset:"2px"}}>
                 Esqueci minha senha
               </span>
             </div>
@@ -562,7 +572,13 @@ function App() {
   }
 
   function doCreateAccount(newUser){
-    // Nova conta criada como INATIVA — gestor precisa ativar em Configurações
+    if(newUser._reset){
+      // Reset de senha — atualizar usuário existente
+      const upd = users.map(u=>u.id===newUser.id ? {...u, password:newUser.password} : u);
+      saveUsers(upd);
+      return;
+    }
+    // Nova conta criada como INATIVA — gestor precisa ativar
     const u = {...newUser, active:false, pendente:true};
     saveUsers([...users, u]);
   }
