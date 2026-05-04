@@ -912,7 +912,24 @@ function App() {
   const [clientNews, setClientNews] = useState([]); // notícias carregadas para o cliente aberto
   const [clientNewsLoading, setClientNewsLoading] = useState(false);
 
-  // === INTELIGÊNCIA COMERCIAL ===
+  // ===== ESTOQUE =====
+  const ESTOQUE_KEY = "crm_estoque_v1";
+  const [estoqueData, setEstoqueData] = React.useState(()=>{ try{ const r=localStorage.getItem(ESTOQUE_KEY); return r?JSON.parse(r):[]; }catch(e){ return []; } });
+  const [estoqueSearch, setEstoqueSearch] = React.useState("");
+  const [estoqueFilter, setEstoqueFilter] = React.useState(""); // filtro por marca/grupo
+  const [estoqueLoading, setEstoqueLoading] = React.useState(false);
+  function saveEstoque(d){ setEstoqueData(d); try{ localStorage.setItem(ESTOQUE_KEY,JSON.stringify(d)); }catch(e){} }
+
+  // ===== DEMO TT =====
+  const DEMO_KEY = "crm_demo_tt_v1";
+  const [demoList, setDemoList] = React.useState(()=>{ try{ const r=localStorage.getItem(DEMO_KEY); return r?JSON.parse(r):[]; }catch(e){ return []; } });
+  const [demoModal, setDemoModal] = React.useState(false);
+  const [demoForm, setDemoForm] = React.useState({cliente:"",contato:"",data:"",resp:"",itens:[{cod:"",desc:"",sigma:"",qtd:1,obs:""}]});
+  function saveDemoList(d){ setDemoList(d); try{ localStorage.setItem(DEMO_KEY,JSON.stringify(d)); }catch(e){} }
+
+  // ===== CONSULTA DE PREÇOS =====
+  const [precosSearch, setPrecosSearch] = React.useState("");
+  const [precosResultados, setPrecosResultados] = React.useState([]);
   const INTEL_KEY = "crm_intel_v1";
   const [intelReport, setIntelReport] = useState(()=>{ try{ const r=localStorage.getItem(INTEL_KEY); return r?JSON.parse(r):null; }catch{ return null; } });
   const [intelLoading, setIntelLoading] = useState(false);
@@ -1814,7 +1831,7 @@ function App() {
         <div className="sb-logo">
           <img src="data:image/png;base64,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" alt="Logo" style={{width:"28px",height:"28px",objectFit:"contain"}}/>
         </div>
-        {[["kanban","📊","Forecast"],["tasks","✓","Tarefas"],["clients","👥","Clientes"],["relatorio","📋","Relatório"],["posvendas","✅","Pós-venda"],["budget","💰","Budget"],["orcamentos","📝","Orçamentos"],["projetos","⚙","Projetos"],["intel","🧠","Radar"]].map(([v,icon,label])=>(
+        {[["kanban","📊","Forecast"],["tasks","✓","Tarefas"],["clients","👥","Clientes"],["relatorio","📋","Relatório"],["posvendas","✅","Pós-venda"],["budget","💰","Budget"],["orcamentos","📝","Orçamentos"],["projetos","⚙","Projetos"],["intel","🧠","Radar"],["estoque","📦","Estoque"],["demostool","🔧","Demo TT"],["precos","💲","Consulta Preço"]].map(([v,icon,label])=>(
           <button key={v} className={`crm-sidebar-btn${view===v?" active":""}`} onClick={()=>{setView(v);if(v!=="kanban")setSel(null);}}>
             <span style={{fontSize:"15px",flexShrink:0,lineHeight:1}}>{icon}</span>
             <span className="sb-label">{label}</span>
@@ -4707,6 +4724,344 @@ function App() {
               })()}
 
               })()}
+            </div>
+          );
+        })()}
+
+        {/* ===== ESTOQUE ===== */}
+        {view==="estoque" && (()=>{
+          async function importEstoque(e){
+            const file = e.target.files[0]; if(!file) return;
+            setEstoqueLoading(true);
+            try{
+              const XLSX = window.XLSX;
+              const buf = await file.arrayBuffer();
+              const wb = XLSX.read(buf);
+              const ws = wb.Sheets[wb.SheetNames[0]];
+              const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:""});
+              const items = [];
+              let grupoAtual = null;
+              for(const row of rows){
+                const r = row.map(c=>String(c||"").trim());
+                if(!r.some(x=>x)) continue;
+                if(/^\d+$/.test(r[0]) && r[1] && !r[2] && !r[3]){
+                  grupoAtual = {gc:r[0], gn:r[1]};
+                } else if(r[0].length>=6 && /^[\d.]+$/.test(r[0]) && r[1] && grupoAtual){
+                  try{
+                    const sf = parseFloat(r[5])||0;
+                    const sd = parseFloat(r[6])||0;
+                    const sigma = r[2]||r[3]||"";
+                    items.push({gc:grupoAtual.gc, gn:grupoAtual.gn, cod:r[0], desc:r[1], sigma, sf:Math.round(sf), sd:Math.round(sd)});
+                  }catch(ex){}
+                }
+              }
+              saveEstoque(items);
+              alert(`Estoque importado: ${items.length} itens em ${new Set(items.map(i=>i.gc)).size} grupos.`);
+            }catch(err){ alert("Erro ao importar: "+err.message); }
+            setEstoqueLoading(false);
+            e.target.value="";
+          }
+
+          const q = estoqueSearch.trim().toLowerCase();
+          const filtered = q.length>=2 ? estoqueData.filter(it=>
+            (estoqueFilter?it.gc===estoqueFilter:true) &&
+            (it.cod.toLowerCase().includes(q)||it.sigma.toLowerCase().includes(q)||it.desc.toLowerCase().includes(q))
+          ).slice(0,100) : [];
+
+          const grupos = [...new Map(estoqueData.map(it=>[it.gc,{gc:it.gc,gn:it.gn}])).values()].sort((a,b)=>a.gn.localeCompare(b.gn));
+
+          function copiarTabela(){
+            if(!filtered.length) return;
+            const linhas = ["QTDE\tDESCRIÇÃO\tCÓDIGO\tSIGMA", ...filtered.map(it=>`${it.sd}\t${it.desc}\t${it.cod}\t${it.sigma}`)];
+            navigator.clipboard.writeText(linhas.join("\n"));
+            alert("Tabela copiada! Cole com Ctrl+V no e-mail ou Excel.");
+          }
+
+          const inp3={padding:"9px 13px",fontSize:"12px",borderRadius:"8px",border:"1px solid var(--border)",background:"var(--bg-input)",color:"var(--text-primary)",boxSizing:"border-box"};
+
+          return (
+            <div style={{flex:1,display:"flex",flexDirection:"column",gap:"12px"}}>
+              <div style={{display:"flex",gap:"10px",alignItems:"center",flexWrap:"wrap"}}>
+                <input value={estoqueSearch} onChange={e=>setEstoqueSearch(e.target.value)}
+                  placeholder="Buscar por código, SIGMA ou descrição..." autoFocus
+                  style={{...inp3,flex:1,minWidth:"200px"}}/>
+                <select value={estoqueFilter} onChange={e=>setEstoqueFilter(e.target.value)}
+                  style={{...inp3,maxWidth:"220px",cursor:"pointer"}}>
+                  <option value="">Todas as marcas</option>
+                  {grupos.map(g=><option key={g.gc} value={g.gc}>{g.gn.replace("TORQUE TOOLS - ","").replace("METROLOGIA DIMENSIONAL - ","")}</option>)}
+                </select>
+                <label style={{padding:"8px 14px",fontSize:"12px",fontWeight:600,borderRadius:"8px",border:"1px solid #185FA5",background:"rgba(24,95,165,0.1)",color:"#185FA5",cursor:"pointer",whiteSpace:"nowrap"}}>
+                  {estoqueLoading?"Importando...":"📥 Importar planilha"}
+                  <input type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={importEstoque}/>
+                </label>
+                {filtered.length>0&&<button onClick={copiarTabela} style={{padding:"8px 14px",fontSize:"12px",fontWeight:600,borderRadius:"8px",border:"1px solid #1D9E75",background:"rgba(29,158,117,0.1)",color:"#1D9E75",cursor:"pointer",whiteSpace:"nowrap"}}>📋 Copiar tabela</button>}
+              </div>
+
+              {estoqueData.length===0?(
+                <div style={{textAlign:"center",padding:"60px 20px",color:"var(--text-muted)"}}>
+                  <div style={{fontSize:"36px",marginBottom:"14px"}}>📦</div>
+                  <div style={{fontSize:"14px",fontWeight:600,color:"var(--text-secondary)",marginBottom:"6px"}}>Nenhum estoque carregado</div>
+                  <div style={{fontSize:"12px",color:"var(--text-muted)",lineHeight:1.6}}>Clique em <b>📥 Importar planilha</b> e selecione o arquivo <b>estoque.xlsx</b></div>
+                </div>
+              ):q.length<2?(
+                <div style={{display:"flex",gap:"10px",flexWrap:"wrap",alignItems:"center"}}>
+                  <div style={{padding:"10px 14px",borderRadius:"8px",background:"var(--bg-card)",border:"1px solid var(--border)"}}>
+                    <span style={{fontWeight:700,color:"var(--text-primary)",fontSize:"18px"}}>{estoqueData.length.toLocaleString()}</span>
+                    <span style={{color:"var(--text-muted)",fontSize:"12px",marginLeft:"6px"}}>itens no estoque</span>
+                  </div>
+                  <div style={{padding:"10px 14px",borderRadius:"8px",background:"var(--bg-card)",border:"1px solid var(--border)"}}>
+                    <span style={{fontWeight:700,color:"var(--text-primary)",fontSize:"18px"}}>{grupos.length}</span>
+                    <span style={{color:"var(--text-muted)",fontSize:"12px",marginLeft:"6px"}}>marcas/grupos</span>
+                  </div>
+                  <div style={{padding:"10px 14px",borderRadius:"8px",background:"var(--bg-card)",border:"1px solid var(--border)"}}>
+                    <span style={{fontWeight:700,color:"#1D9E75",fontSize:"18px"}}>{estoqueData.filter(i=>i.sd>0).length.toLocaleString()}</span>
+                    <span style={{color:"var(--text-muted)",fontSize:"12px",marginLeft:"6px"}}>com saldo</span>
+                  </div>
+                  <span style={{color:"var(--text-muted)",fontSize:"11px"}}>Digite 2+ caracteres para buscar</span>
+                </div>
+              ):(
+                <>
+                  <div style={{fontSize:"11px",color:"var(--text-muted)"}}>{filtered.length} resultado{filtered.length!==1?"s":""}{filtered.length===100?" (máx 100 — refine a busca)":""}</div>
+                  <div style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"10px",overflow:"hidden"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:"12px",tableLayout:"fixed"}}>
+                      <thead><tr style={{background:"var(--bg-card2)"}}>
+                        {[["QTDE","70px"],["DESCRIÇÃO","auto"],["CÓDIGO","110px"],["SIGMA","110px"],["MARCA","150px"]].map(([h,w])=>(
+                          <th key={h} style={{padding:"8px 10px",textAlign:"left",color:"var(--text-secondary)",fontWeight:600,fontSize:"10px",borderBottom:"1px solid var(--border)",width:w}}>{h}</th>
+                        ))}
+                      </tr></thead>
+                      <tbody>
+                        {filtered.map((it,i)=>(
+                          <tr key={i} style={{borderBottom:"1px solid var(--border2)",background:i%2===0?"transparent":"rgba(255,255,255,0.015)"}}>
+                            <td style={{padding:"7px 10px",textAlign:"center"}}>
+                              <span style={{fontWeight:700,fontSize:"13px",color:it.sd>0?"#1D9E75":"#E24B4A"}}>{it.sd}</span>
+                            </td>
+                            <td style={{padding:"7px 10px",color:"var(--text-primary)",lineHeight:1.3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.desc}</td>
+                            <td style={{padding:"7px 10px",color:"var(--text-secondary)",fontFamily:"monospace",fontSize:"11px"}}>{it.cod}</td>
+                            <td style={{padding:"7px 10px",color:"var(--text-blue)",fontFamily:"monospace",fontSize:"11px"}}>{it.sigma}</td>
+                            <td style={{padding:"7px 10px",color:"var(--text-muted)",fontSize:"10px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.gn.replace("TORQUE TOOLS - ","").replace("METROLOGIA DIMENSIONAL - ","")}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })()}
+
+        {/* ===== DEMO TT ===== */}
+        {view==="demostool" && (()=>{
+          async function exportDemoXLSX(demo){
+            try{
+              const XLSX = window.XLSX;
+              const wsData = [
+                ["SINUELO TORQUE+CONTROLE - SOLICITAÇÃO DE DEMONSTRAÇÃO"],
+                [],
+                ["Cliente:", demo.cliente, "", "Data:", demo.data],
+                ["Contato:", demo.contato, "", "Resp.:", demo.resp],
+                [],
+                ["Nº","DESCRIÇÃO","CÓDIGO","SIGMA","QTD","OBSERVAÇÃO"],
+                ...(demo.itens||[]).map((it,i)=>[i+1, it.desc, it.cod, it.sigma, it.qtd, it.obs]),
+                [],
+                ["Observações:", demo.obs||""],
+              ];
+              const ws = XLSX.utils.aoa_to_sheet(wsData);
+              ws["!cols"]=[{wch:4},{wch:50},{wch:14},{wch:14},{wch:6},{wch:30}];
+              const wb = XLSX.utils.book_new();
+              XLSX.utils.book_append_sheet(wb, ws, "Solicitação Demo");
+              XLSX.writeFile(wb, "Demo_"+(demo.cliente||"sem-cliente").replace(/\s+/g,"_")+"_"+(demo.data||"s-data")+".xlsx");
+            }catch(err){ alert("Erro ao exportar: "+err.message); }
+          }
+
+          function addItem(){ setDemoForm(f=>({...f,itens:[...f.itens,{cod:"",desc:"",sigma:"",qtd:1,obs:""}]})); }
+          function updItem(i,k,v){ setDemoForm(f=>({...f,itens:f.itens.map((it,idx)=>idx===i?{...it,[k]:v}:it)})); }
+          function delItem(i){ setDemoForm(f=>({...f,itens:f.itens.filter((_,idx)=>idx!==i)})); }
+          function salvarDemo(){
+            if(!demoForm.cliente.trim()){ alert("Preencha o cliente."); return; }
+            const novo={...demoForm,id:Date.now(),criadoEm:new Date().toLocaleDateString("pt-BR")};
+            saveDemoList([...demoList,novo]);
+            setDemoForm({cliente:"",contato:"",data:"",resp:session?.code||"",itens:[{cod:"",desc:"",sigma:"",qtd:1,obs:""}],obs:""});
+            setDemoModal(false);
+          }
+
+          const inp3={padding:"7px 10px",fontSize:"12px",borderRadius:"6px",border:"1px solid var(--border)",background:"var(--bg-input)",color:"var(--text-primary)",width:"100%",boxSizing:"border-box"};
+
+          return (
+            <div style={{flex:1,display:"flex",flexDirection:"column",gap:"12px"}}>
+              <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
+                <div style={{flex:1,fontSize:"13px",color:"var(--text-secondary)"}}>
+                  Solicitações registradas: <strong style={{color:"var(--text-primary)"}}>{demoList.length}</strong>
+                </div>
+                <label style={{padding:"7px 13px",fontSize:"12px",fontWeight:600,borderRadius:"7px",border:"1px solid var(--border)",background:"var(--bg-card2)",color:"var(--text-secondary)",cursor:"pointer"}}>
+                  📥 Importar template .xlsx<input type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={e=>{alert("Template carregado. Use como base para exportações futuras.");e.target.value="";}}/>
+                </label>
+                <button onClick={()=>{setDemoForm({cliente:"",contato:"",data:"",resp:session?.code||"",itens:[{cod:"",desc:"",sigma:"",qtd:1,obs:""}],obs:""});setDemoModal(true);}}
+                  style={{padding:"7px 14px",fontSize:"12px",fontWeight:700,borderRadius:"7px",border:"none",background:"#8C1A1A",color:"#FFD0D0",cursor:"pointer"}}>
+                  + Nova solicitação
+                </button>
+              </div>
+              {demoList.length===0?(
+                <div style={{textAlign:"center",padding:"60px 20px",color:"var(--text-muted)"}}>
+                  <div style={{fontSize:"32px",marginBottom:"12px"}}>🔧</div>
+                  <div style={{fontSize:"13px",color:"var(--text-secondary)"}}>Nenhuma solicitação de demonstração ainda.</div>
+                </div>
+              ):(
+                <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
+                  {[...demoList].reverse().map((d,i)=>(
+                    <div key={d.id||i} style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"12px 16px",display:"flex",gap:"12px",alignItems:"center"}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{display:"flex",gap:"10px",alignItems:"baseline",flexWrap:"wrap",marginBottom:"3px"}}>
+                          <span style={{fontSize:"13px",fontWeight:700,color:"var(--text-primary)"}}>{d.cliente}</span>
+                          <span style={{fontSize:"11px",color:"var(--text-muted)"}}>{d.contato}</span>
+                          <span style={{fontSize:"10px",padding:"1px 7px",borderRadius:"6px",background:"var(--bg-card2)",color:"var(--text-secondary)"}}>{d.data||"sem data"}</span>
+                          <span style={{fontSize:"10px",color:"var(--text-accent)",fontWeight:600}}>{d.resp}</span>
+                        </div>
+                        <div style={{fontSize:"10px",color:"var(--text-muted)"}}>{(d.itens||[]).length} item{(d.itens||[]).length!==1?"s":""} · {d.criadoEm}</div>
+                      </div>
+                      <div style={{display:"flex",gap:"6px",flexShrink:0}}>
+                        <button onClick={()=>exportDemoXLSX(d)} style={{padding:"5px 10px",fontSize:"11px",fontWeight:600,borderRadius:"6px",border:"1px solid #1D9E75",background:"rgba(29,158,117,0.1)",color:"#1D9E75",cursor:"pointer"}}>📊 Excel</button>
+                        <button onClick={()=>saveDemoList(demoList.filter(x=>x.id!==d.id))} style={{padding:"5px 8px",fontSize:"11px",borderRadius:"6px",border:"1px solid var(--border)",background:"transparent",color:"var(--text-muted)",cursor:"pointer"}}>✕</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {demoModal&&(
+                <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",display:"flex",alignItems:"flex-start",justifyContent:"center",zIndex:80,padding:"16px",overflowY:"auto"}}>
+                  <div style={{background:"var(--bg-card)",borderRadius:"14px",border:"1px solid var(--border)",width:"100%",maxWidth:"860px",padding:"24px",marginTop:"8px"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"16px"}}>
+                      <div style={{fontSize:"15px",fontWeight:700,color:"var(--text-primary)"}}>🔧 Nova Solicitação de Demonstração</div>
+                      <button onClick={()=>setDemoModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--text-muted)",fontSize:"20px"}}>✕</button>
+                    </div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 160px 80px",gap:"10px",marginBottom:"14px"}}>
+                      {[["cliente","Cliente / Empresa"],["contato","Contato / Engenheiro"],["data","Data"],["resp","Resp."]].map(([k,l])=>(
+                        <div key={k}>
+                          <label style={{fontSize:"10px",color:"var(--text-muted)",display:"block",marginBottom:"3px",textTransform:"uppercase",letterSpacing:".06em"}}>{l}</label>
+                          {k==="data"?<input type="date" value={demoForm[k]||""} onChange={e=>setDemoForm(f=>({...f,[k]:e.target.value}))} style={inp3}/>
+                          :<input value={demoForm[k]||""} onChange={e=>setDemoForm(f=>({...f,[k]:e.target.value}))} style={inp3} placeholder={l}/>}
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{marginBottom:"12px"}}>
+                      <div style={{fontSize:"11px",fontWeight:600,color:"var(--text-secondary)",marginBottom:"7px",textTransform:"uppercase",letterSpacing:".07em"}}>Itens para demonstração</div>
+                      <table style={{width:"100%",borderCollapse:"collapse",fontSize:"12px"}}>
+                        <thead><tr style={{background:"var(--bg-card2)"}}>
+                          {["CÓDIGO","DESCRIÇÃO","SIGMA","QTD","OBSERVAÇÃO",""].map(h=>(
+                            <th key={h} style={{padding:"6px 8px",textAlign:"left",fontSize:"10px",color:"var(--text-muted)",fontWeight:600,borderBottom:"1px solid var(--border)"}}>{h}</th>
+                          ))}
+                        </tr></thead>
+                        <tbody>
+                          {demoForm.itens.map((it,i)=>(
+                            <tr key={i}>
+                              {[["cod","Cód."],["desc","Descrição"],["sigma","SIGMA"],["qtd","Qtd"],["obs","Observação"]].map(([k,ph])=>(
+                                <td key={k} style={{padding:"3px 4px"}}>
+                                  <input value={it[k]||""} onChange={e=>updItem(i,k,e.target.value)} type={k==="qtd"?"number":"text"}
+                                    style={{...inp3,padding:"5px 7px"}} placeholder={ph}/>
+                                </td>
+                              ))}
+                              <td style={{padding:"3px",width:"28px"}}>
+                                <button onClick={()=>delItem(i)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--text-muted)",fontSize:"14px",padding:"4px"}}>✕</button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      <button onClick={addItem} style={{marginTop:"7px",fontSize:"11px",padding:"5px 12px",borderRadius:"6px",border:"1px solid var(--border)",background:"transparent",color:"#185FA5",cursor:"pointer",fontWeight:600}}>+ Adicionar item</button>
+                    </div>
+                    <div style={{marginBottom:"14px"}}>
+                      <label style={{fontSize:"10px",color:"var(--text-muted)",display:"block",marginBottom:"3px",textTransform:"uppercase",letterSpacing:".06em"}}>Observações gerais</label>
+                      <textarea value={demoForm.obs||""} onChange={e=>setDemoForm(f=>({...f,obs:e.target.value}))}
+                        style={{...inp3,height:"48px",resize:"vertical"}} placeholder="Local de entrega, condições especiais..."/>
+                    </div>
+                    <div style={{display:"flex",gap:"8px"}}>
+                      <button onClick={salvarDemo} style={{flex:1,padding:"10px",fontSize:"13px",fontWeight:700,borderRadius:"8px",border:"none",background:"#8C1A1A",color:"#FFD0D0",cursor:"pointer"}}>💾 Salvar</button>
+                      <button onClick={async()=>{salvarDemo();await new Promise(r=>setTimeout(r,100));const last=JSON.parse(localStorage.getItem("crm_demo_tt_v1")||"[]").pop();if(last)exportDemoXLSX(last);}}
+                        style={{padding:"10px 16px",fontSize:"13px",fontWeight:700,borderRadius:"8px",border:"1px solid #1D9E75",background:"rgba(29,158,117,0.1)",color:"#1D9E75",cursor:"pointer"}}>
+                        📊 Salvar + Excel
+                      </button>
+                      <button onClick={()=>setDemoModal(false)} style={{padding:"10px 14px",fontSize:"13px",borderRadius:"8px",border:"1px solid var(--border)",background:"transparent",color:"var(--text-secondary)",cursor:"pointer"}}>Cancelar</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
+        {/* ===== CONSULTA DE PREÇOS ===== */}
+        {view==="precos" && (()=>{
+          function calcPrecos(query){
+            const q=query.trim().toLowerCase();
+            if(q.length<2) return [];
+            const matches={};
+            for(const orc of orcamentos){
+              for(const it of (orc.itens||[])){
+                const desc=(it.desc||it.descricao||"").toLowerCase();
+                const cod=(it.codigo||it.cod||"").toLowerCase();
+                const sigma=(it.sigma||"").toLowerCase();
+                if(!desc&&!cod&&!sigma) continue;
+                if(desc.includes(q)||cod.includes(q)||sigma.includes(q)){
+                  const key=(it.codigo||it.cod||desc).toLowerCase();
+                  if(!matches[key]) matches[key]={desc:it.desc||it.descricao||"",cod:it.codigo||it.cod||"",sigma:it.sigma||"",precos:[]};
+                  const preco=parseFloat(it.preco_unit||it.valorUnit||it.valor||0);
+                  if(preco>0) matches[key].precos.push({preco,cliente:orc.cliente||orc.company||"—",data:orc.data||orc.createdAt||""});
+                }
+              }
+            }
+            return Object.values(matches).map(m=>{
+              const ps=m.precos.map(p=>p.preco);
+              return{...m,count:ps.length,min:ps.length?Math.min(...ps):0,max:ps.length?Math.max(...ps):0,media:ps.length?ps.reduce((a,b)=>a+b,0)/ps.length:0};
+            }).sort((a,b)=>b.count-a.count);
+          }
+
+          const resultados=calcPrecos(precosSearch);
+          const fmt=v=>v>0?`R$ ${v.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"—";
+
+          return (
+            <div style={{flex:1,display:"flex",flexDirection:"column",gap:"12px"}}>
+              <div style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"14px 16px"}}>
+                <div style={{fontSize:"13px",fontWeight:600,color:"var(--text-primary)",marginBottom:"6px"}}>💲 Consulta de Preço Médio</div>
+                <div style={{fontSize:"11px",color:"var(--text-secondary)",marginBottom:"10px",lineHeight:1.5}}>
+                  Busca nos <strong>{orcamentos.length}</strong> orçamentos cadastrados e calcula a média por item.
+                </div>
+                <input value={precosSearch} onChange={e=>setPrecosSearch(e.target.value)}
+                  placeholder="Buscar por descrição, código ou SIGMA..." autoFocus
+                  style={{width:"100%",padding:"10px 14px",fontSize:"13px",borderRadius:"8px",border:"1px solid var(--border)",background:"var(--bg-input)",color:"var(--text-primary)",boxSizing:"border-box"}}/>
+              </div>
+              {orcamentos.length===0&&<div style={{background:"rgba(239,159,39,0.08)",border:"1px solid rgba(239,159,39,0.25)",borderRadius:"8px",padding:"12px 14px",fontSize:"12px",color:"#EF9F27"}}>
+                ⚠️ Nenhum orçamento cadastrado. Importe orçamentos na aba <strong>Orçamentos</strong> para usar esta consulta.
+              </div>}
+              {precosSearch.length>=2&&resultados.length===0&&<div style={{textAlign:"center",padding:"40px",color:"var(--text-muted)",fontSize:"12px"}}>Nenhum item encontrado nos orçamentos para "<strong>{precosSearch}</strong>"</div>}
+              {precosSearch.length<2&&orcamentos.length>0&&<div style={{textAlign:"center",padding:"40px",color:"var(--text-muted)",fontSize:"12px"}}>Digite pelo menos 2 caracteres para buscar</div>}
+              {resultados.length>0&&(
+                <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+                  {resultados.map((r,i)=>(
+                    <div key={i} style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"14px 16px"}}>
+                      <div style={{display:"flex",gap:"12px",alignItems:"flex-start",marginBottom:r.precos.length>0?"8px":"0",flexWrap:"wrap"}}>
+                        <div style={{flex:1,minWidth:"200px"}}>
+                          <div style={{fontSize:"13px",fontWeight:600,color:"var(--text-primary)",marginBottom:"3px"}}>{r.desc||"—"}</div>
+                          <div style={{display:"flex",gap:"10px",fontSize:"10px",color:"var(--text-secondary)"}}>
+                            {r.cod&&<span>Cód: <span style={{fontFamily:"monospace",color:"var(--text-blue)"}}>{r.cod}</span></span>}
+                            {r.sigma&&<span>SIGMA: <span style={{fontFamily:"monospace",color:"var(--text-blue)"}}>{r.sigma}</span></span>}
+                          </div>
+                        </div>
+                        {r.count>0&&<div style={{display:"flex",gap:"16px",flexShrink:0,flexWrap:"wrap"}}>
+                          <div style={{textAlign:"center"}}><div style={{fontSize:"18px",fontWeight:700,color:"#1D9E75"}}>{fmt(r.media)}</div><div style={{fontSize:"10px",color:"var(--text-muted)"}}>Média</div></div>
+                          <div style={{textAlign:"center"}}><div style={{fontSize:"13px",fontWeight:600,color:"var(--text-secondary)"}}>{fmt(r.min)}</div><div style={{fontSize:"10px",color:"var(--text-muted)"}}>Mínimo</div></div>
+                          <div style={{textAlign:"center"}}><div style={{fontSize:"13px",fontWeight:600,color:"var(--text-secondary)"}}>{fmt(r.max)}</div><div style={{fontSize:"10px",color:"var(--text-muted)"}}>Máximo</div></div>
+                          <div style={{textAlign:"center"}}><div style={{fontSize:"13px",fontWeight:600,color:"var(--text-accent)"}}>{r.count}</div><div style={{fontSize:"10px",color:"var(--text-muted)"}}>Cotações</div></div>
+                        </div>}
+                      </div>
+                      {r.precos.length>0&&<div style={{borderTop:"1px solid var(--border2)",paddingTop:"7px",display:"flex",flexWrap:"wrap",gap:"5px"}}>
+                        {r.precos.map((p,pi)=>(
+                          <span key={pi} style={{fontSize:"10px",padding:"2px 8px",borderRadius:"6px",background:"var(--bg-card2)",color:"var(--text-secondary)"}}>{p.cliente} · {fmt(p.preco)} · {p.data}</span>
+                        ))}
+                      </div>}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           );
         })()}
