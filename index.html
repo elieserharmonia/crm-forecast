@@ -1182,7 +1182,7 @@ function App() {
   if(!visitaOpp||!visitaForm.summary) return;
   const entry = {...visitaForm, id:Date.now(), createdAt: visitaForm.date || new Date().toISOString().slice(0,10)};
   const hist = [...(visitaOpp.visitHistory||[]), entry];
-  updateOpp({...visitaOpp, visitHistory:hist, nextAction: visitaForm.nextStep||visitaOpp.nextAction, nextDate: visitaForm.when||visitaOpp.nextDate});
+  updateOpp({...visitaOpp, visitHistory:hist, notes: visitaForm.nextStep||visitaOpp.notes, nextDate: visitaForm.when||visitaOpp.nextDate});
   setVisitaModal(false);
   setVisitaOpp(null);
   }
@@ -1312,8 +1312,11 @@ function App() {
   function buildRelatorioTexto(opp){
   const d = buildRelatorioData(opp);
   const linha = "─".repeat(55);
-  const monthsTxt = d.monthsMarked.map(m=>`${m.label}:${m.marked?"X":"_"}`).join(" ");
-  const forecastLine = `${d.negType} | ${d.resp} | ${opp.company||"—"} | ${d.supplier} | ${d.valor} | ${d.confPct} | ${monthsTxt}`;
+  const monthsHeader = d.monthsMarked.map(m=>m.label).join("\t");
+  const monthsValues = d.monthsMarked.map(m=>m.marked?"X":"").join("\t");
+  // Cabeçalho em MAIÚSCULO (negrito via negrito de texto) + valores — formato tabela Excel (tab-separated)
+  const forecastHeader = ["NEG","RESP","CLIENTE","FORNECEDOR","VALOR","CONF%",  ...d.monthsMarked.map(m=>m.label)].join("\t");
+  const forecastValues = [d.negType, d.resp, opp.company||"—", d.supplier, d.valor, d.confPct, ...d.monthsMarked.map(m=>m.marked?"X":"")].join("\t");
   const hist = Array.isArray(opp.visitHistory)?opp.visitHistory:[];
   const histTxt = hist.length
   ? hist.slice().reverse().map(h=>{
@@ -1335,7 +1338,9 @@ function App() {
   `${opp.company||"—"} · ${opp.contact||"—"}`,
   `Oportunidade: ${opp.title||"—"}`,
   linha,
-  `FORECAST: ${forecastLine}`,
+  `FORECAST:`,
+  forecastHeader,
+  forecastValues,
   linha,
   `HISTÓRICO:`,
   histTxt,
@@ -2722,7 +2727,15 @@ function App() {
   </button>
   </div>
   </div>
-  <pre style={{fontSize:"11px",color:"var(--text-primary)",lineHeight:1.45,whiteSpace:"pre-wrap",fontFamily:"'Courier New',monospace",margin:0}}>{relText}</pre>
+  <pre style={{fontSize:"11px",color:"var(--text-primary)",lineHeight:1.45,whiteSpace:"pre-wrap",fontFamily:"'Courier New',monospace",margin:0}}>{
+    relText.split("\n").map((line,i,arr)=>{
+      const prev = arr[i-1]?.trim()||"";
+      const isBold = (prev==="FORECAST:" || prev==="HISTÓRICO:" || prev==="FOLLOW-UP:" || prev==="PRÓXIMA AÇÃO:") && line.trim() && !line.startsWith("─");
+      return isBold
+        ? <span key={i}><strong style={{fontWeight:700,color:"var(--text-primary)"}}>{line}</strong>{"\n"}</span>
+        : <span key={i}>{line}{"\n"}</span>;
+    })
+  }</pre>
   </div>
   )}
   {!relText&&relSelected.length===0&&(
