@@ -927,7 +927,11 @@ function App() {
   const [demoForm, setDemoForm] = React.useState({cliente:"",contato:"",data:"",resp:"",itens:[{cod:"",desc:"",sigma:"",qtd:1,obs:""}]});
   function saveDemoList(d){ setDemoList(d); try{ localStorage.setItem(DEMO_KEY,JSON.stringify(d)); }catch(e){} }
 
-  // ===== CONSULTA DE PREÇOS =====
+  // ===== DIMENSIONAR FERRAMENTAS =====
+  const [dimQuery, setDimQuery] = React.useState("");
+  const [dimResult, setDimResult] = React.useState("");
+  const [dimLoading, setDimLoading] = React.useState(false);
+  const [dimHistory, setDimHistory] = React.useState([]);
   const [precosSearch, setPrecosSearch] = React.useState("");
   const [precosResultados, setPrecosResultados] = React.useState([]);
   const INTEL_KEY = "crm_intel_v1";
@@ -1828,10 +1832,8 @@ function App() {
 
       {/* SIDEBAR */}
       <div className="crm-sidebar">
-        <div className="sb-logo">
-          <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAj2klEQVR42t17eXRURfb/rar3ekl39oVVAWXRAElvWcjWIQvZIAjYyGLYZFBxYRgUjfPTttUR1FFkYNTgwqYgRETZAgghjRAWjUKA6AAGwpZ9T3p771V9/0h3bEJAnZnv73fO753zzunzXnVV3U/d/d5H4P/riyGTqYKEhoaSqqoq+v9mC4whk8lEjEYjZzQaOQAgAIB63BgAuseYzWbsfv5HL2Q2m7F7Hez9guM4WLJkyaCM7Ow5GVlZj23dupXAv7nIb27CZDLhuro6ZLVaJQBgPQdgTICxrgNBCAGlrLdh4AYFlZSUSAihXgeYzWZcUlKCrVYrAwDp1zUwvPVWQdDRo0VRjY3NWR0d7RkSle5jjALPyyE9LTVs2bJl9f9NAJDRaCRWq1Xs3j0hsHz58rDjx78Pb2lpHu1w2MIFQRhMKevrcjkJpQzkcp5hnmskhNQo5IqLCqW6vE9I37Pr1hVUIoRc3rgBAO0BsNiD2+Rz5vzp/uvXr2S0tbWMdzqdYzieJwghoAxuKGTynQ6HLZFSFrJ165a7hw8f7kT/rRMvLCyUAAB4nofp06dHV129mtvR3plDJUFDOA4YMKASA0qpgxDchgm2I0AgUUqoxHwBgT9GCBBCwBgFxliTQqEoCQoJ/NqQmLzX8uyzdW6OZb8CzMH8+U8MvnjpfFJnZ0u24BJSMcYhjDEQXKJNLpNbVSpV0aBB95asXVvwE8ZY1Og05Qiw8vSpU8MkSUL/EQAmk4l4CC/YutV/25qPZjS1ND3JGApnQIExViOXKQ+p/VSHAv39zw4bFnll8uS5zXp9fzvP8wwAAUIALpeLe+edj/xOnTrep66uZpjDYYux2e2pLsEZwxECwBhVqVRvHD58+IXVq1eri4sPx9c31o5z2G3jRJGOwgiBJEnAyWSn1GrfnWEhQfvmzJlzJicnp42xXyXn/Pnz8mnTptUjhE6UlZWlAwD5dwHwKC5pw4YNqnXr1j3R3NK8FCEczBir9VX7rb3rrgGFn376aTlCSLzDHHA74ccYw4svvtj35MmTKS2t7XMRxt8/tmD+a6tWrTrvdDr6I4SBEO6qWq3er1b77RmhGX3iH2+8eV2SbloOG41GDABgtVqlZcuWBRRu+6JRLpN/cqy0dL5bWf7xU/corwkTJkzU6/WXdTod0+sNFdnZ4/O+v/69j/d4o9HIZWZmyjMzM+V6vZ7vqZ29wODCw8NlmZmZ8vDwcFlv48xms09cfPzBkaNGsYTEpEOMMWUveohz7xH13PO0abNG6g0Glpyc/BIAgHs/v//yILbsvfcC4xMTP9FotEyr1dVlZmc/whgj3uPCTSaZ2+T1YgEYYYxxnptwHKBepFGv1/NeoBG3oiOJRmNBhCaSGaJjjsybt3CQN5F32vfEiZMzdDo9G5uWNtfznPsjxFutVnHOnAW6L9eu2yKK4lClUvVxbm7Os/n5+c0Ioe6FvLXze++9F3jwoDWqoaEhxuF06AVBGKrT6fuJosADIMCE0IjIyCae467KFYqzCqXy5JC7h55Yu7bg57KyMsGj78xmM7NYLAghRBFCjxrHjq1saGh4/czZsuIpU6blFhZ+XmE2m7HFYrmtw9Pe3t4PAEBGyA0AgLCwMMb9EeInTpw4obz8+y8kiaJ+A/rn7Ssq+vTYsSNgNBq5sLAwVlhYKLpPSZaTkzu+sbF+bkFBQQbH8zwDBIxSF8boCs/zPxOC2yQqOQlH1MBQqCAIo0RRTLJ1dCxsrKuDyMjIi77+gZ/dN3zohvfff7/SYrF4A8GVFB96IzY2Jt3hcKQ6HLbRAHCupKSEuE1lr5fL5ezPEICPj08NAEB4ePhvA+AhPj0z58HLl6sKOY5cG6mJnLBp/fpTXhtiACBdusQUCxdOmGOIMjxPGQxiDEChUu7zVft9Hda//5E/zZ59KT09vUOSJPDWzhhjkCSJW7JkSb+fL16MaGlqynLY7TntbS3mY8ePmxMSEjbdM2LEGxs+/rjcYrEgABDS09Oera+vT1Wr/dYXFe36HABwT7+g50URHQQIIDR0UN0fkvmcnJxJGo2GRUVFX3zyySVDPO/cLisAAOTm5uYYogwXdHoD0+sNlSlpaYtee+21fqh3S+uRaeLlGvd0ocm0hx9OiR0T/5VWp2NanY4lp6T8Y+OePX6TJk1K12p1LCYmtpQxxnu51Le7CABAVHT0bq1Oa7t06ZKihyW6vbafMu3hmEiNxqXX6SsffXTRYA/xnvc7duzwSUpKfl+r0TKNVtuanpm50L0pb1P0e/x7ZDabsXvebs5ECMHs+fP1cfHxe3V6PTNER1VEajT1er2+dunSpQM97vAdQEYAgDDGoNPpT+v1+svkt1SfZ7MvvPBCP0NU1HWtVtc2c+7c8J7EL1y4ZFBMbOz3Wq2WJSQkfGY2v9nXm3sYY+g/9DA9HAIYY8jJmbBg5MiRLCJSI02ePDX+Dtof96SHMYYiNdoGvT7qqJsr8R0XJoRAXFx8kVarYxMmPDC+J/Hz5j02wmAwXI7UaFh6RsYTGGNvsfmvxhjh4eEyQgiMGRO3TqvRsqysrLneItob5+bkTEwcm5r20eLFiwcAACwxm8M0Gq0UFRW92RMg3pH1U1MzF2i1OjZ27Ni3e8r8448/fk9UVFRVpEbLcnJzJ3kmvA0r9rqGJ/T1vqGX/3uIHDs29TW93sCSkpNX/BbxeY88cr/eYGiKiIhgUVFRVXPnzg1//fXXg/V6A4uNjVt+u/93s/7ixYsHaLW6doMh6ifGmAwAiHtyvGLFioCYmNizGo2WTZhkyvy3PKo/6HhlZY1/SKPRstgxcfvdYnWL4vTsfcWKFQHR0dHnR0dEuFJS0l7SRGpErU7XPD4393mNRsuSk1MWec99EwoVFRUIAOiJ7757HYCpBwy6+0mEkMs9mGGM6ZYthWsdDufIAQP6zdq5vXCvXq/nvRyW3xNDsOzs7Ok2m2OMIAgMIYQZk6jCx4cFBAev3/b55z+azWZcUVGBCgsLxZkzZ+rOnatYz3FcVca4yTMQQuBlervntVgsiDGGY+PHfOEShGEDBwyYWVRUtCkvb25xRcWZHZcrK5chQFTBK2vvpPjgscceG6HRaiVDVPR+hDCYTCbyq1iMe0qr1bFEY5dY/MGTRx7zpjdEV0dGalhUVAzTG6KYTm9gkVoNi4qKWQ0AMHToUDkAoPz8/FC9wXBJo9E6pk3L095O6RmNRg4hDEnGpI90Oh1LSUn7q9c8MGvWrJExMTHlekMUM5mmR99mnq4HCQmJH+t0ejYtL08LAMhNJFqyZMkgrVZnN0TFnPOIxR9Udh4AsFanq05ISDixZs2ageblywfmm80RkRqNEBGhWeEeK2OM4eiYmAMajYZlZuaYbie3nmep6an5Go2GxcfHv+9WyJy3RWCMyU2maem3s0wIACA/Pz9Uo9E4DQaD1WMqTCYTQQhBXFz8Bq1Wx0wmk/G3go/fAADpDfr6mDFjjnhePPXUU36RGi3TarUrAQAjhCDRaPynVq9jY1NTX/wt4jMyMvJGjx7NIiIipNnz5+s9vgcAwPfff8/HJSRuNaakPNybicTuiQgAwPHvyh4khJOFhob+w53M5AoLC6WZM+eOcjjseZyM/6qwsNDqnQi5gyXp7cYeKBBgzBjDZrMZ2xDyhLU8ANCUtHFPd7R3LPRRqrdZDx161e2OSz3XsFqt4tQZM+Jramo3yGSyBkCI/qui4nlAiFqtVnBzMNg7OzM72trfcDto7BYArFYrxRhDe2vLHEkS7VOmTNkPAKyyspIBAPzyy78WAQCMGDbs5d/D9m5wet5id6BCCUJAgRBCLRYL9WGMIoRAFGnd3EcfjWxsqFvJy/nyx154fh6lFCcnJ1PvjZvNZlxYWCjNfnTR4MoLF77EGDUlJ48zymSy/U6HY5L5pZf6AoCo1+s5hJDg6+u3kgHtP33WrFEAwLy5F7uVH128eHGYKLiiFArFN/Pn/6ndaDRyZWVlQkFBgb/d3jkTE3J806ZNpwEA3eH0EWMMp6RlvJCckrYzMTm5KGns2L1jEhJ2JKekbh0/fvwYjuMYZaLkDaQgkyFJEqmvr2pk+ffff0Ew6tRGRD+Yl53dZjabwTvEdYe8bPXq1eqKH4996XQ4w/z8At56++1lFSFh/dZijInVap0BABAaGooBAIL7hu0AYHD98pXxAAB1dXXda2O36YOffvpJx3Ec8vcP+sINNgcAsG3btkxMiDIwIKCAUoo8KabbmbgnnnjZp77uxksNDXXj21paE5ubmpJsnR0pTU0NpoamppmMMaCUAvMCoLG+nkcI2VpaWh6UJGlov4H9pxcU/OOC0WjkesT3yGKxYEI4tunzzzfZbZ1aAMYkSWozm814xkMPFlFJam5rb5+NMYa9e/cKAABfbtlyGihqsdtt2QhjsFqt3XPiyspKDADQ2tqRIlEGQUFhxwEA6uvrKQBAW3v7eEopi4yM2wsAzGpNvmOFJTQUREqp5KNUbj314w/B2wpPBT48Y+ZogrBIRepECAEm2Du7i8IjI+0IIYoxgeDg4L/s+nrXTk8Y3kPpEQAQExMTV3S2d0wIDg7ZiTFBAMBZLBY6a9asTqXSZxdjLGLRoucHAADtMpHIxXHkuEtw6T9cs8bXk14HAMBlZWUSQgicTmcso8j2+qa1V91OkcAYQ06nKxlj/NM777xW0/Unyx0BGDx4MGCEOUkUKULIOXw4clZXV4sIYY4QjCVJAsElODDCWJIkDADsyJ69C4GBX0BQ0MfFxcUrbkN8V14iPePR1ra2P/v4KNeNSU7+MyEEmKfKAoD8/Hz3YITYmTNlMd4+P8/zZQQTfvfu/cPcShR3FxsopVgQnPcSgi7eS4jDrbHZ0qVL+wGwgXK5/BilUre1cP+v1/uy+2jdJ4MAAEmSRAAYIIQ9wT5iwDiEEM3KyprS1Nz4qkKhOPbBe/9cyBgjPTW+h/jcyblpDQ21H/A8f6q0tHTBuR9+UHbZfOrhJuYf6n+aAqBOe0es9xw+Pj4/I4ygra1liLcewAAAGzduVDKgfTgOX6KUQnh4OAEAuFhVdTcmCGQKxalbkitduTnvW/JOR7nzIAwAGMdxrItu6nlJGEDzsmXv3FNdXbMRAVwbk5oyZdSoUS6z2XxTncxj7hYsWHDf9Ss3thDCVRkS4h9ACAkylUpGGQXqlQUbP332dSZRSXA67/cWZZVKdRUBgMtlv+ummiEAwKlfflFiTAgvk9UCAHS6tae9ra0fMAQyufwXTxLx0KFDnOXVV99rb28bLVHKAwNgDFEfldIZFBRkgctzigHewey2ZQAAxphLxnEDv/5663YGjL93xH1T3n399WqTyUQsFovUQ+PTZcuWBX65/cvtDrs9qE+fvp+89/bbVe4JJQAEQLv1Mpmbm9s2anREDWMwEGMMFRUVFADA39+/9urVqwAAIbcA0NHc7IMJAZcg1AEADAaAKgDotNv9EUIQGBjY5rHvoaGh6oaG+tnAAMlk8muEIwpRkgRbR/vdHOEnvPoKORA+aiTuPd3QJXYc4dobGhpGyWRy6DdgwJzCzZtPGo1GzpNU7RHgoLj4+K1Op/M+jDFzuVx8zxKZd+pLkqjEEdLoFFw+7rwjcwNgY4yBRKnvLTuyVzcDoxK4RFEAALh8+XKXfXY6GQCAUunrpeVDRcaYFBgcvKX89Kl7Tp/6sf8TS/4yhuN4SRIEV5eX13vCRZJE1CU+wBFCIDQ07O29u3evv53GRwhJiUbjB52dnWkDBt61huM4F6X0V29OAAB2Mw4IAfA8z6go0pvXlkTGGLicAroFAN9QX4QRBoVMdlNVh1LqooxCS0uDFzWDAQEilIq8KIrgcrmg9MgRnjEgALSLfIQA6K3GQi6XN0yaZMoFgPv8/AJ2FRcfeAYAbnFz9Xo9b7VaxdTU9GfaW1vny+Tywj27di2ilMowJrecvOTWAeHhAIwxcLlciOP4m05AIIQDhIDjOHoLAP7+/jaRSoAA+rlNBgMACA4OtiOEwN5uC/7VzN1ywkihVHYdCnZzXI9yvyRJRJJERgjKqqy8sInjuV8mTMh5WJIk5FaczFvjl5WVCVlZ46fU1ta8JYoi9VGpdvE870AII0opuzXli935DKCEEJAkMYTjuQ53QIcAANrq6nxRV26x+RYAFixY0M4YuARRDHMDQt0ndoMxBjZb5z03RXQ3BwTs5nop8uRhvQoSLgwAYnV1dRzGiI0YPiL3+eefb3XbYtpT45umTx9TXX19M0JgJ4RgSqlKEIRetIrQU9ikTz7ZraKUhSKErrotWpeY24VQhBDwPKm7BYChQ4c6CMLXJVG8hxACZWVlEgDAsGHDrlGJgkhdo+6Ydu3GgXb/9AIIBQQE2Cmjolwuh7vuGjzts88+q3ArPalngLN06dKBly5cKAQA29ChQxd2yTWlAMAQAgBMeysld29i374NgwhHeF4m+5d3PGCztQ1mAKBUqqtuyZ1LkgQcx52llN5TsG1bt6v45ptv1mBMbgguIdqdZGDdbS1ekyjd2ofeWu3GGGN29GjpKxzhlH379312x47tu3sqPcYYslgssGHDBtWhEuvXkkQHDB9+/4M3btz4hhAOGOuiuifvu3qJRxoaGiIxxsxX5XfS+0VHR0c4MAZ9+gyoBABwR5iAjUYjAgBQqnyOEI5wRRs3jnDXzXiEEJXLZQckSu9ftGjRgC4L4cLQpe28MHAXWuhNcs8BAE1JSXuuvb19nlqtXvvNvm/+3ovGRwghQgihHxQUrBMEly4kJPiFrVs3HWCM68tYLyVmz6oYM4SAItRtClh7Z2caowyNHKk97n4mdoXaYhRjrG3duoJKAABPThGHhYUxAICggIBvEQJobGxMAgDkYR21SrUTYYzLz53L6BLwGxwCpKAUfG5xc3C3KcIch+sffnhOXENj/XKe54+9//7hx27j5hIAEBOSkpZ3tHc8KJPLPz948OAyAMA8DwIg2s3iPRMRlFIOIcCMMaXZbMZbS0uVdrs9FyEoX7ly+XVPvXDLli1qUZJieZ4/6u47Ih6GwoWFhRQAYPLkx8sFQbS1t3dOQQgxq9UqAADExWUWU0kS2ltbHgEAZnnllTaV2vcbjifHexZBMAWGEAKJMhsgNObsuVNfI0Kqx4xJmTJqFLrFzfVwQ2ZO5oKmhobnRFGgVKTllFKPdQB0E9mIIdZlBo1GI+fAjjqZXPmDQq0+bbFY6LrXlqdghELUfn4bKaVgNBplAIA2bNiUiBFSqJXqPe7/Im8dwACAzJqV0SmXK/ZLlMb+OT9/AABI4eHhMotlSZNS7rNGEMS4efPmjXn6qaf6mP/+5rSj33673M3KjFKpyyVGiAAAcIR0tLa2RDIGgYOGDJny7rvdbi7tSfzkyZOza2/UFsjl8ms8zyNKqep2bTOMUUSBcp6T3V24+/rRI9/Gx+gTz7355uq+jY31T1KJtuu1SetMJhPp6OiQAIA1NdVPp5TBsPuG7fOW/25X2Gg0IqvVCqFhYetqq6sfKD9R+hAArPAovIBgv4vXqlrhhx9+KEUYw5GjRyFSo7no5+v/2bhxaStHjky/cfzEt0AIae3q8mJELpPDgP79874qLDzW08115xTFuXPnhp8uL/+cMqjOzsiZvmfPzsP0JgdKBgw6gTKGAQDkCh8ghG8FADpx8uQJtTeqn9Tp9UkIEwUCBg67HeRy+dlBg4LQO+8USgDAVqxdG7Bh1erJGOMfPvzwowsAcFMTRXcDEQDAnLy8/ZRJDU0trQsxxuzcuXNSQkLiJzU3albI5PJ6hUKxUa6Q/VWukL2FgHS2traYv/hi27mP1r0eN2L0qOHBQ4asjI1LWMFxJDgoJOT1PXv2bPZ4dT3NXf7f/tbnzNmzOxhlqnuGDJ4cHx9TTghBXrE9YIwZY1REAAQhhAcOvntU5rgJqxMSEj66WlW1w+l0GJUKxXaO554lGL/hq/Y9TikdtWHjhp8mTZqUAgB052efPYgQqIKDgz5wh/T4jmUo49jU/6PV6ZjJNC0nMTHxPa1OyxKNif/ct2+fysMRnpr/+PEPZBkMUbVanY6lpqc/jRCChKTkDxMSk/e4S9A9awcIAAhjTBYbG2vVarUsO3vCwwAATz3zzL0GQxSLjIx8xTM4KTVVa4gysESj8RkAgLz584dHRcWc0un1LDEpaQ1jTOHpF8QYA0IIxj/wQJZGq23Q6rS2JUuW6DUafZlWb2jZuHGjX299BN1ouOUCGXSaNYzS1osXft7c2tb2uFLtW/Ct9dsnPvj4g/DY2Nji0aNHN2s0mitjU1NfLiraWTRl3tz7FHL5Ny1NTSvj4uK2byvcsvjItyXZkihy7mww+7WDCwjGWIqPT/zQ4XAkBQQFvbhnz85PAQAHqUIEuNm24mGDB1f5BwSuHXTXsG3Z2dmTz5b98LMoCRF9+vad/e3hwwsefHB6ZExMrHX06NGdGo32WkpKmmX3jh1F4RERaZQhdKik5ABjos5P7ftuXl5em9visF4BsFgs1GQy4bfffrsuMDj4bacg+HKEq/3zxCcXZ+fmxlz55eoxm92e7KP2PYoJ19za0mo2GKK++/nECf/jx4+PU6v93rDZbA/k5OSUP/TQQ3EAIHqnn7vaaEFMSEh6xW7vnOXr6/thSXHxa+6WOCpyAmLAJI+vbzKZuI8//rippLh43vXrl+ZXV9dsIxz5efSoUaOLdu/ekJqa+pfKyvPHHQ57nFKp+gYhVNPS0vxSXFzCF5vWrz/l7+v3lsNuDyCEq8rMHLcSAFBPE3yLRxseHs4AAMVGp3wgk8kYz3PFU5dMtTfU1r5DqSQmJaaGHy89Ov70qR8jg0JCH3cJTsOZM2fOjh8/fqLVeuj5Pv37TxYlqd+FCxeOZqRlzS8sLJQ8pXCr1SpmZGTMaWtvfVGhUJa88sqGp++991753XffjYxGI+cSRYHjeKKQy1Xu3IP4F7M5JDo65khbW+sLPmrV59+dPBmxfv36C3FxCduam5ve5nlZSVxc6j3Hjh154PTpUwalUlHgsHdOmTZt2sh77hn8oUKhYD4+yq/y8/Obezv92xZIn3rmmXsN0VE0KSn5r4wxFBmpcemjovZ4oloPcA899FCcXm+o0un1LCVtnBkAYObMmSOioqPLtTody54wYbpn7slTp2bo9DopOjrGyt2mRSU9PfPBcRMmDAUAVFpaqowdE3dMo9OytHHjlgAATJ8+K9oQFVOp1WqZcezYtxnravIamjlU7i7hj9YbDGJ8fPw8juNAo9GwMfHxH3oaKHtbs/eHMpmDUookSQgGAIQJbmYSHdQVakpOk8lE6urquC1btpTm5+dHlxw+vKGxof7lhARj1BNPPGGynjpl/GLt2lO1NdUFjLHCRYsWDTly5OhGl+BC/QYN/Dk1Pf0vhPAyiVIJAIBKFAgCRgh3vk9oCOE4jr34ovk5QXDFhoT0XXBgf9GHGRlZ83/6+cx7wJjYr9/AmUVFuzYhhJDbqjAAkDo7OyMBGFGr1bWCIMj1ej3DmHPd6eTRbao7SB8VdRUhaC377vvwpOTklzo62i1+vn6rDxUXL0YIiW4QkNVqFWUyGRiTk7fW1NSYVL7q746lHY3NOJmdW1dTvV2hUJbYOm1JCHVxDcEcYIK9klq/7g1hAhIVgZfxpU67634Zz/908uSJ+LFj0/7U1NywhudIY0JC4sR33333qNFo5JKTk6m7bU6anpdn/Pns2R0Y88Krr748YOXKlWmNjU27/P2DHz54cO9nvWWdegXAM9A41vhye1uHue+AAeOLdu7YHZeYtNne2TlNJpMdizAY8tasWvWLXq/n169fjx5f+ORH7e2teQ67HWQyGQQHB88oLi7ertNpWwVBkqlU6m9D+oSuCvTz+xFjbFcoFNTp5JhKBdAJAKIoIkkUka2htX9TS/3UtrbWv1BKSaB/0JulpUee02i11e1tbX3kcjmSyxWXhgwbOhNE8WRhYSFFGLNxGVmL6mqr38UIN4WF9cvds2dHqcFgKKOUDZs61XR3fn5+8+3yiLcEWlVVVQwA0PRp089cunQpr62ldWZCQvLBvUW7/3H/yJGO9vbOuTeuXJkTExN97tChQz9dvHjpgdaWpr/xMn69wkdV43I6hqrUqo6PPvkkw2F3GkJDw549cuTwgsuVlRXDh4+6y2ZrD2lubvaz2VoCWlpaAmwtLQGONps/loSgPn1Card/+WVhRu7Ez5rqGzM6bR1jc7JzLlVVVU0jhMPBoWF/7+hoT27vaE86sH//Pzds2KCqb2j4sKW56XkZLztuMOhTt2zZfPbAwYOfuVzCuMDAoCUfffThYZPJRDzZ4d8jAt3p6MlTp8Zf/uXSLkqlgLC+febtLypaO3ny1KSqqsrNCKC/X1Dgk0qFQqi5ceP90aNHaJ555oV/zZ03/7zTaR9EJQkCA4O3nzhxbHJqauoDDQ0Nq1wu10CP03JTVMcYSFQEYED9/P23HS4pefjpp582HD58uIRKEuZlchIQFPjn4gMHVkZHR//ocgkhkydPGrdz587NkiRG+vioVh87duyppUuXhhYfOrRZEKRUP3//9w+XFC+cMmXKHUv56Lc+hnjkkUeGlp8585koitG+vr4FpUdLH3vttdX+X3+9cZPd0ZmtVCj+1dbaeq/a1+/08uXLEtYVFgacP3V6ra2zIxMAASGkWZLEQFHsEr+wPmFfK+SKjQCEQxxiVBAYJ5OFXbt69Q2H06GSyWTAE94pSRJljCoJIXUhYWEv7t+7d03W+Kz5Vy5fKVDIldckykKAST5BoaFzi7/5Zl1ubm7a1atXtzBgQWF9+i48sH//+5RSfKfe4d/8aMoDwnnG5PMSjattts75PM//qNNpH/zggw8qjcaxr7e0tuZT2kWcj9LneFSUwbRq1aprM2bM0Fy7dmOqzWHTIgCXSu1zur2tI1eiNPRsefkADyBdXmjK0ubmxuUBQQFvuQTJz+Vw3IUJagz0Dzy4b9++TxFCNG1c1pONDTWrREEATHiQyRQ/DR40JK+wcHNZevq4/MamhtcZQPU9gwc/tG3btm/d4i39rraV3/INLBYLRQjBuHFZj9bVVX+AEHL26d9/dtGuXVvM5jf7Hv+uJK6zo2NwW2u7heOwGODv//7gwYPXr1+//l+SJHV/QJVgNK5rb2mZHRkZc2919aXrbW1tMp7nBVFkn9rsHVMemj37rucXLbrm2RpjlJswYcL4xubGp22d9rEcT3b4+wZtDA4OqNm2bduRkydP+jy1aNEmp9MxUaZQ7ktITZ3zd4ul5nYa/98CoOcnMlNnzomqPH9uM6XSvXK5z5d9wkL+PmPGjDOBgYFk5cpV+ZevXHqOUQYczwEhpJbD5CIAtFGAIYJLuE/lo/q4tPTIfO/Jp06dGnnh4sVDVKIyuVz2I0JYkCgdKIiuvowxX0FwgVqlrtLrYqe9+OLz5W+99U//8nPf5TY1NL2GEA3xDwpefqSkJF8URfit9p1/F4CbTOSKFSsCtn/11WsdHR1PIIyB0a7CJ0MMMOYqCcbXbbaORB+lz1lJFAMoYwPtDjv4+/lX9R8w4O+dNpsdI4QQQ4wxhuQ+CpfT5si6dv3KNAQYeBnfwvP8eYfToaGUtvv7B3zX0dGZiREAwrgrpOuKSn/p0y9s8a6vd+10d7vAnT6Y+I8B6Pml2HPPPTe4rOxUmtPpGsaY5PQL9D87Jy9vT1lZWdA3Bw5WqVU+G48dOzZrXHZ2cn1tzfsul+s+hLrC1u6SFgIAhoBRCoCRQ632+6T06LdPLH322VH7D3zzo0KhXHu8tHTB1Kkzo2trb4xxulwDEMadwSFBx7/atq0YIST8Xnn/rwDQUyRuNyAuIfFdh71zkVqlXnb06NEXGGNgmjlzeGN1I3G5XDcltQUBMXWQmstOS7u2ePHilpkz5+jOVZzZhwjioxMTRxasWFF9O23+R1n+vwWAp78flZSU4I6ODgQAoFarmcc9PXv2LFnw2GMbnXbHVIxIha+f7yq12ueEXC63KRQK5nL9mtmXyWTgcDhQm61tcFtLxzSnwzGHAbINvPuuCTu3by/2hNV1dXXIe63bfZr7fwuA37wwxpCenvFYfUP9iwCs/811EwYMEKDuylpXsoZSCj4qVeEorSZ/zapVv8D/8oUiIiJU/+1JeZ5ngiCg6moR1ddXdCwxm8POnz49prOtY4ggCAqn0+uTXberIpfLmdzHpyGsb9iPWz79tEySJDJiRJyPWu2UBEH4Xzuo/wG5MxCY40v5fAAAAABJRU5ErkJggg==" alt="Logo" style={{width:"28px",height:"28px",objectFit:"contain"}}/>
-        </div>
-        {[["kanban","📊","Forecast"],["tasks","✓","Tarefas"],["clients","👥","Clientes"],["relatorio","📋","Relatório"],["posvendas","✅","Pós-venda"],["budget","💰","Budget"],["orcamentos","📝","Orçamentos"],["projetos","⚙","Projetos"],["intel","🧠","Radar"],["estoque","📦","Estoque"],["demostool","🔧","Demo TT"],["precos","💲","Consulta Preço"]].map(([v,icon,label])=>(
+
+        {[["kanban","📊","Forecast"],["tasks","✓","Tarefas"],["clients","👥","Clientes"],["relatorio","📋","Relatório"],["posvendas","✅","Pós-venda"],["budget","💰","Budget"],["orcamentos","📝","Orçamentos"],["projetos","⚙","Projetos"],["intel","🧠","Radar"],["estoque","📦","Estoque"],["demostool","🔧","Demo TT"],["precos","💲","Consulta Preço"],["dimensionar","🎯","Dimensionar"]].map(([v,icon,label])=>(
           <button key={v} className={`crm-sidebar-btn${view===v?" active":""}`} onClick={()=>{setView(v);if(v!=="kanban")setSel(null);}}>
             <span style={{fontSize:"15px",flexShrink:0,lineHeight:1}}>{icon}</span>
             <span className="sb-label">{label}</span>
@@ -4750,8 +4752,9 @@ function App() {
                   try{
                     const sf = parseFloat(r[5])||0;
                     const sd = parseFloat(r[6])||0;
-                    const sigma = r[2]||r[3]||"";
-                    items.push({gc:grupoAtual.gc, gn:grupoAtual.gn, cod:r[0], desc:r[1], sigma, sf:Math.round(sf), sd:Math.round(sd)});
+                    const cod = r[2]||r[3]||"";  // Código comercial (fabricante)
+                    const sigma = r[0]||"";          // SIGMA = código interno Sinuelo
+                    items.push({gc:grupoAtual.gc, gn:grupoAtual.gn, cod, desc:r[1], sigma, sf:Math.round(sf), sd:Math.round(sd)});
                   }catch(ex){}
                 }
               }
@@ -4762,17 +4765,18 @@ function App() {
             e.target.value="";
           }
 
+          // Lista a exibir: sem busca mostra tudo (max 200), com busca filtra
           const q = estoqueSearch.trim().toLowerCase();
-          const filtered = q.length>=2 ? estoqueData.filter(it=>
+          const filtered = estoqueData.filter(it=>
             (estoqueFilter?it.gc===estoqueFilter:true) &&
-            (it.cod.toLowerCase().includes(q)||it.sigma.toLowerCase().includes(q)||it.desc.toLowerCase().includes(q))
-          ).slice(0,100) : [];
-
+            (q.length<2 || it.cod.toLowerCase().includes(q)||it.sigma.toLowerCase().includes(q)||it.desc.toLowerCase().includes(q))
+          );
+          const displayItems = filtered.slice(0,200);
           const grupos = [...new Map(estoqueData.map(it=>[it.gc,{gc:it.gc,gn:it.gn}])).values()].sort((a,b)=>a.gn.localeCompare(b.gn));
 
           function copiarTabela(){
-            if(!filtered.length) return;
-            const linhas = ["QTDE\tDESCRIÇÃO\tCÓDIGO\tSIGMA", ...filtered.map(it=>`${it.sd}\t${it.desc}\t${it.cod}\t${it.sigma}`)];
+            if(!displayItems.length) return;
+            const linhas = ["QTDE\tDESCRIÇÃO\tCÓDIGO COMERCIAL\tSIGMA (Sinuelo)", ...displayItems.map(it=>`${it.sd}\t${it.desc}\t${it.cod}\t${it.sigma}`)];
             navigator.clipboard.writeText(linhas.join("\n"));
             alert("Tabela copiada! Cole com Ctrl+V no e-mail ou Excel.");
           }
@@ -4781,9 +4785,10 @@ function App() {
 
           return (
             <div style={{flex:1,display:"flex",flexDirection:"column",gap:"12px"}}>
+              {/* Controles */}
               <div style={{display:"flex",gap:"10px",alignItems:"center",flexWrap:"wrap"}}>
                 <input value={estoqueSearch} onChange={e=>setEstoqueSearch(e.target.value)}
-                  placeholder="Buscar por código, SIGMA ou descrição..." autoFocus
+                  placeholder="Buscar por código comercial, SIGMA ou descrição..." autoFocus
                   style={{...inp3,flex:1,minWidth:"200px"}}/>
                 <select value={estoqueFilter} onChange={e=>setEstoqueFilter(e.target.value)}
                   style={{...inp3,maxWidth:"220px",cursor:"pointer"}}>
@@ -4794,7 +4799,7 @@ function App() {
                   {estoqueLoading?"Importando...":"📥 Importar planilha"}
                   <input type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={importEstoque}/>
                 </label>
-                {filtered.length>0&&<button onClick={copiarTabela} style={{padding:"8px 14px",fontSize:"12px",fontWeight:600,borderRadius:"8px",border:"1px solid #1D9E75",background:"rgba(29,158,117,0.1)",color:"#1D9E75",cursor:"pointer",whiteSpace:"nowrap"}}>📋 Copiar tabela</button>}
+                {displayItems.length>0&&<button onClick={copiarTabela} style={{padding:"8px 14px",fontSize:"12px",fontWeight:600,borderRadius:"8px",border:"1px solid #1D9E75",background:"rgba(29,158,117,0.1)",color:"#1D9E75",cursor:"pointer",whiteSpace:"nowrap"}}>📋 Copiar tabela</button>}
               </div>
 
               {estoqueData.length===0?(
@@ -4803,42 +4808,38 @@ function App() {
                   <div style={{fontSize:"14px",fontWeight:600,color:"var(--text-secondary)",marginBottom:"6px"}}>Nenhum estoque carregado</div>
                   <div style={{fontSize:"12px",color:"var(--text-muted)",lineHeight:1.6}}>Clique em <b>📥 Importar planilha</b> e selecione o arquivo <b>estoque.xlsx</b></div>
                 </div>
-              ):q.length<2?(
-                <div style={{display:"flex",gap:"10px",flexWrap:"wrap",alignItems:"center"}}>
-                  <div style={{padding:"10px 14px",borderRadius:"8px",background:"var(--bg-card)",border:"1px solid var(--border)"}}>
-                    <span style={{fontWeight:700,color:"var(--text-primary)",fontSize:"18px"}}>{estoqueData.length.toLocaleString()}</span>
-                    <span style={{color:"var(--text-muted)",fontSize:"12px",marginLeft:"6px"}}>itens no estoque</span>
-                  </div>
-                  <div style={{padding:"10px 14px",borderRadius:"8px",background:"var(--bg-card)",border:"1px solid var(--border)"}}>
-                    <span style={{fontWeight:700,color:"var(--text-primary)",fontSize:"18px"}}>{grupos.length}</span>
-                    <span style={{color:"var(--text-muted)",fontSize:"12px",marginLeft:"6px"}}>marcas/grupos</span>
-                  </div>
-                  <div style={{padding:"10px 14px",borderRadius:"8px",background:"var(--bg-card)",border:"1px solid var(--border)"}}>
-                    <span style={{fontWeight:700,color:"#1D9E75",fontSize:"18px"}}>{estoqueData.filter(i=>i.sd>0).length.toLocaleString()}</span>
-                    <span style={{color:"var(--text-muted)",fontSize:"12px",marginLeft:"6px"}}>com saldo</span>
-                  </div>
-                  <span style={{color:"var(--text-muted)",fontSize:"11px"}}>Digite 2+ caracteres para buscar</span>
-                </div>
               ):(
                 <>
-                  <div style={{fontSize:"11px",color:"var(--text-muted)"}}>{filtered.length} resultado{filtered.length!==1?"s":""}{filtered.length===100?" (máx 100 — refine a busca)":""}</div>
-                  <div style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"10px",overflow:"hidden"}}>
+                  <div style={{display:"flex",gap:"10px",flexWrap:"wrap",alignItems:"center"}}>
+                    <div style={{padding:"6px 12px",borderRadius:"8px",background:"var(--bg-card)",border:"1px solid var(--border)",fontSize:"12px"}}>
+                      <span style={{fontWeight:700,color:"var(--text-primary)"}}>{filtered.length.toLocaleString()}</span>
+                      <span style={{color:"var(--text-muted)",marginLeft:"5px"}}>{q.length>=2?"resultado(s)":"itens no estoque"}</span>
+                    </div>
+                    <div style={{padding:"6px 12px",borderRadius:"8px",background:"var(--bg-card)",border:"1px solid var(--border)",fontSize:"12px"}}>
+                      <span style={{fontWeight:700,color:"#1D9E75"}}>{filtered.filter(i=>i.sd>0).length.toLocaleString()}</span>
+                      <span style={{color:"var(--text-muted)",marginLeft:"5px"}}>com saldo</span>
+                    </div>
+                    {filtered.length>200&&<span style={{fontSize:"10px",color:"var(--text-muted)"}}>exibindo 200 de {filtered.length} — refine a busca para ver mais</span>}
+                  </div>
+                  <div style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"10px",overflow:"hidden",maxHeight:"calc(100vh - 280px)",overflowY:"auto"}}>
                     <table style={{width:"100%",borderCollapse:"collapse",fontSize:"12px",tableLayout:"fixed"}}>
-                      <thead><tr style={{background:"var(--bg-card2)"}}>
-                        {[["QTDE","70px"],["DESCRIÇÃO","auto"],["CÓDIGO","110px"],["SIGMA","110px"],["MARCA","150px"]].map(([h,w])=>(
-                          <th key={h} style={{padding:"8px 10px",textAlign:"left",color:"var(--text-secondary)",fontWeight:600,fontSize:"10px",borderBottom:"1px solid var(--border)",width:w}}>{h}</th>
-                        ))}
-                      </tr></thead>
+                      <thead style={{position:"sticky",top:0,zIndex:2,background:"var(--bg-card2)"}}>
+                        <tr>
+                          {[["QTDE","68px"],["DESCRIÇÃO","auto"],["CÓDIGO COMERCIAL","130px"],["SIGMA (Sinuelo)","120px"],["MARCA","140px"]].map(([h,w])=>(
+                            <th key={h} style={{padding:"8px 10px",textAlign:"left",color:"var(--text-secondary)",fontWeight:600,fontSize:"10px",borderBottom:"1px solid var(--border)",width:w,whiteSpace:"nowrap"}}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
                       <tbody>
-                        {filtered.map((it,i)=>(
+                        {displayItems.map((it,i)=>(
                           <tr key={i} style={{borderBottom:"1px solid var(--border2)",background:i%2===0?"transparent":"rgba(255,255,255,0.015)"}}>
-                            <td style={{padding:"7px 10px",textAlign:"center"}}>
+                            <td style={{padding:"6px 10px",textAlign:"center"}}>
                               <span style={{fontWeight:700,fontSize:"13px",color:it.sd>0?"#1D9E75":"#E24B4A"}}>{it.sd}</span>
                             </td>
-                            <td style={{padding:"7px 10px",color:"var(--text-primary)",lineHeight:1.3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.desc}</td>
-                            <td style={{padding:"7px 10px",color:"var(--text-secondary)",fontFamily:"monospace",fontSize:"11px"}}>{it.cod}</td>
-                            <td style={{padding:"7px 10px",color:"var(--text-blue)",fontFamily:"monospace",fontSize:"11px"}}>{it.sigma}</td>
-                            <td style={{padding:"7px 10px",color:"var(--text-muted)",fontSize:"10px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.gn.replace("TORQUE TOOLS - ","").replace("METROLOGIA DIMENSIONAL - ","")}</td>
+                            <td style={{padding:"6px 10px",color:"var(--text-primary)",lineHeight:1.3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={it.desc}>{it.desc}</td>
+                            <td style={{padding:"6px 10px",color:"var(--text-blue)",fontFamily:"monospace",fontSize:"11px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={it.cod}>{it.cod}</td>
+                            <td style={{padding:"6px 10px",color:"var(--text-secondary)",fontFamily:"monospace",fontSize:"11px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={it.sigma}>{it.sigma}</td>
+                            <td style={{padding:"6px 10px",color:"var(--text-muted)",fontSize:"10px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={it.gn}>{it.gn.replace("TORQUE TOOLS - ","").replace("METROLOGIA DIMENSIONAL - ","")}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -4847,33 +4848,116 @@ function App() {
                 </>
               )}
             </div>
-          );
-        })()}
+          );        })()}
 
         {/* ===== DEMO TT ===== */}
         {view==="demostool" && (()=>{
           async function exportDemoXLSX(demo){
             try{
               const XLSX = window.XLSX;
-              const wsData = [
-                ["SINUELO TORQUE+CONTROLE - SOLICITAÇÃO DE DEMONSTRAÇÃO"],
-                [],
-                ["Cliente:", demo.cliente, "", "Data:", demo.data],
-                ["Contato:", demo.contato, "", "Resp.:", demo.resp],
-                [],
-                ["Nº","DESCRIÇÃO","CÓDIGO","SIGMA","QTD","OBSERVAÇÃO"],
-                ...(demo.itens||[]).map((it,i)=>[i+1, it.desc, it.cod, it.sigma, it.qtd, it.obs]),
-                [],
-                ["Observações:", demo.obs||""],
-              ];
-              const ws = XLSX.utils.aoa_to_sheet(wsData);
-              ws["!cols"]=[{wch:4},{wch:50},{wch:14},{wch:14},{wch:6},{wch:30}];
+
+              // Nome do arquivo: CODVEND-SEQ-ANO-CLIENTE-PROJETO.xlsx
+              const ano = new Date().getFullYear();
+              const seq = String(demoList.indexOf(demo)+1).padStart(3,"0");
+              const clienteSlug = (demo.cliente||"CLIENTE").toUpperCase().replace(/\s+/g,"-").replace(/[^\w-]/g,"").slice(0,20);
+              const projetoSlug = (demo.projeto||"DEMO").toUpperCase().replace(/\s+/g,"-").replace(/[^\w-]/g,"").slice(0,15);
+              const nomeArquivo = `${demo.codVend||"XXXX"}-${seq}-${ano}-${clienteSlug}-${projetoSlug}.xlsx`;
+
+              // Construir a planilha idêntica ao template
               const wb = XLSX.utils.book_new();
-              XLSX.utils.book_append_sheet(wb, ws, "Solicitação Demo");
-              XLSX.writeFile(wb, "Demo_"+(demo.cliente||"sem-cliente").replace(/\s+/g,"_")+"_"+(demo.data||"s-data")+".xlsx");
+              // Usamos aoa_to_sheet com células vazias para manter estrutura de 9 colunas (A-I)
+              const rows = [];
+              // Linha 1: vazia (logo/cabeçalho visual)
+              rows.push(["","","","","","","","",""]);
+              // Linha 2: Título
+              rows.push(["FORMULÁRIO PEDIDO DEMONSTRAÇÃO","","","","","","","",""]);
+              // Linha 3
+              rows.push(["NÚMERO NF:","", demo.nf||"", demo.nf||"", "","NUMERO DEMO:", demo.numDemo||"", demo.numDemo||"", demo.numDemo||""]);
+              // Linha 4
+              rows.push(["REPRESENTANTE:", demo.representante||demo.resp||"", demo.representante||demo.resp||"","","","DATA SOLICITAÇÃO:", demo.dataSolicitacao||demo.data||"","",""]);
+              // Linha 5
+              rows.push(["NOME CLIENTE:", "", demo.cliente||"","","","","","",""]);
+              // Linha 6
+              rows.push(["CPF/CNPJ:", "", demo.cnpj||"","","","","","",""]);
+              // Linha 7
+              rows.push(["ENDEREÇO:", demo.endereco||"","","", "","CEP:", demo.cep||"","",""]);
+              // Linha 8
+              rows.push(["CIDADE/UF:", demo.cidadeUf||"","","","","DPTO:", demo.dpto||"","",""]);
+              // Linha 9
+              rows.push(["CONTATO:", demo.contato||"","","","","FONE:", demo.fone||"","",""]);
+              // Linha 10
+              rows.push(["E-MAIL:", demo.email||"","","","","ENGENHEIRO DE APLICAÇÃO:", demo.engenheiro||"","",""]);
+              // Linha 11
+              rows.push(["DATA DEMONSTRAÇÃO:", demo.dataDemo||"","","","","DATA PREVISÃO RETORNO DEMO:", demo.dataRetorno||"","",""]);
+              // Linha 12
+              rows.push(["MOVIMENTAÇÃO:", demo.movimentacao||"","","","","","","",""]);
+              // Linha 13 (espaço)
+              rows.push(["","","","","","","","",""]);
+              // Linha 14 - header relação
+              rows.push(["RELAÇÃO DE ITENS","","","","","","","","PREENCHIDO PELO FATURAMENTO"]);
+              // Linha 15 - header colunas
+              rows.push(["ITEM","QTD","MARCA","DESCRIÇÃO","","","MODELO","SIGMA","ESTOQUE"]);
+              // Linhas 16-25 - itens (10 itens)
+              const maxItens = 10;
+              for(let i=0;i<maxItens;i++){
+                const it = (demo.itens||[])[i]||{};
+                rows.push([String(i+1), it.qtd||"", it.marca||"", it.desc||"","","", it.modelo||"", it.sigma||"", ""]);
+              }
+              // Linha 26 - soquetes
+              rows.push(["PARA DEMONSTRAÇÃO DE SOQUETES PREENCHER ABAIXO","","","","","","","",""]);
+              // Linha 27
+              rows.push(["CONSUMO ANUAL","", "CONCORRENTES","POTENCIAL DO CLIENTE","","APLICAÇÃO","COMENTÁRIOS GERAIS","",""]);
+              // Linhas 28-33 - dados soquetes
+              for(let i=0;i<6;i++){
+                const s = (demo.soquetes||[])[i]||{};
+                rows.push(["", s.consumoAnual||"", s.concorrentes||"", s.potencial||"","", s.aplicacao||"", s.comentarios||"","",""]);
+              }
+              // Linha 34 - header teste
+              rows.push(["ITEM","RANGE","OPERAÇÃO ONDE O TESTE FOI REALIZADO","","","","LINHA","POSTO DE TRABALHO",""]);
+              // Linhas 35-42
+              for(let i=0;i<8;i++){
+                const t = (demo.testes||[])[i]||{};
+                rows.push([String(i+1), t.range||"", t.operacao||"","","","", t.linha||"", t.posto||",","" ]);
+              }
+              // Linha 43 - espaço
+              rows.push(["","","","","","","","",""]);
+              // Linha 44 - período resultado header
+              rows.push(["PERÍODO DE TESTE","","","RESULTADOS","","","","",""]);
+              // Linha 45 - sub-header
+              rows.push(["ITEM","INÍCIO","FIM","HOMOLOGADO","NÃO HOMOLOGADO","CONSIDERAÇÃO","","",""]);
+              // Linhas 46-53 - resultados
+              for(let i=0;i<8;i++){
+                const r = (demo.resultados||[])[i]||{};
+                rows.push([String(i+1), r.inicio||"", r.fim||"", r.homologado||"", r.naoHomologado||"", r.consideracao||"","","",""]);
+              }
+              // Linhas 54-59 - vazias
+              for(let i=0;i<6;i++) rows.push(["","","","","","","","",""]);
+              // Linha 60 - assinaturas linha
+              rows.push(["","","","","","","","",""]);
+              // Linha 61 - assinaturas label
+              rows.push(["","Assinatura Cliente","","","","","Assinatura Vendedor","",""]);
+              // Linhas 62-63 - vazias
+              rows.push(["","","","","","","","",""]);
+              rows.push(["","","","","","","","",""]);
+              // Linha 64 - empresa
+              rows.push(["","SINUELO SERVICE LTDA","","","","","","",""]);
+              // Linha 65
+              rows.push(["Rua Antonio Kaminski, 190 - Orleans","","","Curitiba - PR","CEP: 81200-402","","","041 - 33355005",""]);
+              // Linha 66
+              rows.push(["crm@sinuelo.com","","","","https://www.sinuelo.com","","","041 - 33352324",""]);
+
+              const ws = XLSX.utils.aoa_to_sheet(rows);
+
+              // Larguras das colunas (fiel ao template)
+              ws["!cols"] = [
+                {wch:9.1},{wch:8.7},{wch:17.6},{wch:15.7},{wch:14.7},{wch:24.1},{wch:21.3},{wch:16.1},{wch:15.1}
+              ];
+
+              XLSX.utils.book_append_sheet(wb, ws, "MODELO");
+              XLSX.writeFile(wb, nomeArquivo);
+
             }catch(err){ alert("Erro ao exportar: "+err.message); }
           }
-
           function addItem(){ setDemoForm(f=>({...f,itens:[...f.itens,{cod:"",desc:"",sigma:"",qtd:1,obs:""}]})); }
           function updItem(i,k,v){ setDemoForm(f=>({...f,itens:f.itens.map((it,idx)=>idx===i?{...it,[k]:v}:it)})); }
           function delItem(i){ setDemoForm(f=>({...f,itens:f.itens.filter((_,idx)=>idx!==i)})); }
@@ -5065,6 +5149,193 @@ function App() {
             </div>
           );
         })()}
+
+        {/* ===== DIMENSIONAR FERRAMENTAS ===== */}
+        {view==="dimensionar" && (()=>{
+
+          async function runDimensionar(){
+            if(!dimQuery.trim()){ return; }
+            const freshKey = (localStorage.getItem(KEY_STORE)||"").trim();
+            if(!freshKey){
+              setDimResult("❌ Configure a API Key da Anthropic em Configurações para usar o Dimensionador.");
+              return;
+            }
+            setDimLoading(true);
+            setDimResult("");
+
+            // Coletar contexto do estoque disponível (marcas e samples)
+            const marcasDisp = [...new Set(estoqueData.map(it=>it.gn))].filter(g=>g.includes("TORQUE")).map(g=>g.replace("TORQUE TOOLS - ","")).slice(0,20);
+            const estoqueComSaldo = estoqueData.filter(it=>it.sd>0 && it.gn.includes("TORQUE")).slice(0,100).map(it=>({desc:it.desc,cod:it.cod,sigma:it.sigma,qtd:it.sd,marca:it.gn.replace("TORQUE TOOLS - ","")}));
+
+            const prompt = `Você é especialista em ferramentas industriais de torque da Sinuelo Torque+Controle.
+
+PORTFÓLIO SINUELO (marcas representadas):
+Sturtevant Richmont (SR), Norbar, Momento/CDI, Vessel, Schatz, Stahlwille, Bosch, Lübbering, Panasonic, Milwaukee, Enerpac, 3ARM, Tecna, CLECO, HS-T, Jager, Belzer
+
+CATEGORIAS DE PRODUTOS:
+- Torquímetros de estalo (click wrench): presset (fixo), ajustável, dovetail, SD 1/4", 3/8", 1/2", 3/4", 1"
+- Torquímetros digitais/eletrônicos: com display, memória, Bluetooth
+- Chaves de torque com catraca: LTCR (Sturtevant), várias capacidades
+- Parafusadeiras de torque: elétricas, pneumáticas, a bateria (Panasonic, Bosch, Milwaukee)
+- Sistemas de torque por pulso: elétricos e pneumáticos
+- Acessórios: soquetes de impacto, adaptadores, chaves de ajuste, extensões
+- Encaixes: dovetail (DIN), SD (square drive) 1/4", 3/8", 1/2", 3/4", 1"
+- Cabeças especiais: 3/4", angulada, aberta, em linha
+
+ESTOQUE DISPONÍVEL AGORA (amostra com saldo > 0):
+${JSON.stringify(estoqueComSaldo.slice(0,50))}
+
+MARCAS EM ESTOQUE:
+${marcasDisp.join(", ")}
+
+NECESSIDADE DO USUÁRIO:
+"${dimQuery}"
+
+RESPONDA EM PORTUGUÊS com:
+1. **Interpretação da necessidade** (o que o cliente precisa tecnicamente)
+2. **Opções recomendadas do portfólio** (com marca, modelo/código se souber, capacidade, encaixe)
+3. **Itens em estoque agora** (cruzar com a lista acima, se encontrar)
+4. **Alternativas** (se a opção ideal não estiver no estoque)
+5. **Perguntas para afinar a recomendação** (torque desejado? encaixe? ambiente? frequência de uso?)
+
+Seja objetivo, técnico e comercialmente útil. Use bullet points.`;
+
+            try{
+              const res = await fetch("https://api.anthropic.com/v1/messages",{
+                method:"POST",
+                headers:{"Content-Type":"application/json","x-api-key":freshKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+                body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,messages:[{role:"user",content:prompt}]})
+              });
+              if(!res.ok){
+                const err=await res.json().catch(()=>({}));
+                throw new Error(`API ${res.status}: ${err?.error?.message||res.statusText}`);
+              }
+              const data = await res.json();
+              const text = (data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("");
+              setDimResult(text);
+              setDimHistory(h=>[{query:dimQuery,result:text,ts:new Date().toLocaleString("pt-BR")},...h.slice(0,9)]);
+            }catch(e){
+              setDimResult("Erro: "+e.message);
+            }
+            setDimLoading(false);
+          }
+
+          // Renderizar markdown simples
+          function renderMd(text){
+            if(!text) return null;
+            return text.split("\n").map((line,i)=>{
+              if(line.startsWith("## ")) return <div key={i} style={{fontSize:"14px",fontWeight:700,color:"var(--text-primary)",marginTop:"14px",marginBottom:"4px",borderBottom:"1px solid var(--border)",paddingBottom:"4px"}}>{line.slice(3)}</div>;
+              if(line.startsWith("**")&&line.endsWith("**")) return <div key={i} style={{fontSize:"13px",fontWeight:700,color:"var(--text-primary)",marginTop:"10px",marginBottom:"3px"}}>{line.replace(/\*\*/g,"")}</div>;
+              if(/^\*\*(.+)\*\*/.test(line)) return <div key={i} style={{fontSize:"12px",color:"var(--text-primary)",marginBottom:"3px",lineHeight:1.5}} dangerouslySetInnerHTML={{__html:line.replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>")}}></div>;
+              if(line.startsWith("- ")||line.startsWith("• ")) return <div key={i} style={{fontSize:"12px",color:"var(--text-secondary)",paddingLeft:"14px",marginBottom:"3px",lineHeight:1.5}}>• {line.slice(2)}</div>;
+              if(/^\d+\./.test(line)) return <div key={i} style={{fontSize:"12px",color:"var(--text-secondary)",paddingLeft:"14px",marginBottom:"3px",lineHeight:1.5}}>{line}</div>;
+              if(line.trim()==="") return <div key={i} style={{height:"6px"}}/>;
+              return <div key={i} style={{fontSize:"12px",color:"var(--text-secondary)",lineHeight:1.6,marginBottom:"2px"}}>{line}</div>;
+            });
+          }
+
+          const suggestions = [
+            "Torquímetro com encaixe 3/4\" cabeça para uso em linha automotiva",
+            "Parafusadeira elétrica de torque para montagem de componentes eletrônicos",
+            "Torquímetro digital com memória para controle de qualidade",
+            "Soquete de impacto 22mm SD 1/2\" para linha de produção",
+            "Torquímetro para flanges de tubulação, torque de 500Nm",
+            "Chave de torque angulada para espaço reduzido, 80Nm",
+          ];
+
+          return (
+            <div style={{flex:1,display:"flex",gap:"14px",alignItems:"flex-start"}}>
+
+              {/* Coluna esquerda: input + histórico */}
+              <div style={{width:"320px",flexShrink:0,display:"flex",flexDirection:"column",gap:"10px"}}>
+                <div style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"14px"}}>
+                  <div style={{fontSize:"13px",fontWeight:700,color:"var(--text-primary)",marginBottom:"4px"}}>🎯 Dimensionar Ferramenta</div>
+                  <div style={{fontSize:"11px",color:"var(--text-muted)",marginBottom:"10px",lineHeight:1.5}}>
+                    Descreva a necessidade e o CRM recomenda a ferramenta ideal do nosso portfólio — sem API externa, usa IA local.
+                  </div>
+                  <textarea value={dimQuery} onChange={e=>setDimQuery(e.target.value)}
+                    onKeyDown={e=>{if(e.key==="Enter"&&e.ctrlKey)runDimensionar();}}
+                    placeholder={"Ex: Preciso de um torquímetro com cabeça 3/4\", para parafusos de flanges em linha automotiva, torque entre 300-600Nm"}
+                    style={{width:"100%",padding:"10px 12px",fontSize:"12px",borderRadius:"8px",border:"1px solid var(--border)",background:"var(--bg-input)",color:"var(--text-primary)",height:"100px",resize:"vertical",boxSizing:"border-box",lineHeight:1.5}}/>
+                  <button onClick={runDimensionar} disabled={dimLoading||!dimQuery.trim()}
+                    style={{width:"100%",marginTop:"8px",padding:"10px",fontSize:"13px",fontWeight:700,borderRadius:"8px",border:"none",background:dimLoading||!dimQuery.trim()?"rgba(140,26,26,0.3)":"#8C1A1A",color:dimLoading||!dimQuery.trim()?"rgba(255,208,208,0.4)":"#FFD0D0",cursor:dimLoading||!dimQuery.trim()?"not-allowed":"pointer"}}>
+                    {dimLoading?"🔄 Analisando...":"🎯 Dimensionar"}
+                  </button>
+                  <div style={{fontSize:"9px",color:"var(--text-muted)",marginTop:"5px",textAlign:"center"}}>Ctrl+Enter para enviar</div>
+                </div>
+
+                {/* Sugestões */}
+                <div style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"12px"}}>
+                  <div style={{fontSize:"10px",fontWeight:600,color:"var(--text-secondary)",textTransform:"uppercase",letterSpacing:".07em",marginBottom:"8px"}}>Exemplos de consulta</div>
+                  <div style={{display:"flex",flexDirection:"column",gap:"5px"}}>
+                    {suggestions.map((s,i)=>(
+                      <div key={i} onClick={()=>setDimQuery(s)}
+                        style={{fontSize:"11px",padding:"6px 9px",borderRadius:"6px",background:"var(--bg-card2)",border:"1px solid var(--border)",cursor:"pointer",color:"var(--text-secondary)",lineHeight:1.4,transition:"border-color .12s"}}
+                        onMouseEnter={e=>e.currentTarget.style.borderColor="var(--sinuelo)"}
+                        onMouseLeave={e=>e.currentTarget.style.borderColor="var(--border)"}>
+                        {s}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Histórico */}
+                {dimHistory.length>0&&(
+                  <div style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"12px"}}>
+                    <div style={{fontSize:"10px",fontWeight:600,color:"var(--text-secondary)",textTransform:"uppercase",letterSpacing:".07em",marginBottom:"8px"}}>Consultas recentes</div>
+                    {dimHistory.map((h,i)=>(
+                      <div key={i} onClick={()=>{setDimQuery(h.query);setDimResult(h.result);}}
+                        style={{fontSize:"11px",padding:"6px 9px",borderRadius:"6px",background:"var(--bg-card2)",border:"1px solid var(--border)",cursor:"pointer",marginBottom:"5px",lineHeight:1.4}}>
+                        <div style={{color:"var(--text-primary)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{h.query.slice(0,55)}{h.query.length>55?"…":""}</div>
+                        <div style={{fontSize:"9px",color:"var(--text-muted)",marginTop:"2px"}}>{h.ts}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Coluna direita: resultado */}
+              <div style={{flex:1,minWidth:0}}>
+                {!dimResult&&!dimLoading&&(
+                  <div style={{textAlign:"center",padding:"60px 20px",color:"var(--text-muted)"}}>
+                    <div style={{fontSize:"40px",marginBottom:"16px"}}>🎯</div>
+                    <div style={{fontSize:"14px",fontWeight:600,color:"var(--text-secondary)",marginBottom:"8px"}}>Dimensionador de Ferramentas Sinuelo</div>
+                    <div style={{fontSize:"12px",lineHeight:1.7,maxWidth:"420px",margin:"0 auto"}}>
+                      Descreva a necessidade do cliente — <b>tipo de ferramenta</b>, <b>torque</b>, <b>encaixe</b>, <b>aplicação</b> — e o CRM recomenda a opção ideal do nosso portfólio, cruzando com o estoque disponível.<br/><br/>
+                      <span style={{color:"var(--text-muted)",fontSize:"11px"}}>🧠 Usa IA (API Anthropic) · Sem consulta externa · Baseado no catálogo Sinuelo</span>
+                    </div>
+                  </div>
+                )}
+                {dimLoading&&(
+                  <div style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"24px",textAlign:"center"}}>
+                    <div style={{fontSize:"24px",marginBottom:"10px"}}>🔄</div>
+                    <div style={{fontSize:"13px",color:"var(--text-secondary)"}}>Analisando necessidade e cruzando com portfólio...</div>
+                  </div>
+                )}
+                {dimResult&&!dimLoading&&(
+                  <div style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"20px"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px",paddingBottom:"10px",borderBottom:"1px solid var(--border2)"}}>
+                      <div>
+                        <div style={{fontSize:"13px",fontWeight:700,color:"var(--text-primary)"}}>Recomendação técnica</div>
+                        <div style={{fontSize:"11px",color:"var(--text-muted)",marginTop:"2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"400px"}}>{dimQuery}</div>
+                      </div>
+                      <div style={{display:"flex",gap:"6px",flexShrink:0}}>
+                        <button onClick={()=>navigator.clipboard.writeText(dimResult)}
+                          style={{padding:"5px 10px",fontSize:"11px",borderRadius:"6px",border:"1px solid var(--border)",background:"transparent",color:"var(--text-secondary)",cursor:"pointer"}}>📋 Copiar</button>
+                        <button onClick={()=>{setDimResult("");setDimQuery("");}}
+                          style={{padding:"5px 10px",fontSize:"11px",borderRadius:"6px",border:"1px solid var(--border)",background:"transparent",color:"var(--text-muted)",cursor:"pointer"}}>✕ Limpar</button>
+                      </div>
+                    </div>
+                    <div style={{lineHeight:1.6}}>
+                      {renderMd(dimResult)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
 
       {/* MODAL CLIENTE FULLSCREEN (Kanban) */}
       {selClient && clientView2==="kanban" && (()=>{
