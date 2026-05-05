@@ -863,23 +863,23 @@ function App() {
   try{
   const r = localStorage.getItem(SETTINGS_KEY);
   let s = r ? JSON.parse(r) : defaultSettings;
-  // Migração: garantir que todas as colunas do defaultSettings existem e têm larguras corretas
   const defCols = defaultSettings.forecastCols;
   let cols = s.forecastCols || [];
-  // Adicionar colunas novas que não existem (follow-up, contato)
+  // Migração 1: renomear key "notes" → "nextAction" na coluna FOLLOW-UP
+  cols = cols.map(c=> c.key==="notes" && c.label==="FOLLOW-UP" ? {...c, key:"nextAction"} : c);
+  // Migração 2: adicionar colunas novas que não existem
   defCols.forEach(dc=>{
   if(!cols.find(c=>c.key===dc.key)) cols = [...cols, dc];
   });
-  // Corrigir title de 200px → 150px se ainda for o valor antigo
+  // Migração 3: corrigir title de 200px → 150px
   cols = cols.map(c=>{
   if(c.key==="title" && c.width==="200px") return {...c, width:"150px"};
   return c;
   });
   s = {...s, forecastCols: cols};
-  // Persistir correção imediatamente
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
   return s;
-  }catch{ return defaultSettings; }
+  }catch(e){ return defaultSettings; }
   });
   function saveSettings(s){ setSettings(s); try{ localStorage.setItem(SETTINGS_KEY,JSON.stringify(s)); }catch(e){}; }
   // Draft local para larguras das colunas (sincroniza com settings já migrado)
