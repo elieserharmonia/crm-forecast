@@ -855,7 +855,7 @@ function App() {
   {key:"title",  label:"DESCRIPTION",visible:true,  width:"150px"},
   {key:"value",  label:"AMOUNT",  visible:true,  width:"88px"},
   {key:"stage",  label:"CONF.",  visible:true,  width:"60px"},
-  {key:"notes",  label:"FOLLOW-UP",  visible:true,  width:"220px"},
+  {key:"nextAction",  label:"FOLLOW-UP",  visible:true,  width:"220px"},
   {key:"contact",label:"CONTATOS",  visible:true,  width:"90px"},
   ]
   };
@@ -1224,7 +1224,7 @@ function App() {
   // Retorna a lista de follow-ups de uma oportunidade (migrando se necessário)
   function getFollowUps(opp){
   if(Array.isArray(opp.followUps)) return opp.followUps;
-  return parseFollowUpsFromNotes(opp.notes);
+  return parseFollowUpsFromNotes(opp.nextAction);
   }
 
   // Formata a lista como texto (para exibição em relatório/exports)
@@ -2037,8 +2037,8 @@ function App() {
   {tc.label}
   </th>
   ))}
-  {[["nextDate","FOLLOW-UP","180px"],["contact","CONTATOS","90px"]].map(([key,label,w])=>{
-  const col = (settings.forecastCols||[]).find(c=>c.key===key||c.key===(key==="nextDate"?"notes":key));
+  {[["nextAction","FOLLOW-UP","220px"],["contact","CONTATOS","90px"]].map(([key,label,w])=>{
+  const col = (settings.forecastCols||[]).find(c=>c.key===key);
   if(col && !col.visible) return null;
   const colW = col?.width || w;
   const colL = col?.label || label;
@@ -2125,8 +2125,8 @@ function App() {
   );
   });
   })()}
-  {(settings.forecastCols||[]).find(c=>c.key==="notes")?.visible!==false&&(
-  <td style={{padding:"6px 8px",color:"var(--text-secondary)",fontSize:"11px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",borderLeft:`1px solid var(--border2)`,width:(settings.forecastCols||[]).find(c=>c.key==="notes")?.width||"220px"}}>
+  {(settings.forecastCols||[]).find(c=>c.key==="nextAction")?.visible!==false&&(
+  <td style={{padding:"6px 8px",color:"var(--text-secondary)",fontSize:"11px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",borderLeft:`1px solid var(--border2)`,width:(settings.forecastCols||[]).find(c=>c.key==="nextAction")?.width||"220px"}}>
   {(()=>{const lines=(opp.nextAction||"").split("\n").filter(l=>l.trim());return lines.length?lines[0]:"—";})()}
   </td>
   )}
