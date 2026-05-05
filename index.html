@@ -933,11 +933,7 @@ function App() {
   const [demoForm, setDemoForm] = React.useState({cliente:"",contato:"",data:"",resp:"",itens:[{cod:"",desc:"",sigma:"",qtd:1,obs:""}]});
   function saveDemoList(d){ setDemoList(d); try{ localStorage.setItem(DEMO_KEY,JSON.stringify(d)); }catch(e){} }
 
-  // ===== DIMENSIONAR FERRAMENTAS =====
-  const [dimQuery, setDimQuery] = React.useState("");
-  const [dimResult, setDimResult] = React.useState("");
-  const [dimLoading, setDimLoading] = React.useState(false);
-  const [dimHistory, setDimHistory] = React.useState([]);
+
   const [precosSearch, setPrecosSearch] = React.useState("");
   const [precosResultados, setPrecosResultados] = React.useState([]);
   const INTEL_KEY = "crm_intel_v1";
@@ -1844,7 +1840,7 @@ function App() {
   
   <div className="crm-sidebar">
 
-  {[["kanban","📊","Forecast"],["tasks","✓","Tarefas"],["clients","👥","Clientes"],["relatorio","📋","Relatório"],["posvendas","✅","Pós-venda"],["budget","💰","Budget"],["orcamentos","📝","Orçamentos"],["projetos","⚙","Projetos"],["intel","🧠","Radar"],["estoque","📦","Estoque"],["demostool","🔧","Demo TT"],["precos","💲","Consulta Preço"],["dimensionar","🎯","Dimensionar"]].map(([v,icon,label])=>(
+  {[["kanban","📊","Forecast"],["tasks","✓","Tarefas"],["clients","👥","Clientes"],["relatorio","📋","Relatório"],["posvendas","✅","Pós-venda"],["budget","💰","Budget"],["orcamentos","📝","Orçamentos"],["projetos","⚙","Projetos"],["intel","🧠","Radar"],["estoque","📦","Estoque"],["demostool","🔧","Demo TT"],["precos","💲","Consulta Preço"]].map(([v,icon,label])=>(
   <button key={v} className={`crm-sidebar-btn${view===v?" active":""}`} onClick={()=>{setView(v);if(v!=="kanban")setSel(null);}}>
   <span style={{fontSize:"15px",flexShrink:0,lineHeight:1}}>{icon}</span>
   <span className="sb-label">{label}</span>
@@ -4808,7 +4804,26 @@ function App() {
   <select value={estoqueFilter} onChange={e=>setEstoqueFilter(e.target.value)}
   style={{...inp3,maxWidth:"220px",cursor:"pointer"}}>
   <option value="">Todas as marcas</option>
-  {grupos.map(g=><option key={g.gc} value={g.gc}>{g.gn.replace("TORQUE TOOLS - ","").replace("METROLOGIA DIMENSIONAL - ","")}</option>)}
+  {(()=>{
+    const PRIORITY = ["BOSCH","3ARM","ENERPAC","JAGER","LUBBERING","MOMENTO","MILWAUKEE","NORBAR","PANASONIC","STURTEVANT","STAHLWILLE","SCHATZ","HS-T","TECNA","CDI","VESSEL","CLECO","BELZER"];
+    const priGrupos = [], outrosGrupos = [];
+    grupos.forEach(g=>{
+      const nome = g.gn.replace("TORQUE TOOLS - ","").replace("METROLOGIA DIMENSIONAL - ","").toUpperCase();
+      PRIORITY.some(p=>nome.includes(p)) ? priGrupos.push(g) : outrosGrupos.push(g);
+    });
+    priGrupos.sort((a,b)=>{
+      const na=a.gn.replace("TORQUE TOOLS - ","").toUpperCase();
+      const nb=b.gn.replace("TORQUE TOOLS - ","").toUpperCase();
+      return PRIORITY.findIndex(p=>na.includes(p))-PRIORITY.findIndex(p=>nb.includes(p));
+    });
+    return (
+      <React.Fragment>
+        {priGrupos.map(g=><option key={g.gc} value={g.gc}>{g.gn.replace("TORQUE TOOLS - ","").replace("METROLOGIA DIMENSIONAL - ","")}</option>)}
+        {outrosGrupos.length>0&&<option disabled>── Outros ──</option>}
+        {outrosGrupos.map(g=><option key={g.gc} value={g.gc}>{g.gn.replace("TORQUE TOOLS - ","").replace("METROLOGIA DIMENSIONAL - ","")}</option>)}
+      </React.Fragment>
+    );
+  })()}
   </select>
   <label style={{padding:"8px 14px",fontSize:"12px",fontWeight:600,borderRadius:"8px",border:"1px solid #185FA5",background:"rgba(24,95,165,0.1)",color:"#185FA5",cursor:"pointer",whiteSpace:"nowrap"}}>
   {estoqueLoading?"Importando...":"📥 Importar planilha"}
@@ -5161,192 +5176,6 @@ function App() {
   ))}
   </div>
   )}
-  </div>
-  );
-  })()}
-
-  {/* ===== DIMENSIONAR FERRAMENTAS ===== */}
-  {view==="dimensionar" && (()=>{
-
-  async function runDimensionar(){
-  if(!dimQuery.trim()){ return; }
-  const freshKey = (localStorage.getItem(KEY_STORE)||"").trim();
-  if(!freshKey){
-  setDimResult("❌ Configure a API Key da Anthropic em Configurações para usar o Dimensionador.");
-  return;
-  }
-  setDimLoading(true);
-  setDimResult("");
-
-  // Coletar contexto do estoque disponível (marcas e samples)
-  const marcasDisp = [...new Set(estoqueData.map(it=>it.gn))].filter(g=>g.includes("TORQUE")).map(g=>g.replace("TORQUE TOOLS - ","")).slice(0,20);
-  const estoqueComSaldo = estoqueData.filter(it=>it.sd>0 && it.gn.includes("TORQUE")).slice(0,100).map(it=>({desc:it.desc,cod:it.cod,sigma:it.sigma,qtd:it.sd,marca:it.gn.replace("TORQUE TOOLS - ","")}));
-
-  const prompt = `Você é especialista em ferramentas industriais de torque da Sinuelo Torque+Controle.
-
-PORTFÓLIO SINUELO (marcas representadas):
-Sturtevant Richmont (SR), Norbar, Momento/CDI, Vessel, Schatz, Stahlwille, Bosch, Lübbering, Panasonic, Milwaukee, Enerpac, 3ARM, Tecna, CLECO, HS-T, Jager, Belzer
-
-CATEGORIAS DE PRODUTOS:
-- Torquímetros de estalo (click wrench): presset (fixo), ajustável, dovetail, SD 1/4", 3/8", 1/2", 3/4", 1"
-- Torquímetros digitais/eletrônicos: com display, memória, Bluetooth
-- Chaves de torque com catraca: LTCR (Sturtevant), várias capacidades
-- Parafusadeiras de torque: elétricas, pneumáticas, a bateria (Panasonic, Bosch, Milwaukee)
-- Sistemas de torque por pulso: elétricos e pneumáticos
-- Acessórios: soquetes de impacto, adaptadores, chaves de ajuste, extensões
-- Encaixes: dovetail (DIN), SD (square drive) 1/4", 3/8", 1/2", 3/4", 1"
-- Cabeças especiais: 3/4", angulada, aberta, em linha
-
-ESTOQUE DISPONÍVEL AGORA (amostra com saldo > 0):
-${JSON.stringify(estoqueComSaldo.slice(0,50))}
-
-MARCAS EM ESTOQUE:
-${marcasDisp.join(", ")}
-
-NECESSIDADE DO USUÁRIO:
-"${dimQuery}"
-
-RESPONDA EM PORTUGUÊS com:
-1. **Interpretação da necessidade** (o que o cliente precisa tecnicamente)
-2. **Opções recomendadas do portfólio** (com marca, modelo/código se souber, capacidade, encaixe)
-3. **Itens em estoque agora** (cruzar com a lista acima, se encontrar)
-4. **Alternativas** (se a opção ideal não estiver no estoque)
-5. **Perguntas para afinar a recomendação** (torque desejado? encaixe? ambiente? frequência de uso?)
-
-Seja objetivo, técnico e comercialmente útil. Use bullet points.`;
-
-  try{
-  const res = await fetch("https://api.anthropic.com/v1/messages",{
-  method:"POST",
-  headers:{"Content-Type":"application/json","x-api-key":freshKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-  body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,messages:[{role:"user",content:prompt}]})
-  });
-  if(!res.ok){
-  const err=await res.json().catch(()=>({}));
-  throw new Error(`API ${res.status}: ${err?.error?.message||res.statusText}`);
-  }
-  const data = await res.json();
-  const text = (data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("");
-  setDimResult(text);
-  setDimHistory(h=>[{query:dimQuery,result:text,ts:new Date().toLocaleString("pt-BR")},...h.slice(0,9)]);
-  }catch(e){
-  setDimResult("Erro: "+e.message);
-  }
-  setDimLoading(false);
-  }
-
-  // Renderizar markdown simples
-  function renderMd(text){
-  if(!text) return null;
-  return text.split("\n").map((line,i)=>{
-  if(line.startsWith("## ")) return <div key={i} style={{fontSize:"14px",fontWeight:700,color:"var(--text-primary)",marginTop:"14px",marginBottom:"4px",borderBottom:"1px solid var(--border)",paddingBottom:"4px"}}>{line.slice(3)}</div>;
-  if(line.startsWith("**")&&line.endsWith("**")) return <div key={i} style={{fontSize:"13px",fontWeight:700,color:"var(--text-primary)",marginTop:"10px",marginBottom:"3px"}}>{line.replace(/\*\*/g,"")}</div>;
-  if(/^\*\*(.+)\*\*/.test(line)) return <div key={i} style={{fontSize:"12px",color:"var(--text-primary)",marginBottom:"3px",lineHeight:1.5}} dangerouslySetInnerHTML={{__html:line.replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>")}}></div>;
-  if(line.startsWith("- ")||line.startsWith("• ")) return <div key={i} style={{fontSize:"12px",color:"var(--text-secondary)",paddingLeft:"14px",marginBottom:"3px",lineHeight:1.5}}>• {line.slice(2)}</div>;
-  if(/^\d+\./.test(line)) return <div key={i} style={{fontSize:"12px",color:"var(--text-secondary)",paddingLeft:"14px",marginBottom:"3px",lineHeight:1.5}}>{line}</div>;
-  if(line.trim()==="") return <div key={i} style={{height:"6px"}}/>;
-  return <div key={i} style={{fontSize:"12px",color:"var(--text-secondary)",lineHeight:1.6,marginBottom:"2px"}}>{line}</div>;
-  });
-  }
-
-  const suggestions = [
-  "Torquímetro com encaixe 3/4\" cabeça para uso em linha automotiva",
-  "Parafusadeira elétrica de torque para montagem de componentes eletrônicos",
-  "Torquímetro digital com memória para controle de qualidade",
-  "Soquete de impacto 22mm SD 1/2\" para linha de produção",
-  "Torquímetro para flanges de tubulação, torque de 500Nm",
-  "Chave de torque angulada para espaço reduzido, 80Nm",
-  ];
-
-  return (
-  <div style={{flex:1,display:"flex",gap:"14px",alignItems:"flex-start"}}>
-
-  
-  <div style={{width:"320px",flexShrink:0,display:"flex",flexDirection:"column",gap:"10px"}}>
-  <div style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"14px"}}>
-  <div style={{fontSize:"13px",fontWeight:700,color:"var(--text-primary)",marginBottom:"4px"}}>🎯 Dimensionar Ferramenta</div>
-  <div style={{fontSize:"11px",color:"var(--text-muted)",marginBottom:"10px",lineHeight:1.5}}>
-  Descreva a necessidade e o CRM recomenda a ferramenta ideal do nosso portfólio — sem API externa, usa IA local.
-  </div>
-  <textarea value={dimQuery} onChange={e=>setDimQuery(e.target.value)}
-  onKeyDown={e=>{if(e.key==="Enter"&&e.ctrlKey)runDimensionar();}}
-  placeholder={"Ex: Preciso de um torquímetro com cabeça 3/4\", para parafusos de flanges em linha automotiva, torque entre 300-600Nm"}
-  style={{width:"100%",padding:"10px 12px",fontSize:"12px",borderRadius:"8px",border:"1px solid var(--border)",background:"var(--bg-input)",color:"var(--text-primary)",height:"100px",resize:"vertical",boxSizing:"border-box",lineHeight:1.5}}/>
-  <button onClick={runDimensionar} disabled={dimLoading||!dimQuery.trim()}
-  style={{width:"100%",marginTop:"8px",padding:"10px",fontSize:"13px",fontWeight:700,borderRadius:"8px",border:"none",background:dimLoading||!dimQuery.trim()?"rgba(140,26,26,0.3)":"#8C1A1A",color:dimLoading||!dimQuery.trim()?"rgba(255,208,208,0.4)":"#FFD0D0",cursor:dimLoading||!dimQuery.trim()?"not-allowed":"pointer"}}>
-  {dimLoading?"🔄 Analisando...":"🎯 Dimensionar"}
-  </button>
-  <div style={{fontSize:"9px",color:"var(--text-muted)",marginTop:"5px",textAlign:"center"}}>Ctrl+Enter para enviar</div>
-  </div>
-
-  
-  <div style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"12px"}}>
-  <div style={{fontSize:"10px",fontWeight:600,color:"var(--text-secondary)",textTransform:"uppercase",letterSpacing:".07em",marginBottom:"8px"}}>Exemplos de consulta</div>
-  <div style={{display:"flex",flexDirection:"column",gap:"5px"}}>
-  {suggestions.map((s,i)=>(
-  <div key={i} onClick={()=>setDimQuery(s)}
-  style={{fontSize:"11px",padding:"6px 9px",borderRadius:"6px",background:"var(--bg-card2)",border:"1px solid var(--border)",cursor:"pointer",color:"var(--text-secondary)",lineHeight:1.4,transition:"border-color .12s"}}
-  onMouseEnter={e=>e.currentTarget.style.borderColor="var(--sinuelo)"}
-  onMouseLeave={e=>e.currentTarget.style.borderColor="var(--border)"}>
-  {s}
-  </div>
-  ))}
-  </div>
-  </div>
-
-  
-  {dimHistory.length>0&&(
-  <div style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"12px"}}>
-  <div style={{fontSize:"10px",fontWeight:600,color:"var(--text-secondary)",textTransform:"uppercase",letterSpacing:".07em",marginBottom:"8px"}}>Consultas recentes</div>
-  {dimHistory.map((h,i)=>(
-  <div key={i} onClick={()=>{setDimQuery(h.query);setDimResult(h.result);}}
-  style={{fontSize:"11px",padding:"6px 9px",borderRadius:"6px",background:"var(--bg-card2)",border:"1px solid var(--border)",cursor:"pointer",marginBottom:"5px",lineHeight:1.4}}>
-  <div style={{color:"var(--text-primary)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{h.query.slice(0,55)}{h.query.length>55?"…":""}</div>
-  <div style={{fontSize:"9px",color:"var(--text-muted)",marginTop:"2px"}}>{h.ts}</div>
-  </div>
-  ))}
-  </div>
-  )}
-  </div>
-
-  
-  <div style={{flex:1,minWidth:0}}>
-  {!dimResult&&!dimLoading&&(
-  <div style={{textAlign:"center",padding:"60px 20px",color:"var(--text-muted)"}}>
-  <div style={{fontSize:"40px",marginBottom:"16px"}}>🎯</div>
-  <div style={{fontSize:"14px",fontWeight:600,color:"var(--text-secondary)",marginBottom:"8px"}}>Dimensionador de Ferramentas Sinuelo</div>
-  <div style={{fontSize:"12px",lineHeight:1.7,maxWidth:"420px",margin:"0 auto"}}>
-  Descreva a necessidade do cliente — <b>tipo de ferramenta</b>, <b>torque</b>, <b>encaixe</b>, <b>aplicação</b> — e o CRM recomenda a opção ideal do nosso portfólio, cruzando com o estoque disponível.<br/><br/>
-  <span style={{color:"var(--text-muted)",fontSize:"11px"}}>🧠 Usa IA (API Anthropic) · Sem consulta externa · Baseado no catálogo Sinuelo</span>
-  </div>
-  </div>
-  )}
-  {dimLoading&&(
-  <div style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"24px",textAlign:"center"}}>
-  <div style={{fontSize:"24px",marginBottom:"10px"}}>🔄</div>
-  <div style={{fontSize:"13px",color:"var(--text-secondary)"}}>Analisando necessidade e cruzando com portfólio...</div>
-  </div>
-  )}
-  {dimResult&&!dimLoading&&(
-  <div style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"20px"}}>
-  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px",paddingBottom:"10px",borderBottom:"1px solid var(--border2)"}}>
-  <div>
-  <div style={{fontSize:"13px",fontWeight:700,color:"var(--text-primary)"}}>Recomendação técnica</div>
-  <div style={{fontSize:"11px",color:"var(--text-muted)",marginTop:"2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"400px"}}>{dimQuery}</div>
-  </div>
-  <div style={{display:"flex",gap:"6px",flexShrink:0}}>
-  <button onClick={()=>navigator.clipboard.writeText(dimResult)}
-  style={{padding:"5px 10px",fontSize:"11px",borderRadius:"6px",border:"1px solid var(--border)",background:"transparent",color:"var(--text-secondary)",cursor:"pointer"}}>📋 Copiar</button>
-  <button onClick={()=>{setDimResult("");setDimQuery("");}}
-  style={{padding:"5px 10px",fontSize:"11px",borderRadius:"6px",border:"1px solid var(--border)",background:"transparent",color:"var(--text-muted)",cursor:"pointer"}}>✕ Limpar</button>
-  </div>
-  </div>
-  <div style={{lineHeight:1.6}}>
-  {renderMd(dimResult)}
-  </div>
-  </div>
-  )}
-  </div>
   </div>
   );
   })()}
