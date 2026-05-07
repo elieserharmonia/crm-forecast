@@ -1982,6 +1982,79 @@ function App() {
           const inp = {padding:"7px 10px",fontSize:"12px",borderRadius:"6px",border:"1px solid var(--border)",background:"var(--bg-input)",color:"var(--text-primary)",width:"100%",boxSizing:"border-box"};
 
           // Exportar Excel idêntico ao FORECAST_2026_EF.xlsx
+          // Importar Excel (FORECAST_2026_EF.xlsx)
+          async function importXLSX(e){
+            const file = e.target.files[0];
+            if(!file) return;
+            try{
+              const XLSX = window.XLSX;
+              const buf = await file.arrayBuffer();
+              const wb = XLSX.read(buf);
+              const allImported = [];
+              wb.SheetNames.forEach(sheetName=>{
+                const ws = wb.Sheets[sheetName];
+                const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
+                if(!rows.length) return;
+                // Detectar header: linha com CUSTOMER ou RESP.
+                let headerRow = -1;
+                for(let i=0;i<Math.min(5,rows.length);i++){
+                  const r = rows[i].map(c=>String(c||"").trim());
+                  if(r.includes("CUSTOMER")||r.includes("RESP.")){headerRow=i;break;}
+                }
+                if(headerRow<0) return;
+                const headers = rows[headerRow].map(c=>String(c||"").trim());
+                // Mapear índices das colunas
+                const iNeg  = 0; // col A sempre
+                const iResp = headers.indexOf("RESP.");
+                const iCust = headers.indexOf("CUSTOMER");
+                const iSupp = headers.indexOf("SUPPLIER");
+                const iDesc = headers.indexOf("DESCRIPTION");
+                const iAmt  = headers.indexOf("AMOUNT");
+                const iUf   = headers.indexOf("UF");
+                const iConf = headers.findIndex(h=>h.toLowerCase()==="confidence");
+                // Meses: colunas com nome de mês (3 letras)
+                const monthCols = {};
+                ALL_MONTHS.forEach(m=>{
+                  const ci = headers.findIndex(h=>h.toUpperCase()===m);
+                  if(ci>=0) monthCols[m]=ci;
+                });
+                const iFup  = headers.indexOf("FOLLOW-UP");
+                const iCont = headers.indexOf("CONTATOS");
+                // Processar linhas de dados
+                for(let ri=headerRow+1;ri<rows.length;ri++){
+                  const row = rows[ri];
+                  if(!row || !row.some(c=>c!==null&&c!=="")) continue;
+                  const customer = String(row[iCust]||"").trim();
+                  if(!customer) continue;
+                  const months = {};
+                  Object.entries(monthCols).forEach(([m,ci])=>{
+                    const v = String(row[ci]||"").trim().toLowerCase();
+                    if(v==="x"||v==="1"||v==="true") months[m]=true;
+                  });
+                  allImported.push({
+                    id: "ofc_"+Date.now()+"_"+ri,
+                    neg:      String(row[iNeg]||"D").trim()||"D",
+                    resp:     iResp>=0?String(row[iResp]||"").trim():"",
+                    customer,
+                    supplier: iSupp>=0?String(row[iSupp]||"").trim():"",
+                    description: iDesc>=0?String(row[iDesc]||"").trim():"",
+                    amount:   iAmt>=0&&row[iAmt]!=null?String(row[iAmt]).replace(/[^0-9.]/g,""):"",
+                    uf:       iUf>=0?String(row[iUf]||"SP").trim():"SP",
+                    confidence: iConf>=0&&row[iConf]!=null?String(parseFloat(row[iConf])||0):"0.1",
+                    months,
+                    followup: iFup>=0?String(row[iFup]||"").trim():"",
+                    contatos: iCont>=0?String(row[iCont]||"").trim():"",
+                  });
+                }
+              });
+              if(allImported.length===0){ alert("Nenhuma oportunidade encontrada no arquivo. Verifique se o header tem as colunas CUSTOMER e RESP."); return; }
+              const doMerge = oppFc.length>0 && confirm(`Já existem ${oppFc.length} oportunidades.\nOK = Mesclar (adicionar novas sem apagar as existentes)\nCancelar = Substituir tudo`);
+              saveOppFc(doMerge?[...oppFc,...allImported]:allImported);
+              alert(`✅ ${allImported.length} oportunidades importadas de ${wb.SheetNames.length} aba(s).`);
+            }catch(err){ alert("Erro ao importar: "+err.message); }
+            e.target.value="";
+          }
+
           function exportXLSX(){
             const XLSX = window.XLSX;
             const months3 = FC_VIS_MONTHS;
@@ -2034,6 +2107,10 @@ function App() {
                   style={{padding:"8px 12px",fontSize:"12px",fontWeight:600,borderRadius:"7px",border:"1px solid #1D9E75",background:"rgba(29,158,117,0.1)",color:"#1D9E75",cursor:"pointer",whiteSpace:"nowrap"}}>
                   📊 Export Excel
                 </button>
+                <label style={{padding:"8px 12px",fontSize:"12px",fontWeight:600,borderRadius:"7px",border:"1px solid #185FA5",background:"rgba(24,95,165,0.1)",color:"#185FA5",cursor:"pointer",whiteSpace:"nowrap"}}>
+                  📥 Import Excel
+                  <input type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={importXLSX}/>
+                </label>
               </div>
 
               {/* Tabela */}
