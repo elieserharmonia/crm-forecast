@@ -473,7 +473,7 @@ function LoginScreen({users, onLogin, onCreateAccount}){
                 <div style={{fontSize:"12px",color:"#64748B",marginTop:"6px",lineHeight:1.6}}>Sua conta está <strong>aguardando ativação</strong> pelo gestor.<br/>Você receberá acesso em breve.</div>
               </div>
             ):(
-              <>
+              <React.Fragment>
                 <div style={{fontSize:"11px",color:"#475569",marginBottom:"14px",padding:"8px 12px",borderRadius:"6px",background:"rgba(24,95,165,0.06)",border:"1px solid rgba(24,95,165,0.12)",lineHeight:1.5}}>
                   ℹ️ Após o cadastro, o gestor precisa <strong>ativar sua conta</strong> antes do primeiro acesso.
                 </div>
@@ -522,7 +522,7 @@ function LoginScreen({users, onLogin, onCreateAccount}){
                   style={{width:"100%",padding:"11px",fontSize:"14px",fontWeight:700,borderRadius:"8px",border:"none",background:"#8C1A1A",color:"#FFD0D0",cursor:"pointer"}}>
                   ✨ Criar minha conta
                 </button>
-              </>
+              </React.Fragment>
             )}
           </form>
         )}
@@ -626,7 +626,7 @@ function App() {
   const [opps, setOpps]           = useState(() => loadData() || DEMO);
   const [sel, setSel]             = useState(null);
   const _setSel = (v) => { setSel(v); if(v) setDetailTab("dados"); };
-  const [view, setView]           = useState("kanban");
+  const [view, setView]           = useState("oportunidades");
   const PIPE_VIEW_KEY = "crm_pipe_view";
   const [pipelineView, setPipelineView] = useState(() => localStorage.getItem("crm_pipe_view") || "kanban");
   function setPipeView(v){ setPipelineView(v); localStorage.setItem("crm_pipe_view",v); }
@@ -1860,21 +1860,6 @@ function App() {
           </button>
         ))}
         <div style={{flex:1}}/>
-        <button className="crm-sidebar-btn" onClick={()=>setShowSettings(true)}>
-          <span style={{fontSize:"15px",flexShrink:0}}>⚙</span>
-          <span className="sb-label">Configurações {isGestor&&"(Admin)"}</span>
-        </button>
-        <button className="crm-sidebar-btn" onClick={()=>setShowProfile(true)} style={{marginBottom:"4px"}}>
-          <div style={{width:"26px",height:"26px",borderRadius:"50%",background:"var(--sinuelo)",overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-            {profile.photo?<img src={profile.photo} style={{width:"26px",height:"26px",objectFit:"cover"}} alt=""/>
-            :<span style={{fontSize:"9px",fontWeight:700,color:"#fff"}}>{myResp||"?"}</span>}
-          </div>
-          <span className="sb-label">{userName}</span>
-        </button>
-        <button className="crm-sidebar-btn" onClick={handleSignOut} style={{marginBottom:"8px"}} title="Sair">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-          <span className="sb-label" style={{color:"#EF4444"}}>Sair</span>
-        </button>
       </div>
 
       {/* LAYOUT WRAPPER */}
@@ -1897,17 +1882,33 @@ function App() {
       </div>
 
       {/* BARRA DE TÍTULO DA ABA */}
-      <div style={{position:"relative",borderBottom:"1px solid var(--border)",background:"var(--bg-header)",padding:"8px 20px",display:"flex",alignItems:"center",justifyContent:"center",minHeight:"38px"}}>
+      <div style={{position:"relative",borderBottom:"1px solid var(--border)",background:"var(--bg-header)",padding:"0 160px 0 12px",display:"flex",alignItems:"center",justifyContent:"center",minHeight:"42px"}}>
+
+        {/* Marca d'água esquerda */}
+        <div style={{display:"flex",alignItems:"center",gap:"5px",opacity:.18,userSelect:"none",pointerEvents:"none",position:"absolute",left:"12px"}}>
+          <img src="data:image/png;base64,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" style={{width:"16px",height:"16px",objectFit:"contain"}} alt=""/>
+          <span style={{fontSize:"11px",fontWeight:700,letterSpacing:".1em",color:"var(--text-primary)"}}>CRM-FORECAST</span>
+        </div>
+
+        {/* Título centrado */}
         <span style={{fontSize:"13px",fontWeight:700,letterSpacing:".12em",color:"var(--text-primary)",textTransform:"uppercase",textAlign:"center"}}>
-          {{"kanban":"FORECAST","tasks":"Tarefas","clients":"Clientes","relatorio":"Relatório","posvendas":"Pós-venda","budget":"Budget / Metas","orcamentos":"Orçamentos","projetos":"Projetos","intel":"🧠 Radar de Mercado"}[view]||view.toUpperCase()}
+          {{"oportunidades":"Oportunidades","tasks":"Tarefas","clients":"Clientes","relatorio":"Relatório","posvendas":"Pós-venda","budget":"Budget / Metas","orcamentos":"Orçamentos","projetos":"Projetos","intel":"Radar de Mercado","estoque":"Estoque","demostool":"Demo TT","precos":"Consulta Preço"}[view]||view.toUpperCase()}
         </span>
-        {/* Logo + nome como marca d'água à direita */}
-        <div style={{position:"absolute",right:"16px",display:"flex",alignItems:"center",gap:"6px",opacity:.22,userSelect:"none",pointerEvents:"none"}}>
-          <img src="data:image/png;base64,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" style={{width:"18px",height:"18px",objectFit:"contain",filter:"var(--logo-filter,none)"}} alt=""/>
-          <span style={{fontSize:"12px",fontWeight:700,letterSpacing:".1em",color:"var(--text-primary)"}}>CRM-FORECAST</span>
+
+        {/* Botões topo direito: Configurações + Avatar (com Sair dentro do modal Perfil) */}
+        <div style={{position:"absolute",right:"10px",display:"flex",alignItems:"center",gap:"6px"}}>
+          <button onClick={()=>setShowSettings(true)} title="Configurações"
+            style={{width:"30px",height:"30px",borderRadius:"7px",border:"1px solid var(--border)",background:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text-muted)",fontSize:"15px",flexShrink:0}}>
+            ⚙
+          </button>
+          <button onClick={()=>setShowProfile(true)} title={userName}
+            style={{width:"30px",height:"30px",borderRadius:"50%",border:"2px solid rgba(140,26,26,0.4)",background:"var(--sinuelo)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",padding:0,flexShrink:0}}>
+            {profile.photo
+              ?<img src={profile.photo} style={{width:"30px",height:"30px",objectFit:"cover"}} alt=""/>
+              :<span style={{fontSize:"10px",fontWeight:700,color:"#fff"}}>{myResp||"?"}</span>}
+          </button>
         </div>
       </div>
-
       {/* CONTENT */}
       <div className="crm-content">
       {/* CORPO (mantido para compatibilidade) */}
@@ -2526,7 +2527,7 @@ function App() {
                             <div style={{display:"flex",gap:"10px",fontSize:"11px",color:"var(--text-secondary)",flexWrap:"wrap"}}>
                               {t.company&&<span>🏭 {t.company}</span>}
                               {t.date&&<span>📅 {t.date}{t.time?" "+t.time:""}</span>}
-                              {opp&&<span style={{color:"var(--text-blue)",cursor:"pointer"}} onClick={()=>{setSel(opp);setView("kanban");}}>🔗 {opp.title.slice(0,30)}</span>}
+                              {opp&&<span style={{color:"var(--text-blue)",cursor:"pointer"}} onClick={()=>{setSel(opp);setView("oportunidades");}}>🔗 {opp.title.slice(0,30)}</span>}
                             </div>
                             {t.notes&&<div style={{fontSize:"11px",color:"var(--text-secondary)",marginTop:"4px",lineHeight:1.4}}>{t.notes}</div>}
                             {t.cancelReason&&<div style={{fontSize:"11px",color:"#E24B4A",marginTop:"2px"}}>Motivo: {t.cancelReason}</div>}
@@ -2767,7 +2768,7 @@ function App() {
                             {clientOpps.slice(0,4).map(o=>{
                               const stg = STAGES.find(s=>s.id===o.stage);
                               return (
-                                <div key={o.id} onClick={()=>{setSel(o);setView("kanban");}} style={{display:"flex",gap:"6px",alignItems:"center",padding:"5px 7px",borderRadius:"5px",background:"var(--bg-card2)",marginBottom:"3px",cursor:"pointer",borderLeft:`2px solid ${stg?.color||"#888"}`}}>
+                                <div key={o.id} onClick={()=>{setSel(o);setView("oportunidades");}} style={{display:"flex",gap:"6px",alignItems:"center",padding:"5px 7px",borderRadius:"5px",background:"var(--bg-card2)",marginBottom:"3px",cursor:"pointer",borderLeft:`2px solid ${stg?.color||"#888"}`}}>
                                   <div style={{flex:1,minWidth:0}}>
                                     <div style={{fontSize:"10px",fontWeight:600,color:"var(--text-primary)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.title}</div>
                                     <div style={{fontSize:"9px",color:"var(--text-secondary)"}}>{o.supplier} · {stg?.tag}</div>
@@ -4119,6 +4120,11 @@ function App() {
                 ))}
                 <button onClick={()=>{setProfileDraft({...profile});setProfileEdit(true);}}
                   style={{width:"100%",marginTop:"16px",padding:"9px",fontSize:"13px",borderRadius:"6px",border:"1px solid #8C1A1A",background:"rgba(140,26,26,0.15)",color:"var(--text-accent)",cursor:"pointer",fontWeight:600}}>Editar perfil</button>
+                <button onClick={()=>{setShowProfile(false);handleSignOut();}}
+                  style={{width:"100%",marginTop:"8px",padding:"9px",fontSize:"13px",borderRadius:"6px",border:"1px solid #EF4444",background:"rgba(239,68,68,0.08)",color:"#EF4444",cursor:"pointer",fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:"6px"}}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                  Sair
+                </button>
               </div>
             ) : (
               <div>
@@ -4898,7 +4904,7 @@ function App() {
                 const clientes = intelReport.clientes||[];
                 const isRSS = intelReport.modo==="rss_gratuito";
                 return (
-                  <>
+                  <React.Fragment>
                     {/* HEADER DO RELATÓRIO */}
                     <div style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"10px",padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"8px"}}>
                       <div>
@@ -5004,7 +5010,7 @@ function App() {
                       💡 <strong>Como usar:</strong> Clique nos títulos para abrir a notícia completa. "🏭 Empresa" = notícias sobre o cliente específico. "📊 Setor" = tendências do mercado onde ele atua. Execute novamente a qualquer momento para atualizar.
                       <br/>🆓 <strong>100% gratuito</strong> — usa Google News RSS via proxy público. Sem API key, sem limite, sem cobrança.
                     </div>
-                  </>
+                  </React.Fragment>
                 );
               })()}
 
@@ -5105,7 +5111,7 @@ function App() {
                   <span style={{color:"var(--text-muted)",fontSize:"11px"}}>Digite 2+ caracteres para buscar</span>
                 </div>
               ):(
-                <>
+                <React.Fragment>
                   <div style={{fontSize:"11px",color:"var(--text-muted)"}}>{filtered.length} resultado{filtered.length!==1?"s":""}{filtered.length===100?" (máx 100 — refine a busca)":""}</div>
                   <div style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"10px",overflow:"hidden"}}>
                     <table style={{width:"100%",borderCollapse:"collapse",fontSize:"12px",tableLayout:"fixed"}}>
@@ -5129,7 +5135,7 @@ function App() {
                       </tbody>
                     </table>
                   </div>
-                </>
+                </React.Fragment>
               )}
             </div>
           );
@@ -5518,7 +5524,7 @@ function App() {
                       const stage=STAGES.find(s=>s.id===o.stage);
                       const fupLine=(o.nextAction||"").split("\n").find(l=>l.trim())||"";
                       return (
-                        <div key={o.id} onClick={()=>{setSelClient(null);setClientNews([]);setSel(o);setView("kanban");}}
+                        <div key={o.id} onClick={()=>{setSelClient(null);setClientNews([]);setSel(o);setView("oportunidades");}}
                           style={{background:"var(--bg-card2)",borderRadius:"8px",padding:"10px 12px",marginBottom:"7px",cursor:"pointer",borderLeft:`3px solid ${stage?.color||"#888"}`,border:`1px solid transparent`,borderLeftWidth:"3px"}}
                           onMouseEnter={e=>e.currentTarget.style.borderColor=stage?.color||"var(--border)"}
                           onMouseLeave={e=>e.currentTarget.style.borderColor="transparent"}>
