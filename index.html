@@ -927,8 +927,9 @@ function App() {
   const [oppFcModal, setOppFcModal] = useState(false);
   const [oppFcEdit, setOppFcEdit] = useState(null);
   const [oppFcSearch, setOppFcSearch] = useState("");
-  const emptyOppFc = {id:"",neg:"D",resp:"",customer:"",supplier:"",description:"",amount:"",uf:"SP",confidence:"0.1",months:{},followup:"",contatos:""};
+  const emptyOppFc = {id:"",neg:"D",resp:"",customer:"",supplier:"",description:"",amount:"",uf:"SP",confidence:"0.1",months:{},followup:"",contatos:"",rowColor:"",history:[]};
   const [oppFcForm, setOppFcForm] = useState({...emptyOppFc});
+  const [oppFcTab, setOppFcTab] = useState("dados"); // "dados" | "historico"
   function saveOppFc(d){ setOppFc(d); try{ localStorage.setItem(OPP_FC_KEY,JSON.stringify(d)); }catch(e){} }
 
   // ===== ESTOQUE =====
@@ -2153,7 +2154,7 @@ function App() {
                         const markedMonths = FC_VIS_MONTHS.filter(m=>months[m]);
                         const anoMarked = isConf100 && Object.values(months).some(Boolean);
                         const isContrato = isConf100 && Object.values(months).filter(Boolean).length > 1;
-                        const bgRow = i%2===0?"transparent":"rgba(255,255,255,0.013)";
+                        const bgRow = o.rowColor||( i%2===0?"transparent":"rgba(255,255,255,0.013)" );
                         return (
                           <tr key={o.id} style={{borderBottom:"1px solid var(--border2)",background:bgRow}}
                             onMouseEnter={e=>e.currentTarget.style.background="rgba(37,99,235,0.05)"}
@@ -2223,93 +2224,218 @@ function App() {
               {/* Modal */}
               {oppFcModal&&(
                 <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.78)",display:"flex",alignItems:"flex-start",justifyContent:"center",zIndex:90,padding:"12px",overflowY:"auto"}}>
-                  <div style={{background:"var(--bg-card)",borderRadius:"14px",border:"1px solid var(--border)",width:"100%",maxWidth:"680px",padding:"22px",marginTop:"8px"}}>
+                  <div style={{background:"var(--bg-card)",borderRadius:"14px",border:"1px solid var(--border)",width:"100%",maxWidth:"720px",padding:"22px",marginTop:"8px"}}>
 
-                    {/* Header modal */}
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"16px"}}>
-                      <div style={{fontSize:"14px",fontWeight:700,color:"var(--text-primary)"}}>{oppFcEdit==="new"?"New opportunity":"Edit opportunity"}</div>
-                      <button onClick={()=>setOppFcModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--text-muted)",fontSize:"20px",lineHeight:1}}>✕</button>
-                    </div>
-
-                    {/* Row 1: col A (neg), RESP, UF, Confidence */}
-                    <div style={{display:"grid",gridTemplateColumns:"70px 80px 55px 100px",gap:"8px",marginBottom:"10px"}}>
-                      {[
-                        {k:"neg",l:"",type:"select",opts:NEG_OPTS},
-                        {k:"resp",l:"RESP.",ph:"EF"},
-                        {k:"uf",l:"UF",ph:"SP"},
-                        {k:"confidence",l:"Confidence",type:"select",opts:CONF_OPTS},
-                      ].map(({k,l,type,ph,opts})=>(
-                        <div key={k}>
-                          <label style={{fontSize:"9px",color:"var(--text-muted)",display:"block",marginBottom:"3px",textTransform:"uppercase",letterSpacing:".06em"}}>{l||"\u00a0"}</label>
-                          {type==="select"
-                            ?<select value={oppFcForm[k]} onChange={e=>setOppFcForm(f=>({...f,[k]:e.target.value}))} style={{...inp,cursor:"pointer"}}>
-                              {opts.map(([v,lb])=><option key={v} value={v}>{lb}</option>)}
-                            </select>
-                            :<input value={oppFcForm[k]||""} onChange={e=>setOppFcForm(f=>({...f,[k]:e.target.value}))} style={inp} placeholder={ph}/>
-                          }
+                    {/* Header */}
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"14px"}}>
+                      <div>
+                        <div style={{fontSize:"14px",fontWeight:700,color:"var(--text-primary)"}}>
+                          {oppFcEdit==="new"?"Nova oportunidade":"Perfil da Oportunidade"}
                         </div>
-                      ))}
-                    </div>
-
-                    {/* Row 2: CUSTOMER, SUPPLIER, AMOUNT */}
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 110px",gap:"8px",marginBottom:"10px"}}>
-                      {[{k:"customer",l:"CUSTOMER"},{k:"supplier",l:"SUPPLIER"},{k:"amount",l:"AMOUNT",type:"number"}].map(({k,l,type})=>(
-                        <div key={k}>
-                          <label style={{fontSize:"9px",color:"var(--text-muted)",display:"block",marginBottom:"3px",textTransform:"uppercase",letterSpacing:".06em"}}>{l}</label>
-                          <input value={oppFcForm[k]||""} onChange={e=>setOppFcForm(f=>({...f,[k]:e.target.value}))} style={inp} type={type||"text"}/>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* DESCRIPTION */}
-                    <div style={{marginBottom:"10px"}}>
-                      <label style={{fontSize:"9px",color:"var(--text-muted)",display:"block",marginBottom:"3px",textTransform:"uppercase",letterSpacing:".06em"}}>DESCRIPTION</label>
-                      <input value={oppFcForm.description||""} onChange={e=>setOppFcForm(f=>({...f,description:e.target.value}))} style={inp}/>
-                    </div>
-
-                    {/* Meses */}
-                    <div style={{marginBottom:"10px"}}>
-                      <label style={{fontSize:"9px",color:"var(--text-muted)",display:"block",marginBottom:"6px",textTransform:"uppercase",letterSpacing:".06em"}}>
-                        Months
-                        {parseFloat(oppFcForm.confidence||0)>=1&&<span style={{color:"#1D9E75",marginLeft:"8px",fontSize:"9px"}}>🏆 100% — multiple months allowed</span>}
-                      </label>
-                      <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
-                        {ALL_MONTHS.map(mon=>{
-                          const marked = (oppFcForm.months||{})[mon];
-                          const isConf100 = parseFloat(oppFcForm.confidence||0)>=1;
-                          const markedCount = Object.values(oppFcForm.months||{}).filter(Boolean).length;
-                          const isContrato = isConf100 && markedCount>1;
-                          return (
-                            <button key={mon} onClick={()=>{
-                              const nm = {...(oppFcForm.months||{})};
-                              if(!isConf100){ Object.keys(nm).forEach(k=>delete nm[k]); if(!marked) nm[mon]=true; }
-                              else{ marked?delete nm[mon]:(nm[mon]=true); }
-                              setOppFcForm(f=>({...f,months:nm}));
-                            }} style={{padding:"4px 9px",borderRadius:"5px",border:`1px solid ${marked?(isContrato?"#1D9E75":"#8C1A1A"):"var(--border)"}`,background:marked?(isContrato?"rgba(29,158,117,0.15)":"rgba(140,26,26,0.12)"):"transparent",color:marked?(isContrato?"#1D9E75":"#8C1A1A"):"var(--text-muted)",cursor:"pointer",fontSize:"11px",fontWeight:marked?700:400}}>
-                              {mon}
-                            </button>
-                          );
-                        })}
+                        {oppFcEdit!=="new"&&<div style={{fontSize:"11px",color:"var(--text-muted)",marginTop:"2px"}}>{oppFcForm.customer}{oppFcForm.supplier?" · "+oppFcForm.supplier:""}</div>}
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+                        {/* Botões de cor da linha */}
+                        {oppFcEdit!=="new"&&(
+                          <div style={{display:"flex",gap:"4px",alignItems:"center"}}>
+                            <span style={{fontSize:"9px",color:"var(--text-muted)",marginRight:"2px"}}>Linha:</span>
+                            {[
+                              {color:"#FFFF99",title:"Devendo algo ao cliente"},
+                              {color:"#D9D9D9",title:"Oportunidade perdida"},
+                              {color:"#FF9999",title:"Em negociação (>50%)"},
+                              {color:"",title:"Sem cor (padrão)"},
+                            ].map(({color,title})=>(
+                              <button key={color} onClick={()=>setOppFcForm(f=>({...f,rowColor:color}))}
+                                title={title}
+                                style={{width:"18px",height:"18px",borderRadius:"3px",border:`2px solid ${oppFcForm.rowColor===color?"#333":"rgba(0,0,0,0.15)"}`,background:color||"var(--bg-card2)",cursor:"pointer",padding:0,flexShrink:0,boxShadow:oppFcForm.rowColor===color?"0 0 0 1px #333":"none"}}>
+                                {!color&&<span style={{fontSize:"9px",color:"var(--text-muted)",lineHeight:1}}>✕</span>}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        <button onClick={()=>setOppFcModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--text-muted)",fontSize:"20px",lineHeight:1}}>✕</button>
                       </div>
                     </div>
 
-                    {/* FOLLOW-UP e CONTATOS */}
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"14px"}}>
-                      {[{k:"followup",l:"FOLLOW-UP",ph:"08.04.26 - FUP retorno\n01.04.26 - Proposta enviada"},{k:"contatos",l:"CONTATOS",ph:"Nome / Departamento"}].map(({k,l,ph})=>(
-                        <div key={k}>
-                          <label style={{fontSize:"9px",color:"var(--text-muted)",display:"block",marginBottom:"3px",textTransform:"uppercase",letterSpacing:".06em"}}>{l}</label>
-                          <textarea value={oppFcForm[k]||""} onChange={e=>setOppFcForm(f=>({...f,[k]:e.target.value}))}
-                            style={{...inp,height:"72px",resize:"vertical",fontFamily:"inherit",lineHeight:1.5}} placeholder={ph}/>
-                        </div>
-                      ))}
-                    </div>
+                    {/* Tabs — só aparece ao editar (não novo) */}
+                    {oppFcEdit!=="new"&&(
+                      <div style={{display:"flex",gap:"4px",marginBottom:"14px",background:"rgba(0,0,0,0.06)",borderRadius:"8px",padding:"3px"}}>
+                        {[["dados","📋 Dados"],["historico","📅 Histórico"]].map(([t,l])=>(
+                          <button key={t} onClick={()=>setOppFcTab(t)}
+                            style={{flex:1,padding:"6px",fontSize:"12px",fontWeight:oppFcTab===t?700:500,borderRadius:"6px",border:"none",background:oppFcTab===t?"var(--bg-card)":"transparent",color:oppFcTab===t?"var(--text-primary)":"var(--text-muted)",cursor:"pointer",boxShadow:oppFcTab===t?"0 1px 3px rgba(0,0,0,0.12)":"none"}}>
+                            {l}
+                          </button>
+                        ))}
+                      </div>
+                    )}
 
-                    <div style={{display:"flex",gap:"8px"}}>
-                      <button onClick={doSave} style={{flex:1,padding:"10px",fontSize:"13px",fontWeight:700,borderRadius:"8px",border:"none",background:"#8C1A1A",color:"#FFD0D0",cursor:"pointer"}}>
-                        {oppFcEdit==="new"?"Add opportunity":"Save changes"}
-                      </button>
-                      <button onClick={()=>setOppFcModal(false)} style={{padding:"10px 14px",fontSize:"13px",borderRadius:"8px",border:"1px solid var(--border)",background:"transparent",color:"var(--text-secondary)",cursor:"pointer"}}>Cancel</button>
-                    </div>
+                    {/* TAB DADOS */}
+                    {(oppFcEdit==="new"||oppFcTab==="dados")&&(
+                      <React.Fragment>
+                        {/* Row 1: neg, RESP, UF, Confidence */}
+                        <div style={{display:"grid",gridTemplateColumns:"70px 80px 55px 100px",gap:"8px",marginBottom:"10px"}}>
+                          {[
+                            {k:"neg",l:"",type:"select",opts:NEG_OPTS},
+                            {k:"resp",l:"RESP.",ph:"EF"},
+                            {k:"uf",l:"UF",ph:"SP"},
+                            {k:"confidence",l:"Confidence",type:"select",opts:CONF_OPTS},
+                          ].map(({k,l,type,ph,opts})=>(
+                            <div key={k}>
+                              <label style={{fontSize:"9px",color:"var(--text-muted)",display:"block",marginBottom:"3px",textTransform:"uppercase",letterSpacing:".06em"}}>{l||"\u00a0"}</label>
+                              {type==="select"
+                                ?<select value={oppFcForm[k]} onChange={e=>setOppFcForm(f=>({...f,[k]:e.target.value}))} style={{...inp,cursor:"pointer"}}>
+                                  {opts.map(([v,lb])=><option key={v} value={v}>{lb}</option>)}
+                                </select>
+                                :<input value={oppFcForm[k]||""} onChange={e=>setOppFcForm(f=>({...f,[k]:e.target.value}))} style={inp} placeholder={ph}/>
+                              }
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Row 2: CUSTOMER, SUPPLIER, AMOUNT */}
+                        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 110px",gap:"8px",marginBottom:"10px"}}>
+                          {[{k:"customer",l:"CUSTOMER"},{k:"supplier",l:"SUPPLIER"},{k:"amount",l:"AMOUNT",type:"number"}].map(({k,l,type})=>(
+                            <div key={k}>
+                              <label style={{fontSize:"9px",color:"var(--text-muted)",display:"block",marginBottom:"3px",textTransform:"uppercase",letterSpacing:".06em"}}>{l}</label>
+                              <input value={oppFcForm[k]||""} onChange={e=>setOppFcForm(f=>({...f,[k]:e.target.value}))} style={inp} type={type||"text"}/>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* DESCRIPTION */}
+                        <div style={{marginBottom:"10px"}}>
+                          <label style={{fontSize:"9px",color:"var(--text-muted)",display:"block",marginBottom:"3px",textTransform:"uppercase",letterSpacing:".06em"}}>DESCRIPTION</label>
+                          <input value={oppFcForm.description||""} onChange={e=>setOppFcForm(f=>({...f,description:e.target.value}))} style={inp}/>
+                        </div>
+
+                        {/* Meses */}
+                        <div style={{marginBottom:"10px"}}>
+                          <label style={{fontSize:"9px",color:"var(--text-muted)",display:"block",marginBottom:"6px",textTransform:"uppercase",letterSpacing:".06em"}}>
+                            Months
+                            {parseFloat(oppFcForm.confidence||0)>=1&&<span style={{color:"#1D9E75",marginLeft:"8px",fontSize:"9px"}}>🏆 100% — multiple months allowed</span>}
+                          </label>
+                          <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
+                            {ALL_MONTHS.map(mon=>{
+                              const marked = (oppFcForm.months||{})[mon];
+                              const isConf100 = parseFloat(oppFcForm.confidence||0)>=1;
+                              const markedCount = Object.values(oppFcForm.months||{}).filter(Boolean).length;
+                              const isContrato = isConf100&&markedCount>1;
+                              return (
+                                <button key={mon} onClick={()=>{
+                                  const nm={...(oppFcForm.months||{})};
+                                  if(!isConf100){Object.keys(nm).forEach(k=>delete nm[k]);if(!marked)nm[mon]=true;}
+                                  else{marked?delete nm[mon]:(nm[mon]=true);}
+                                  setOppFcForm(f=>({...f,months:nm}));
+                                }} style={{padding:"4px 9px",borderRadius:"5px",border:`1px solid ${marked?(isContrato?"#1D9E75":"#8C1A1A"):"var(--border)"}`,background:marked?(isContrato?"rgba(29,158,117,0.15)":"rgba(140,26,26,0.12)"):"transparent",color:marked?(isContrato?"#1D9E75":"#8C1A1A"):"var(--text-muted)",cursor:"pointer",fontSize:"11px",fontWeight:marked?700:400}}>
+                                  {mon}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* FOLLOW-UP e CONTATOS */}
+                        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"14px"}}>
+                          {[{k:"followup",l:"FOLLOW-UP",ph:"08.04.26 - FUP retorno\n01.04.26 - Proposta enviada"},{k:"contatos",l:"CONTATOS",ph:"Nome / Departamento"}].map(({k,l,ph})=>(
+                            <div key={k}>
+                              <label style={{fontSize:"9px",color:"var(--text-muted)",display:"block",marginBottom:"3px",textTransform:"uppercase",letterSpacing:".06em"}}>{l}</label>
+                              <textarea value={oppFcForm[k]||""} onChange={e=>setOppFcForm(f=>({...f,[k]:e.target.value}))}
+                                style={{...inp,height:"72px",resize:"vertical",fontFamily:"inherit",lineHeight:1.5}} placeholder={ph}/>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div style={{display:"flex",gap:"8px"}}>
+                          <button onClick={doSave} style={{flex:1,padding:"10px",fontSize:"13px",fontWeight:700,borderRadius:"8px",border:"none",background:"#8C1A1A",color:"#FFD0D0",cursor:"pointer"}}>
+                            {oppFcEdit==="new"?"Add opportunity":"Save changes"}
+                          </button>
+                          <button onClick={()=>setOppFcModal(false)} style={{padding:"10px 14px",fontSize:"13px",borderRadius:"8px",border:"1px solid var(--border)",background:"transparent",color:"var(--text-secondary)",cursor:"pointer"}}>Cancel</button>
+                        </div>
+                      </React.Fragment>
+                    )}
+
+                    {/* TAB HISTÓRICO */}
+                    {oppFcTab==="historico"&&oppFcEdit!=="new"&&(()=>{
+                      const hist = oppFcForm.history||[];
+                      const [hForm, setHForm] = useState({date:"",time:"",resp:"",processo:"",resumo:""});
+                      const [addingH, setAddingH] = useState(false);
+
+                      function saveHist(){
+                        if(!hForm.resumo.trim()){ alert("Preencha o resumo da visita."); return; }
+                        const entry = {...hForm, id:"h_"+Date.now(), createdAt:new Date().toISOString()};
+                        const newHist = [entry, ...hist];
+                        setOppFcForm(f=>({...f,history:newHist}));
+                        // Salvar imediatamente
+                        const updated = oppFc.map(o=>o.id===oppFcEdit?{...o,history:newHist}:o);
+                        saveOppFc(updated);
+                        setHForm({date:"",time:"",resp:"",processo:"",resumo:""});
+                        setAddingH(false);
+                      }
+
+                      function deleteHist(hid){
+                        const newHist = hist.filter(h=>h.id!==hid);
+                        setOppFcForm(f=>({...f,history:newHist}));
+                        saveOppFc(oppFc.map(o=>o.id===oppFcEdit?{...o,history:newHist}:o));
+                      }
+
+                      return (
+                        <div>
+                          {/* Botão adicionar entrada */}
+                          {!addingH&&(
+                            <button onClick={()=>{ setHForm({date:new Date().toLocaleDateString("pt-BR"),time:"",resp:(session&&session.code)||"",processo:"",resumo:""}); setAddingH(true); }}
+                              style={{width:"100%",padding:"9px",fontSize:"12px",fontWeight:600,borderRadius:"8px",border:"1px dashed var(--border)",background:"transparent",color:"#185FA5",cursor:"pointer",marginBottom:"12px"}}>
+                              + Registrar visita
+                            </button>
+                          )}
+
+                          {/* Formulário nova entrada */}
+                          {addingH&&(
+                            <div style={{background:"var(--bg-card2)",borderRadius:"8px",padding:"12px",marginBottom:"12px",border:"1px solid var(--border)"}}>
+                              <div style={{display:"grid",gridTemplateColumns:"100px 80px 80px 1fr",gap:"8px",marginBottom:"8px"}}>
+                                {[{k:"date",l:"Data",ph:"08.04.26"},{k:"time",l:"Horário",ph:"09:30"},{k:"resp",l:"Responsável",ph:"EF"},{k:"processo",l:"Processo visitado",ph:"Montagem / Qualidade / Manutenção"}].map(({k,l,ph})=>(
+                                  <div key={k}>
+                                    <label style={{fontSize:"9px",color:"var(--text-muted)",display:"block",marginBottom:"2px",textTransform:"uppercase",letterSpacing:".06em"}}>{l}</label>
+                                    <input value={hForm[k]||""} onChange={e=>setHForm(f=>({...f,[k]:e.target.value}))} style={{...inp,padding:"5px 8px",fontSize:"11px"}} placeholder={ph}/>
+                                  </div>
+                                ))}
+                              </div>
+                              <div style={{marginBottom:"8px"}}>
+                                <label style={{fontSize:"9px",color:"var(--text-muted)",display:"block",marginBottom:"2px",textTransform:"uppercase",letterSpacing:".06em"}}>Resumo da visita</label>
+                                <textarea value={hForm.resumo||""} onChange={e=>setHForm(f=>({...f,resumo:e.target.value}))}
+                                  style={{...inp,height:"64px",resize:"vertical",fontFamily:"inherit",fontSize:"12px",lineHeight:1.5}}
+                                  placeholder="Descreva o que foi discutido, decisões tomadas, próximos passos..."/>
+                              </div>
+                              <div style={{display:"flex",gap:"6px"}}>
+                                <button onClick={saveHist} style={{padding:"7px 14px",fontSize:"12px",fontWeight:700,borderRadius:"6px",border:"none",background:"#8C1A1A",color:"#FFD0D0",cursor:"pointer"}}>Salvar</button>
+                                <button onClick={()=>setAddingH(false)} style={{padding:"7px 12px",fontSize:"12px",borderRadius:"6px",border:"1px solid var(--border)",background:"transparent",color:"var(--text-secondary)",cursor:"pointer"}}>Cancelar</button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Lista do histórico */}
+                          {hist.length===0&&!addingH&&(
+                            <div style={{textAlign:"center",padding:"40px 20px",color:"var(--text-muted)"}}>
+                              <div style={{fontSize:"24px",marginBottom:"8px"}}>📅</div>
+                              <div style={{fontSize:"12px"}}>Nenhuma visita registrada ainda.<br/>Clique em <b>+ Registrar visita</b> para começar.</div>
+                            </div>
+                          )}
+                          {hist.map(h=>(
+                            <div key={h.id} style={{borderBottom:"1px solid var(--border2)",paddingBottom:"12px",marginBottom:"12px"}}>
+                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"5px"}}>
+                                <div style={{display:"flex",gap:"10px",alignItems:"center",flexWrap:"wrap"}}>
+                                  {h.date&&<span style={{fontSize:"11px",fontWeight:700,color:"var(--text-primary)"}}>{h.date}</span>}
+                                  {h.time&&<span style={{fontSize:"10px",color:"var(--text-muted)"}}>🕐 {h.time}</span>}
+                                  {h.resp&&<span style={{fontSize:"10px",padding:"1px 7px",borderRadius:"5px",background:"rgba(140,26,26,0.1)",color:"#8C1A1A",fontWeight:600}}>{h.resp}</span>}
+                                  {h.processo&&<span style={{fontSize:"10px",color:"#185FA5",fontStyle:"italic"}}>{h.processo}</span>}
+                                </div>
+                                <button onClick={()=>deleteHist(h.id)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--text-muted)",fontSize:"12px",opacity:.5,padding:"0 4px"}} onMouseEnter={e=>e.target.style.opacity=1} onMouseLeave={e=>e.target.style.opacity=.5}>✕</button>
+                              </div>
+                              <div style={{fontSize:"12px",color:"var(--text-secondary)",lineHeight:1.6,whiteSpace:"pre-wrap"}}>{h.resumo}</div>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               )}
