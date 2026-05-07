@@ -912,6 +912,25 @@ function App() {
   const [clientNews, setClientNews] = useState([]); // notícias carregadas para o cliente aberto
   const [clientNewsLoading, setClientNewsLoading] = useState(false);
 
+  // ===== OPORTUNIDADES (FORECAST) =====
+  const OPP_FC_KEY = "crm_opp_fc_v1";
+  const ALL_MONTHS = ["JAN","FEV","MAR","ABR","MAI","JUN","JUL","AGO","SET","OUT","NOV","DEZ"];
+  const OFC_YEAR   = new Date().getFullYear();
+  const OFC_MONTH  = new Date().getMonth();
+  const FC_VIS_MONTHS = [
+    ALL_MONTHS[OFC_MONTH % 12],
+    ALL_MONTHS[(OFC_MONTH + 1) % 12],
+    ALL_MONTHS[(OFC_MONTH + 2) % 12],
+  ];
+
+  const [oppFc, setOppFc] = useState(()=>{ try{ const r=localStorage.getItem(OPP_FC_KEY); return r?JSON.parse(r):[]; }catch(e){ return []; } });
+  const [oppFcModal, setOppFcModal] = useState(false);
+  const [oppFcEdit, setOppFcEdit] = useState(null);
+  const [oppFcSearch, setOppFcSearch] = useState("");
+  const emptyOppFc = {id:"",neg:"D",resp:"",customer:"",supplier:"",description:"",amount:"",uf:"SP",confidence:"0.1",months:{},followup:"",contatos:""};
+  const [oppFcForm, setOppFcForm] = useState({...emptyOppFc});
+  function saveOppFc(d){ setOppFc(d); try{ localStorage.setItem(OPP_FC_KEY,JSON.stringify(d)); }catch(e){} }
+
   // ===== ESTOQUE =====
   const ESTOQUE_KEY = "crm_estoque_v1";
   const [estoqueData, setEstoqueData] = React.useState(()=>{ try{ const r=localStorage.getItem(ESTOQUE_KEY); return r?JSON.parse(r):[]; }catch(e){ return []; } });
@@ -1831,7 +1850,7 @@ function App() {
         <div className="sb-logo">
           <img src="data:image/png;base64,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" alt="Logo" style={{width:"28px",height:"28px",objectFit:"contain"}}/>
         </div>
-        {[["tasks","✓","Tarefas"],["clients","👥","Clientes"],["relatorio","📋","Relatório"],["posvendas","✅","Pós-venda"],["budget","💰","Budget"],["orcamentos","📝","Orçamentos"],["projetos","⚙","Projetos"],["intel","🧠","Radar"],["estoque","📦","Estoque"],["demostool","🔧","Demo TT"],["precos","💲","Consulta Preço"]].map(([v,icon,label])=>(
+        {[["oportunidades","📊","Oportunidades"],["tasks","✓","Tarefas"],["clients","👥","Clientes"],["relatorio","📋","Relatório"],["posvendas","✅","Pós-venda"],["budget","💰","Budget"],["orcamentos","📝","Orçamentos"],["projetos","⚙","Projetos"],["intel","🧠","Radar"],["estoque","📦","Estoque"],["demostool","🔧","Demo TT"],["precos","💲","Consulta Preço"]].map(([v,icon,label])=>(
           <button key={v} className={`crm-sidebar-btn${view===v?" active":""}`} onClick={()=>{setView(v);if(v!=="kanban")setSel(null);}}>
             <span style={{fontSize:"15px",flexShrink:0,lineHeight:1}}>{icon}</span>
             <span className="sb-label">{label}</span>
@@ -1894,6 +1913,333 @@ function App() {
       <div style={{display:"flex",gap:"12px",alignItems:"flex-start"}}>
 
         {/* KANBAN */}
+        {/* ===== OPORTUNIDADES ===== */}
+        {view==="oportunidades" && (()=>{
+          const CONF_OPTS = [["0","0%"],["0.1","10%"],["0.2","20%"],["0.3","30%"],["0.5","50%"],["0.75","75%"],["1","100%"]];
+          const NEG_OPTS  = [["D","D"],["R","R"],["S","S"]];
+          const curYr = OFC_YEAR;
+
+          const q = oppFcSearch.trim().toLowerCase();
+          const filtered = oppFc.filter(o=>!q||
+            (o.customer&&o.customer.toLowerCase().includes(q))||
+            (o.supplier&&o.supplier.toLowerCase().includes(q))||
+            (o.description&&o.description.toLowerCase().includes(q))||
+            (o.resp&&o.resp.toLowerCase().includes(q))
+          );
+
+          // Pipeline ponderado
+          const totalPond = oppFc.reduce((s,o)=>{
+            const a = parseFloat(String(o.amount||"0").replace(/[^0-9.]/g,""))||0;
+            const c = parseFloat(o.confidence||0);
+            return s + a*c;
+          },0);
+          const totalAmt = oppFc.reduce((s,o)=>{
+            return s+(parseFloat(String(o.amount||"0").replace(/[^0-9.]/g,""))||0);
+          },0);
+
+          function fmtAmt(a){
+            const n = parseFloat(String(a||"0").replace(/[^0-9.]/g,""))||0;
+            if(n===0) return "";
+            return n>=1000?"R$"+(n/1000).toFixed(0)+"k":"R$"+n.toFixed(0);
+          }
+          function confPct(c){ return Math.round(parseFloat(c||0)*100)+"%"; }
+          function confColor(c){
+            const n=parseFloat(c||0);
+            return n>=1?"#1D9E75":n>=0.5?"#185FA5":n>=0.3?"#EF9F27":n>0?"var(--text-muted)":"#888";
+          }
+
+          function openNew(){
+            setOppFcForm({...emptyOppFc,id:"ofc_"+Date.now(),resp:(session&&session.code)||""});
+            setOppFcEdit("new"); setOppFcModal(true);
+          }
+          function openEdit(o){ setOppFcForm({...o}); setOppFcEdit(o.id); setOppFcModal(true); }
+          function doSave(){
+            if(!oppFcForm.customer.trim()){ alert("CUSTOMER é obrigatório."); return; }
+            if(oppFcEdit==="new"){ saveOppFc([...oppFc, oppFcForm]); }
+            else{ saveOppFc(oppFc.map(o=>o.id===oppFcEdit?oppFcForm:o)); }
+            setOppFcModal(false);
+          }
+          function doDelete(id){
+            if(!confirm("Excluir esta oportunidade?")) return;
+            saveOppFc(oppFc.filter(o=>o.id!==id));
+          }
+          function toggleMonth(id, mon){
+            const o = oppFc.find(x=>x.id===id);
+            if(!o) return;
+            const isConf100 = parseFloat(o.confidence||0)>=1;
+            const nm = {...(o.months||{})};
+            if(!isConf100){
+              // 1 mês por vez quando conf < 100%
+              const wasMarked = nm[mon];
+              Object.keys(nm).forEach(k=>{ delete nm[k]; });
+              if(!wasMarked) nm[mon]=true;
+            } else {
+              nm[mon] ? delete nm[mon] : (nm[mon]=true);
+            }
+            saveOppFc(oppFc.map(x=>x.id===id?{...x,months:nm}:x));
+          }
+
+          const inp = {padding:"7px 10px",fontSize:"12px",borderRadius:"6px",border:"1px solid var(--border)",background:"var(--bg-input)",color:"var(--text-primary)",width:"100%",boxSizing:"border-box"};
+
+          // Exportar Excel idêntico ao FORECAST_2026_EF.xlsx
+          function exportXLSX(){
+            const XLSX = window.XLSX;
+            const months3 = FC_VIS_MONTHS;
+            const hdr = [null,"RESP.","CUSTOMER","SUPPLIER","DESCRIPTION","AMOUNT","UF","Confidence",...months3,curYr,"FOLLOW-UP","CONTATOS",null];
+            const rows = filtered.map(o=>{
+              const a = parseFloat(String(o.amount||"0").replace(/[^0-9.]/g,""))||0;
+              const months = o.months||{};
+              const isConf100 = parseFloat(o.confidence||0)>=1;
+              const m3vals = months3.map(m=>months[m]?"x":null);
+              const anoVal = isConf100&&Object.values(months).some(Boolean)?"x":null;
+              return [o.neg||"D", o.resp, o.customer, o.supplier, o.description, a||null, o.uf, parseFloat(o.confidence||0), ...m3vals, anoVal, o.followup||null, o.contatos||null, null];
+            });
+            const ws = XLSX.utils.aoa_to_sheet([hdr,...rows]);
+            // Larguras fiéis ao original
+            ws["!cols"]=[{wch:3.2},{wch:7.6},{wch:16.2},{wch:8.6},{wch:42},{wch:15.4},{wch:4},{wch:5.4},{wch:4},{wch:4},{wch:4},{wch:5},{wch:37.4},{wch:30.7},{wch:4}];
+            const wb = XLSX.utils.book_new();
+            const sheetName = (months3[0]||"").slice(0,2)+"."+(curYr+"").slice(-4);
+            XLSX.utils.book_append_sheet(wb, ws, sheetName);
+            XLSX.writeFile(wb, "FORECAST_"+curYr+"_"+((session&&session.code)||"EF")+".xlsx");
+          }
+
+          return (
+            <div style={{flex:1,display:"flex",flexDirection:"column",gap:"10px",minWidth:0}}>
+
+              {/* Métricas */}
+              <div style={{display:"flex",gap:"10px",flexWrap:"wrap"}}>
+                {[
+                  {l:"Oportunidades",   v:oppFc.length,                            c:"var(--text-primary)"},
+                  {l:"Pipeline pond.",  v:"R$"+(totalPond/1000).toFixed(0)+"k",    c:"#2563EB"},
+                  {l:"Valor total",     v:"R$"+(totalAmt/1000).toFixed(0)+"k",     c:"var(--text-secondary)"},
+                  {l:"Conf. 100%",      v:oppFc.filter(o=>parseFloat(o.confidence||0)>=1).length, c:"#1D9E75"},
+                ].map((m,i)=>(
+                  <div key={i} style={{padding:"8px 14px",borderRadius:"8px",background:"var(--bg-card)",border:"1px solid var(--border)",minWidth:"110px"}}>
+                    <div style={{fontSize:"17px",fontWeight:700,color:m.c}}>{m.v}</div>
+                    <div style={{fontSize:"10px",color:"var(--text-muted)",marginTop:"2px"}}>{m.l}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Controles */}
+              <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
+                <input value={oppFcSearch} onChange={e=>setOppFcSearch(e.target.value)}
+                  placeholder="Buscar CUSTOMER, SUPPLIER, DESCRIPTION, RESP..."
+                  style={{...inp,flex:1,minWidth:"180px",padding:"8px 12px"}}/>
+                <button onClick={openNew}
+                  style={{padding:"8px 16px",fontSize:"12px",fontWeight:700,borderRadius:"7px",border:"none",background:"#8C1A1A",color:"#FFD0D0",cursor:"pointer",whiteSpace:"nowrap"}}>
+                  + Add
+                </button>
+                <button onClick={exportXLSX}
+                  style={{padding:"8px 12px",fontSize:"12px",fontWeight:600,borderRadius:"7px",border:"1px solid #1D9E75",background:"rgba(29,158,117,0.1)",color:"#1D9E75",cursor:"pointer",whiteSpace:"nowrap"}}>
+                  📊 Export Excel
+                </button>
+              </div>
+
+              {/* Tabela */}
+              {oppFc.length===0?(
+                <div style={{textAlign:"center",padding:"60px 20px",color:"var(--text-muted)"}}>
+                  <div style={{fontSize:"32px",marginBottom:"12px"}}>📊</div>
+                  <div style={{fontSize:"14px",fontWeight:600,color:"var(--text-secondary)",marginBottom:"6px"}}>No opportunities yet</div>
+                  <div style={{fontSize:"12px",color:"var(--text-muted)",lineHeight:1.6}}>Click <b>+ Add</b> to create your first opportunity.<br/>Columns match FORECAST_2026_EF.xlsx exactly.</div>
+                </div>
+              ):(
+                <div style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"10px",overflow:"hidden",flex:1,maxHeight:"calc(100vh - 270px)",overflowY:"auto",overflowX:"auto"}}>
+                  <table style={{borderCollapse:"collapse",fontSize:"11px",tableLayout:"auto",minWidth:"780px",width:"100%"}}>
+                    <thead style={{position:"sticky",top:0,zIndex:2,background:"var(--bg-card2)"}}>
+                      <tr>
+                        {/* Col A — sem header */}
+                        <th style={{padding:"7px 5px",width:"24px",borderBottom:"1px solid var(--border)"}}></th>
+                        <th style={{padding:"7px 6px",textAlign:"left",borderBottom:"1px solid var(--border)",width:"52px",color:"var(--text-muted)",fontSize:"9px",fontWeight:600,letterSpacing:".04em"}}>RESP.</th>
+                        <th style={{padding:"7px 8px",textAlign:"left",borderBottom:"1px solid var(--border)",minWidth:"110px",color:"var(--text-secondary)",fontSize:"9px",fontWeight:600,letterSpacing:".04em"}}>CUSTOMER</th>
+                        <th style={{padding:"7px 8px",textAlign:"left",borderBottom:"1px solid var(--border)",minWidth:"70px",color:"var(--text-secondary)",fontSize:"9px",fontWeight:600,letterSpacing:".04em"}}>SUPPLIER</th>
+                        <th style={{padding:"7px 8px",textAlign:"left",borderBottom:"1px solid var(--border)",minWidth:"200px",color:"var(--text-secondary)",fontSize:"9px",fontWeight:600,letterSpacing:".04em"}}>DESCRIPTION</th>
+                        <th style={{padding:"7px 6px",textAlign:"right",borderBottom:"1px solid var(--border)",width:"72px",color:"var(--text-secondary)",fontSize:"9px",fontWeight:600,letterSpacing:".04em"}}>AMOUNT</th>
+                        <th style={{padding:"7px 5px",textAlign:"center",borderBottom:"1px solid var(--border)",width:"28px",color:"var(--text-muted)",fontSize:"9px",fontWeight:600}}>UF</th>
+                        <th style={{padding:"7px 5px",textAlign:"center",borderBottom:"1px solid var(--border)",width:"44px",color:"var(--text-secondary)",fontSize:"9px",fontWeight:600,letterSpacing:".04em"}}>Confidence</th>
+                        {/* 3 meses correntes */}
+                        {FC_VIS_MONTHS.map(mon=>(
+                          <th key={mon} style={{padding:"7px 3px",textAlign:"center",borderBottom:"1px solid var(--border)",borderLeft:"1px solid var(--border2)",width:"30px",color:"var(--text-secondary)",fontSize:"9px",fontWeight:600}}>{mon}</th>
+                        ))}
+                        {/* Coluna ano */}
+                        <th style={{padding:"7px 3px",textAlign:"center",borderBottom:"1px solid var(--border)",borderLeft:"1px solid var(--border2)",width:"34px",color:"var(--text-secondary)",fontSize:"9px",fontWeight:700}}>{curYr}</th>
+                        <th style={{padding:"7px 8px",textAlign:"left",borderBottom:"1px solid var(--border)",borderLeft:"1px solid var(--border2)",minWidth:"180px",color:"var(--text-secondary)",fontSize:"9px",fontWeight:600,letterSpacing:".04em"}}>FOLLOW-UP</th>
+                        <th style={{padding:"7px 8px",textAlign:"left",borderBottom:"1px solid var(--border)",minWidth:"120px",color:"var(--text-secondary)",fontSize:"9px",fontWeight:600,letterSpacing:".04em"}}>CONTATOS</th>
+                        <th style={{width:"24px",borderBottom:"1px solid var(--border)"}}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.map((o,i)=>{
+                        const conf = parseFloat(o.confidence||0);
+                        const isConf100 = conf>=1;
+                        const months = o.months||{};
+                        const markedMonths = FC_VIS_MONTHS.filter(m=>months[m]);
+                        const anoMarked = isConf100 && Object.values(months).some(Boolean);
+                        const isContrato = isConf100 && Object.values(months).filter(Boolean).length > 1;
+                        const bgRow = i%2===0?"transparent":"rgba(255,255,255,0.013)";
+                        return (
+                          <tr key={o.id} style={{borderBottom:"1px solid var(--border2)",background:bgRow}}
+                            onMouseEnter={e=>e.currentTarget.style.background="rgba(37,99,235,0.05)"}
+                            onMouseLeave={e=>e.currentTarget.style.background=bgRow}>
+                            {/* Col A: tipo negociação */}
+                            <td style={{padding:"5px 5px",textAlign:"center",cursor:"pointer"}} onClick={()=>openEdit(o)}>
+                              <span style={{fontSize:"10px",fontWeight:700,color:o.neg==="R"?"#185FA5":o.neg==="S"?"#7F77DD":"var(--text-secondary)"}}>{o.neg||"D"}</span>
+                            </td>
+                            <td style={{padding:"5px 6px",color:"var(--text-muted)",fontSize:"10px",cursor:"pointer"}} onClick={()=>openEdit(o)}>{o.resp}</td>
+                            <td style={{padding:"5px 8px",fontWeight:600,color:"var(--text-primary)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"140px",cursor:"pointer"}} title={o.customer} onClick={()=>openEdit(o)}>{o.customer}</td>
+                            <td style={{padding:"5px 8px",color:"var(--text-secondary)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"90px",cursor:"pointer"}} title={o.supplier} onClick={()=>openEdit(o)}>{o.supplier}</td>
+                            <td style={{padding:"5px 8px",color:"var(--text-primary)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"240px",cursor:"pointer"}} title={o.description} onClick={()=>openEdit(o)}>{o.description}</td>
+                            <td style={{padding:"5px 6px",textAlign:"right",color:"var(--text-secondary)",fontWeight:600,whiteSpace:"nowrap",cursor:"pointer"}} onClick={()=>openEdit(o)}>{fmtAmt(o.amount)}</td>
+                            <td style={{padding:"5px 5px",textAlign:"center",color:"var(--text-muted)",fontSize:"10px",cursor:"pointer"}} onClick={()=>openEdit(o)}>{o.uf}</td>
+                            <td style={{padding:"5px 4px",textAlign:"center",cursor:"pointer"}} onClick={()=>openEdit(o)}>
+                              <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"1px"}}>
+                                <span style={{fontSize:"10px",fontWeight:700,color:confColor(o.confidence),padding:"1px 4px",borderRadius:"5px",background:confColor(o.confidence)+"18",whiteSpace:"nowrap"}}>{confPct(o.confidence)}</span>
+                                {isContrato&&<span style={{fontSize:"8px",color:"#1D9E75",lineHeight:1}}>🏆</span>}
+                              </div>
+                            </td>
+                            {/* 3 meses clicáveis */}
+                            {FC_VIS_MONTHS.map(mon=>{
+                              const marked = months[mon];
+                              return (
+                                <td key={mon} onClick={()=>toggleMonth(o.id,mon)}
+                                  style={{padding:"4px 3px",textAlign:"center",borderLeft:"1px solid var(--border2)",cursor:"pointer",background:isContrato&&marked?"rgba(29,158,117,0.07)":"transparent"}}>
+                                  {marked
+                                    ?<div style={{width:"14px",height:"14px",borderRadius:"3px",background:isContrato?"#1D9E75":"#8C1A1A",margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                                      <span style={{color:"#fff",fontSize:"8px",fontWeight:700,lineHeight:1}}>x</span>
+                                    </div>
+                                    :<div style={{width:"14px",height:"14px",borderRadius:"3px",border:`1px dashed ${isConf100?"rgba(29,158,117,0.35)":"var(--border)"}`,margin:"0 auto"}}/>
+                                  }
+                                </td>
+                              );
+                            })}
+                            {/* Coluna ano */}
+                            <td style={{padding:"4px 3px",textAlign:"center",borderLeft:"1px solid var(--border2)"}}>
+                              {anoMarked&&(
+                                <div style={{width:"14px",height:"14px",borderRadius:"3px",background:"#1D9E75",margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                                  <span style={{color:"#fff",fontSize:"8px",fontWeight:700,lineHeight:1}}>x</span>
+                                </div>
+                              )}
+                            </td>
+                            {/* FOLLOW-UP — clicável para expandir */}
+                            <td style={{padding:"5px 8px",borderLeft:"1px solid var(--border2)",maxWidth:"200px",cursor:"pointer"}} onClick={()=>openEdit(o)}>
+                              {(o.followup||"").split("\n").slice(0,2).map((line,li)=>(
+                                <div key={li} style={{fontSize:"10px",color:li===0?"var(--text-primary)":"var(--text-muted)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.4}} title={o.followup}>{line}</div>
+                              ))}
+                              {(o.followup||"").split("\n").length > 2 && (
+                                <div style={{fontSize:"9px",color:"var(--text-muted)"}}>+{(o.followup||"").split("\n").length-2} more</div>
+                              )}
+                            </td>
+                            {/* CONTATOS */}
+                            <td style={{padding:"5px 8px",color:"var(--text-secondary)",fontSize:"10px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"140px",cursor:"pointer"}} title={o.contatos} onClick={()=>openEdit(o)}>{o.contatos}</td>
+                            {/* Excluir */}
+                            <td style={{padding:"5px 4px",textAlign:"center"}}>
+                              <button onClick={()=>doDelete(o.id)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--text-muted)",fontSize:"12px",padding:"2px 4px",opacity:.5}} title="Delete" onMouseEnter={e=>e.target.style.opacity=1} onMouseLeave={e=>e.target.style.opacity=.5}>✕</button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Modal */}
+              {oppFcModal&&(
+                <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.78)",display:"flex",alignItems:"flex-start",justifyContent:"center",zIndex:90,padding:"12px",overflowY:"auto"}}>
+                  <div style={{background:"var(--bg-card)",borderRadius:"14px",border:"1px solid var(--border)",width:"100%",maxWidth:"680px",padding:"22px",marginTop:"8px"}}>
+
+                    {/* Header modal */}
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"16px"}}>
+                      <div style={{fontSize:"14px",fontWeight:700,color:"var(--text-primary)"}}>{oppFcEdit==="new"?"New opportunity":"Edit opportunity"}</div>
+                      <button onClick={()=>setOppFcModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--text-muted)",fontSize:"20px",lineHeight:1}}>✕</button>
+                    </div>
+
+                    {/* Row 1: col A (neg), RESP, UF, Confidence */}
+                    <div style={{display:"grid",gridTemplateColumns:"70px 80px 55px 100px",gap:"8px",marginBottom:"10px"}}>
+                      {[
+                        {k:"neg",l:"",type:"select",opts:NEG_OPTS},
+                        {k:"resp",l:"RESP.",ph:"EF"},
+                        {k:"uf",l:"UF",ph:"SP"},
+                        {k:"confidence",l:"Confidence",type:"select",opts:CONF_OPTS},
+                      ].map(({k,l,type,ph,opts})=>(
+                        <div key={k}>
+                          <label style={{fontSize:"9px",color:"var(--text-muted)",display:"block",marginBottom:"3px",textTransform:"uppercase",letterSpacing:".06em"}}>{l||"\u00a0"}</label>
+                          {type==="select"
+                            ?<select value={oppFcForm[k]} onChange={e=>setOppFcForm(f=>({...f,[k]:e.target.value}))} style={{...inp,cursor:"pointer"}}>
+                              {opts.map(([v,lb])=><option key={v} value={v}>{lb}</option>)}
+                            </select>
+                            :<input value={oppFcForm[k]||""} onChange={e=>setOppFcForm(f=>({...f,[k]:e.target.value}))} style={inp} placeholder={ph}/>
+                          }
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Row 2: CUSTOMER, SUPPLIER, AMOUNT */}
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 110px",gap:"8px",marginBottom:"10px"}}>
+                      {[{k:"customer",l:"CUSTOMER"},{k:"supplier",l:"SUPPLIER"},{k:"amount",l:"AMOUNT",type:"number"}].map(({k,l,type})=>(
+                        <div key={k}>
+                          <label style={{fontSize:"9px",color:"var(--text-muted)",display:"block",marginBottom:"3px",textTransform:"uppercase",letterSpacing:".06em"}}>{l}</label>
+                          <input value={oppFcForm[k]||""} onChange={e=>setOppFcForm(f=>({...f,[k]:e.target.value}))} style={inp} type={type||"text"}/>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* DESCRIPTION */}
+                    <div style={{marginBottom:"10px"}}>
+                      <label style={{fontSize:"9px",color:"var(--text-muted)",display:"block",marginBottom:"3px",textTransform:"uppercase",letterSpacing:".06em"}}>DESCRIPTION</label>
+                      <input value={oppFcForm.description||""} onChange={e=>setOppFcForm(f=>({...f,description:e.target.value}))} style={inp}/>
+                    </div>
+
+                    {/* Meses */}
+                    <div style={{marginBottom:"10px"}}>
+                      <label style={{fontSize:"9px",color:"var(--text-muted)",display:"block",marginBottom:"6px",textTransform:"uppercase",letterSpacing:".06em"}}>
+                        Months
+                        {parseFloat(oppFcForm.confidence||0)>=1&&<span style={{color:"#1D9E75",marginLeft:"8px",fontSize:"9px"}}>🏆 100% — multiple months allowed</span>}
+                      </label>
+                      <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
+                        {ALL_MONTHS.map(mon=>{
+                          const marked = (oppFcForm.months||{})[mon];
+                          const isConf100 = parseFloat(oppFcForm.confidence||0)>=1;
+                          const markedCount = Object.values(oppFcForm.months||{}).filter(Boolean).length;
+                          const isContrato = isConf100 && markedCount>1;
+                          return (
+                            <button key={mon} onClick={()=>{
+                              const nm = {...(oppFcForm.months||{})};
+                              if(!isConf100){ Object.keys(nm).forEach(k=>delete nm[k]); if(!marked) nm[mon]=true; }
+                              else{ marked?delete nm[mon]:(nm[mon]=true); }
+                              setOppFcForm(f=>({...f,months:nm}));
+                            }} style={{padding:"4px 9px",borderRadius:"5px",border:`1px solid ${marked?(isContrato?"#1D9E75":"#8C1A1A"):"var(--border)"}`,background:marked?(isContrato?"rgba(29,158,117,0.15)":"rgba(140,26,26,0.12)"):"transparent",color:marked?(isContrato?"#1D9E75":"#8C1A1A"):"var(--text-muted)",cursor:"pointer",fontSize:"11px",fontWeight:marked?700:400}}>
+                              {mon}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* FOLLOW-UP e CONTATOS */}
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"14px"}}>
+                      {[{k:"followup",l:"FOLLOW-UP",ph:"08.04.26 - FUP retorno\n01.04.26 - Proposta enviada"},{k:"contatos",l:"CONTATOS",ph:"Nome / Departamento"}].map(({k,l,ph})=>(
+                        <div key={k}>
+                          <label style={{fontSize:"9px",color:"var(--text-muted)",display:"block",marginBottom:"3px",textTransform:"uppercase",letterSpacing:".06em"}}>{l}</label>
+                          <textarea value={oppFcForm[k]||""} onChange={e=>setOppFcForm(f=>({...f,[k]:e.target.value}))}
+                            style={{...inp,height:"72px",resize:"vertical",fontFamily:"inherit",lineHeight:1.5}} placeholder={ph}/>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{display:"flex",gap:"8px"}}>
+                      <button onClick={doSave} style={{flex:1,padding:"10px",fontSize:"13px",fontWeight:700,borderRadius:"8px",border:"none",background:"#8C1A1A",color:"#FFD0D0",cursor:"pointer"}}>
+                        {oppFcEdit==="new"?"Add opportunity":"Save changes"}
+                      </button>
+                      <button onClick={()=>setOppFcModal(false)} style={{padding:"10px 14px",fontSize:"13px",borderRadius:"8px",border:"1px solid var(--border)",background:"transparent",color:"var(--text-secondary)",cursor:"pointer"}}>Cancel</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
         {view==="tasks" && (
           <div style={{flex:1,minWidth:0}}>
             {/* Toolbar */}
