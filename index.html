@@ -1368,15 +1368,57 @@ function App() {
     ].join("\n");
   }
 
+  // Relatório baseado nas oportunidades do FORECAST (oppFc)
+  function buildRelatorioFc(opp){
+    const linha = "─".repeat(55);
+    const conf = Math.round(parseFloat(opp.confidence||0)*100)+"%";
+    const months = opp.months||{};
+    const FC_ALL = ["JAN","FEV","MAR","ABR","MAI","JUN","JUL","AGO","SET","OUT","NOV","DEZ"];
+    const monthsTxt = FC_ALL.filter(m=>months[m]).join(" · ")||"—";
+    const forecastHeader = ["NEG","RESP.","CUSTOMER","SUPPLIER","DESCRIPTION","AMOUNT","CONF%","MESES"].join("\t");
+    const amt = parseFloat(String(opp.amount||"0").replace(/[^0-9.]/g,""))||0;
+    const amtFmt = amt>0?"R$"+(amt>=1000?(amt/1000).toFixed(1)+"k":amt.toFixed(2)):"—";
+    const forecastValues = [opp.neg||"D", opp.resp||"—", opp.customer||"—", opp.supplier||"—", opp.description||"—", amtFmt, conf, monthsTxt].join("\t");
+
+    // Histórico de visitas (campo history do oppFc)
+    const hist = Array.isArray(opp.history)?opp.history:[];
+    const histTxt = hist.length
+      ? hist.map(h=>{
+          const data = h.date||"—";
+          const hora = h.time?` ${h.time}`:"";
+          const resp = h.resp?` [${h.resp}]`:"";
+          const proc = h.processo?` · ${h.processo}`:"";
+          return `[${data}${hora}${resp}${proc}]\n${h.resumo||""}`;
+        }).join("\n\n")
+      : "Sem visitas registradas.";
+
+    return [
+      `${opp.customer||"—"} · ${opp.contatos||"—"}`,
+      `Oportunidade: ${opp.description||"—"}`,
+      linha,
+      `FORECAST:`,
+      forecastHeader,
+      forecastValues,
+      linha,
+      `HISTÓRICO:`,
+      histTxt,
+      linha,
+      `FOLLOW-UP:`,
+      opp.followup||"—",
+      linha,
+      `PRÓXIMA AÇÃO: —`,
+    ].join("\n");
+  }
+
   async function gerarRelatorio(){
     if(!relSelected || relSelected.length === 0) return;
     setRelLoading(true);
     setRelText("");
-    const selOpps = relSelected.map(id=>opps.find(o=>o.id===id)).filter(Boolean);
+    // Buscar nas oportunidades do Forecast (oppFc)
+    const selOpps = relSelected.map(id=>oppFc.find(o=>o.id===id)).filter(Boolean);
     if(selOpps.length===0){ setRelText("Oportunidades não encontradas."); setRelLoading(false); return; }
-    // Gerar texto para cada oportunidade e concatenar com separador
     const sep = "═".repeat(60);
-    const texts = selOpps.map(opp=>buildRelatorioTexto(opp));
+    const texts = selOpps.map(opp=>buildRelatorioFc(opp));
     setRelText(selOpps.length===1 ? texts[0] : texts.join("\n\n"+sep+"\n\n"));
     setRelLoading(false);
   }
@@ -1828,16 +1870,15 @@ function App() {
   const today    = new Date().toISOString().slice(0,10);
   // Vendedor vê só suas próprias oportunidades
   // Filtro de oportunidades por perfil
+  // Métricas baseadas no Forecast (oppFc)
   const visibleOpps = (() => {
-    if(isGestor || isConsultor) return opps; // veem tudo
-    if(isVendedor) return opps.filter(o=>(o.resp||"").toUpperCase()===myResp.toUpperCase());
-    if(isEngenheiro) return opps.filter(o=>(o.resp||"").toUpperCase()===myResp.toUpperCase());
-    return opps;
+    if(isGestor || isConsultor) return oppFc;
+    return oppFc.filter(o=>(o.resp||"").toUpperCase()===myResp.toUpperCase());
   })();
-  const totalVal = visibleOpps.reduce((s,o)=>s+(o.value||0),0);
-  const wonVal   = visibleOpps.filter(o=>o.stage==="pos_venda").reduce((s,o)=>s+(o.value||0),0);
-  const overdue  = visibleOpps.filter(o=>o.nextDate&&o.nextDate<today).length;
-  const highPri  = visibleOpps.filter(o=>o.priority==="alta").length;
+  const totalVal = visibleOpps.reduce((s,o)=>{ const a=parseFloat(String(o.amount||"0").replace(/[^0-9.]/g,""))||0; return s+a*parseFloat(o.confidence||0); },0);
+  const wonVal   = visibleOpps.filter(o=>parseFloat(o.confidence||0)>=1).reduce((s,o)=>{ const a=parseFloat(String(o.amount||"0").replace(/[^0-9.]/g,""))||0; return s+a; },0);
+  const overdue  = 0;
+  const highPri  = visibleOpps.filter(o=>parseFloat(o.confidence||0)>=0.5).length;
 
   const inp = {width:"100%",fontSize:"12px",padding:"7px 9px",borderRadius:"6px",border:"1px solid var(--border)",background:"var(--bg-input)",color:"var(--text-primary)",boxSizing:"border-box"};
   const lbl = {fontSize:"11px",color:"var(--text-secondary)",marginBottom:"3px",display:"block",textTransform:"uppercase",letterSpacing:"0.05em"};
@@ -2536,7 +2577,7 @@ function App() {
                     const isLate = t.date&&t.date<today&&!t.done;
                     const isToday2 = t.date===today;
                     const priC = {alta:"#E24B4A",media:"#EF9F27",baixa:"#1D9E75"}[t.priority]||"#888";
-                    const opp = opps.find(o=>o.id===t.oppId);
+                    const opp = oppFc.find(o=>o.id===t.oppId);
                     return (
                       <div key={t.id} style={{background:"var(--bg-card)",border:`1px solid ${isLate?"#E24B4A33":isToday2?"#EF9F2733":"var(--border)"}`,borderLeft:`3px solid ${isLate?"#E24B4A":isToday2?"#EF9F27":priC}`,borderRadius:"8px",padding:"10px 12px",marginBottom:"6px",opacity:t.done?.6:1}}>
                         <div style={{display:"flex",alignItems:"flex-start",gap:"10px"}}>
@@ -2681,7 +2722,7 @@ function App() {
                         </tr></thead>
                         <tbody>
                           {filtered.map(c=>{
-                            const oppCount = opps.filter(o=>o.company?.toLowerCase().includes(c.alias?.toLowerCase())||o.company===c.alias).length;
+                            const oppCount = oppFc.filter(o=>(o.customer&&c.alias&&o.customer.toLowerCase().includes(c.alias.toLowerCase()))||o.customer===c.alias).length;
                             const sel2 = selClient?.alias===c.alias;
                             return (
                               <tr key={c.alias} onClick={()=>setSelClient(sel2?null:c)}
@@ -2970,10 +3011,10 @@ function App() {
 
                 {/* Lista */}
                 <div style={{display:"flex",flexDirection:"column",gap:"3px",maxHeight:"440px",overflowY:"auto"}}>
-                  {opps.filter(o=>o.stage!=="fechado").map(o=>{
+                  {oppFc.map(o=>{
                     const isSel = relSelected.includes(o.id);
                     const stage = STAGES.find(s=>s.id===o.stage);
-                    const hasHistory = (o.visitHistory||[]).length>0;
+                    const hasHistory = (o.history||[]).length>0;
                     return (
                       <div key={o.id} onClick={()=>{
                         if(relMode==="single") setRelSelected(s=>s.includes(o.id)?[]:[o.id]);
@@ -2984,12 +3025,12 @@ function App() {
                           {isSel&&<div style={{width:"5px",height:"5px",borderRadius:relMode==="single"?"50%":"1px",background:"#fff"}}/>}
                         </div>
                         <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:"11px",fontWeight:600,color:"var(--text-primary)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.company}</div>
-                          <div style={{fontSize:"10px",color:"var(--text-secondary)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.title}</div>
+                          <div style={{fontSize:"11px",fontWeight:600,color:"var(--text-primary)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.customer}</div>
+                          <div style={{fontSize:"10px",color:"var(--text-secondary)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.description}</div>
                         </div>
                         <div style={{display:"flex",gap:"3px",alignItems:"center",flexShrink:0}}>
                           {hasHistory&&<span style={{fontSize:"9px",color:"var(--text-blue)"}}>📝</span>}
-                          <span style={{fontSize:"9px",padding:"1px 5px",borderRadius:"6px",background:(stage?.color||"#888")+"22",color:stage?.color||"#888",fontWeight:600}}>{stage?.tag||"—"}</span>
+                          <span style={{fontSize:"9px",padding:"1px 5px",borderRadius:"6px",background:stageColor+"22",color:stageColor,fontWeight:600}}>{Math.round(parseFloat(o.confidence||0)*100)+"%"}</span>
                         </div>
                       </div>
                     );
@@ -3539,7 +3580,7 @@ function App() {
                     (o.contact||"").toLowerCase().includes(orcSearch.toLowerCase())
                   ).map(o=>{
                     const sc={"aberto":"#378ADD","aprovado":"#1D9E75","perdido":"#E24B4A","em_negociacao":"#EF9F27","aguardando":"#888780"}[o.status]||"#888";
-                    const linkedOpp = opps.find(op=>op.id===o.oppId);
+                    const linkedOpp = oppFc.find(op=>op.id===o.oppId);
                     return (
                       <tr key={o.id} onClick={()=>setSelOrc(selOrc?.id===o.id?null:o)} style={{borderBottom:"1px solid var(--border2)",cursor:"pointer",background:selOrc?.id===o.id?"rgba(140,26,26,0.08)":"transparent"}}>
                         <td style={{padding:"7px 9px",color:"var(--text-accent)",fontWeight:700}}>{o.number}</td>
@@ -3634,7 +3675,7 @@ function App() {
                     <label style={{fontSize:"10px",color:"var(--text-secondary)",display:"block",marginBottom:"3px"}}>Vincular à oportunidade</label>
                     <select value={orcForm.oppId||""} onChange={e=>setOrcForm({...orcForm,oppId:e.target.value})} style={inp}>
                       <option value="">— nenhuma —</option>
-                      {opps.map(op=><option key={op.id} value={op.id}>{op.company} · {op.title}</option>)}
+                      {oppFc.map(op=><option key={op.id} value={op.id}>{op.customer} · {(op.description||"").slice(0,40)}</option>)}
                     </select>
                   </div>
                   <div style={{marginBottom:"10px"}}>
@@ -3681,7 +3722,7 @@ function App() {
                   const supColor=p.supplier==="3arm"?"#E24B4A":p.supplier==="Lubbering"?"#185FA5":"#888";
                   const stColors={"em_andamento":"#378ADD","aguardando_cliente":"#EF9F27","em_producao":"#7F77DD","concluido":"#1D9E75","cancelado":"#888"};
                   const stLabels={"em_andamento":"Em andamento","aguardando_cliente":"Aguard. cliente","em_producao":"Em produção","concluido":"Concluído","cancelado":"Cancelado"};
-                  const opp = opps.find(o=>o.id===p.oppId);
+                  const opp = oppFc.find(o=>o.id===p.oppId);
                   return (
                     <div key={p.id} onClick={()=>setSelProj(selProj?.id===p.id?null:p)}
                       style={{background:"var(--bg-card)",border:`1px solid ${selProj?.id===p.id?"#8C1A1A":"var(--border)"}`,borderLeft:`3px solid ${supColor}`,borderRadius:"8px",padding:"12px 14px",cursor:"pointer"}}>
