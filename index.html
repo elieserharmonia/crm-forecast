@@ -677,19 +677,19 @@ function App() {
   function openContactModal(opp){
     const contactName = (opp.contact||"").split(/[,\/\n]/)[0].trim();
     const client = clientsData.find(c=>c.name&&c.name.toLowerCase().includes((opp.company||"").toLowerCase().slice(0,8)));
-    const contactObj = client?.contacts?.find(ct=>ct.name&&ct.name.toLowerCase().includes(contactName.toLowerCase().slice(0,5)));
+    const contactObj = (client&&client.contacts?client.contacts.find(ct=>ct.name&&ct.name.toLowerCase().includes(contactName.toLowerCase().slice(0,5))):null);
     setContactData({
       name: opp.contact||"—",
-      phone: contactObj?.cel || contactObj?.phone || "",
+      phone: (contactObj?contactObj.cel:"")||(contactObj?contactObj.phone:"")||"",
       company: opp.company||"",
     });
     setContactModal(true);
   }
   // Realizado automático: soma oportunidades fechadas por fornecedor/cliente
   function autoRealizado(b){
-    const closed = opps.filter(o=>o.stage==="fechado"||o.stage==="pos_venda");
+    const closed = oppFc.filter(o=>o.stage==="fechado"||o.stage==="pos_venda");
     if(b.type==="supplier") return closed.filter(o=>o.supplier&&o.supplier.toLowerCase().includes((b.supplier||"").toLowerCase())).reduce((s,o)=>s+(o.value||0),0);
-    return closed.filter(o=>o.company&&o.company.toLowerCase().includes((b.client||"").toLowerCase())).reduce((s,o)=>s+(o.value||0),0);
+    return closed.filter(o=>o.customer&&o.customer.toLowerCase().includes((b.client||"").toLowerCase())).reduce((s,o)=>s+(o.value||0),0);
   }
   function totalRealizado(b){ return (b.realized1s||0)+(b.realized2s||0)+(b.realizedManual||0)+autoRealizado(b); }
   function totalMeta(b){ return b.targetAnual||((b.target1s||0)+(b.target2s||0)); }
@@ -771,7 +771,7 @@ function App() {
   const [selProj, setSelProj] = useState(null);
   function saveProjetos(p){ setProjetos(p); try{ localStorage.setItem(PROJ_KEY,JSON.stringify(p)); }catch(e){}; }
   function addProjeto(){ if(!projForm.name) return; saveProjetos([...projetos,{...projForm,id:Date.now(),createdAt:new Date().toISOString().slice(0,10)}]); setProjForm(emptyProj); setProjModal(false); }
-  function delProjeto(id){ saveProjetos(projetos.filter(p=>p.id!==id)); if(selProj?.id===id)setSelProj(null); }
+  function delProjeto(id){ saveProjetos(projetos.filter(p=>p.id!==id)); if((selProj?selProj.id:null)===id)setSelProj(null); }
   function updateProj(u){ saveProjetos(projetos.map(p=>p.id===u.id?u:p)); setSelProj(u); }
 
   // TAREFAS & NOTIFICAÇÕES
@@ -991,11 +991,10 @@ function App() {
         let m;
         while((m = itemRegex.exec(xml)) !== null){
           const item = m[1];
-          const title = (item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/) || item.match(/<title>(.*?)<\/title>/))?.[1]||"";
-          const link  = (item.match(/<link>(.*?)<\/link>/) || item.match(/<link\/>(.*?)<\/link>/))?.[1]||
-                        item.match(/href="(https?:\/\/[^"]+)"/)?.[1]||"";
-          const pub   = (item.match(/<pubDate>(.*?)<\/pubDate>/))?.[1]||"";
-          const src   = (item.match(/<source[^>]*>(.*?)<\/source>/))?.[1]||"";
+          const _tm=item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/)||item.match(/<title>(.*?)<\/title>/);const title=_tm?_tm[1]:"";
+          const _lm=item.match(/<link>(.*?)<\/link>/)||item.match(/<link\/>(.*?)<\/link>/);const _hm=item.match(/href="(https?:\/\/[^"]+)"/);const link=_lm?_lm[1]:(_hm?_hm[1]:"");
+          const _pm=item.match(/<pubDate>(.*?)<\/pubDate>/);const pub=_pm?_pm[1]:"";
+          const _sm=item.match(/<source[^>]*>(.*?)<\/source>/);const src=_sm?_sm[1]:"";
           if(title) items.push({title, link, pub, src});
           if(items.length>=5) break;
         }
@@ -1006,15 +1005,15 @@ function App() {
     const results = {};
     for(const alias of clientesMonitor){
       const cli = clientsData.find(c=>c.alias===alias);
-      const setor = cli?.segment||"indústria";
+      const setor = (cli?cli.segment:"—");
       // Query 1: nome da empresa + termos positivos
-      const q1 = `"${alias}" OR "${(cli?.name||alias).split(" ").slice(0,3).join(" ")}" investimento expansão produção Brasil 2025 2026`;
+      const q1 = `"${alias}" OR "${((cli?cli.name:alias)).split(" ").slice(0,3).join(" ")}" investimento expansão produção Brasil 2025 2026`;
       // Query 2: setor industrial (notícias do mercado)
       const q2 = `${setor} Brasil mercado indústria 2025 2026`;
       const [news1, news2] = await Promise.all([fetchRSS(q1), fetchRSS(q2)]);
       results[alias] = {
         alias, setor,
-        city: cli?.city||"", state: cli?.state||"",
+        city: (cli?cli.city:""), state: (cli?cli.state:""),
         newsEmpresa: news1,
         newsSetor: news2,
       };
@@ -1308,8 +1307,8 @@ function App() {
   // Helper: monta o objeto de relatório a partir de uma oportunidade
   function buildRelatorioData(opp){
     const stage = STAGES.find(s=>s.id===opp.stage);
-    const stageLabel = stage?.label || opp.stage;
-    const stageTag   = stage?.tag   || "";
+    const stageLabel = (stage?stage.label:null) || opp.stage;
+    const stageTag   = (stage?stage.tag:null)   || "";
     const negType    = opp.negType||"D";
     const resp       = opp.resp||"EF";
     const supplier   = opp.supplier||"—";
@@ -1717,7 +1716,7 @@ function App() {
   }, [themePref]);
 
   useEffect(() => { saveData(opps); }, [opps]);
-  useEffect(() => { aiEnd.current?.scrollIntoView({behavior:"smooth"}); }, [aiMsgs]);
+  useEffect(() => { (aiEnd.current&&aiEnd.current.scrollIntoView({behavior:"smooth"})); }, [aiMsgs]);
 
   function setAndSave(list) { setOpps(list); }
 
@@ -1744,7 +1743,7 @@ function App() {
     setForm({title:"",company:"",contact:"",value:"",stage:"prospeccao",priority:"media",nextAction:"",nextDate:"",nextTime:"",notes:"",supplier:"",resp:"",forecastColor:"none",confidence:0.1,negType:"D"});
   }
 
-  function delOpp(id) { setAndSave(opps.filter(o=>o.id!==id)); setSel(null); }
+  function delOpp(id) { setAndSave(oppFc.filter(o=>o.id!==id)); setSel(null); }
 
   function exportData() {
     const blob = new Blob([JSON.stringify(opps,null,2)],{type:"application/json"});
@@ -1833,7 +1832,7 @@ function App() {
     if (!m.trim()||aiLoading) return;
     if (!apiKey) { setKeyDraft(""); setShowKey(true); return; }
     const ctx = sel
-      ? `Oportunidade: "${sel.title}" | Empresa: ${sel.company} | Etapa: ${STAGES.find(s=>s.id===sel.stage)?.label} | Valor: R$ ${(sel.value||0).toLocaleString("pt-BR")} | Próxima ação: ${sel.nextAction} | Notas: ${sel.notes}`
+      ? `Oportunidade: "${sel.title}" | Empresa: ${sel.company} | Etapa: ${(STAGES.find(s=>s.id===sel.stage)||{label:""}).label} | Valor: R$ ${(sel.value||0).toLocaleString("pt-BR")} | Próxima ação: ${sel.nextAction} | Notas: ${sel.notes}`
       : "Nenhuma oportunidade selecionada.";
     const msgs = [...aiMsgs, {role:"user",content:m}];
     setAiMsgs(msgs);
@@ -1852,7 +1851,7 @@ function App() {
       });
       const d = await res.json();
       if (d.error) throw new Error(d.error.message);
-      const reply = d.content?.map(c=>c.text||"").join("")||"Sem resposta.";
+      const reply = (d.content?d.content.map(c=>c.text||"").join(""):"")||"Sem resposta."
       setAiMsgs([...msgs,{role:"assistant",content:reply}]);
     } catch(err) {
       setAiMsgs([...msgs,{role:"assistant",content:`Erro: ${err.message}`}]);
@@ -2556,7 +2555,7 @@ function App() {
             {/* Lista de tarefas */}
             {(()=>{
               const tFiltered = tasks
-                .filter(t=>!taskSearch||t.title.toLowerCase().includes(taskSearch.toLowerCase())||t.company?.toLowerCase().includes(taskSearch.toLowerCase()))
+                .filter(t=>!taskSearch||t.title.toLowerCase().includes(taskSearch.toLowerCase())||(t.company&&t.company.toLowerCase().includes(taskSearch.toLowerCase())))
                 .sort((a,b)=>{
                   if(a.done!==b.done) return a.done?1:-1;
                   const da=(a.date||"9999")+(a.time||"");
@@ -2579,7 +2578,7 @@ function App() {
                     const priC = {alta:"#E24B4A",media:"#EF9F27",baixa:"#1D9E75"}[t.priority]||"#888";
                     const opp = oppFc.find(o=>o.id===t.oppId);
                     return (
-                      <div key={t.id} style={{background:"var(--bg-card)",border:`1px solid ${isLate?"#E24B4A33":isToday2?"#EF9F2733":"var(--border)"}`,borderLeft:`3px solid ${isLate?"#E24B4A":isToday2?"#EF9F27":priC}`,borderRadius:"8px",padding:"10px 12px",marginBottom:"6px",opacity:t.done?.6:1}}>
+                      <div key={t.id} style={{background:"var(--bg-card)",border:`1px solid ${isLate?"#E24B4A33":isToday2?"#EF9F2733":"var(--border)"}`,borderLeft:`3px solid ${isLate?"#E24B4A":isToday2?"#EF9F27":priC}`,borderRadius:"8px",padding:"10px 12px",marginBottom:"6px",opacity:t.done?0.6:1}}>
                         <div style={{display:"flex",alignItems:"flex-start",gap:"10px"}}>
                           <input type="checkbox" checked={t.done} onChange={()=>toggleTaskDone(t.id)} style={{marginTop:"2px",cursor:"pointer",flexShrink:0}}/>
                           <div style={{flex:1,minWidth:0}}>
@@ -2649,9 +2648,9 @@ function App() {
                   </div>
                   <div style={{marginBottom:"8px"}}>
                     <label style={lbl}>Vincular oportunidade</label>
-                    <select value={taskForm.oppId} onChange={e=>setTaskForm({...taskForm,oppId:e.target.value,company:e.target.value?opps.find(o=>o.id===e.target.value)?.company||taskForm.company:taskForm.company})} style={{...inp}}>
+                    <select value={taskForm.oppId} onChange={e=>setTaskForm({...taskForm,oppId:e.target.value,company:e.target.value?(oppFc.find(o=>o.id===e.target.value)||{}).customer||taskForm.company:taskForm.company})} style={{...inp}}>
                       <option value="">— Nenhuma —</option>
-                      {opps.filter(o=>o.stage!=="fechado").map(o=><option key={o.id} value={o.id}>{o.company} · {o.title.slice(0,35)}</option>)}
+                      {oppFc.filter(o=>o.stage!=="fechado").map(o=><option key={o.id} value={o.id}>{o.customer} · {o.title.slice(0,35)}</option>)}
                     </select>
                   </div>
                   <div style={{marginBottom:"8px"}}>
@@ -2696,18 +2695,18 @@ function App() {
                 <input type="file" accept=".xlsx,.xls" onChange={importClientsXLSX} style={{display:"none"}}/>
               </label>
               <span style={{fontSize:"11px",color:"var(--text-muted)"}}>
-                {clientsData.filter(c=>!clientSearch||c.alias?.toLowerCase().includes(clientSearch.toLowerCase())||c.city?.toLowerCase().includes(clientSearch.toLowerCase())||c.segment?.toLowerCase().includes(clientSearch.toLowerCase())).length} clientes
+                {clientsData.filter(c=>!clientSearch||((c.alias&&c.alias.toLowerCase().includes(clientSearch.toLowerCase()))||(c.city&&c.city.toLowerCase().includes(clientSearch.toLowerCase()))||(c.segment&&c.segment.toLowerCase().includes(clientSearch.toLowerCase())))).length} clientes
               </span>
             </div>
 
             {(()=>{
-              const filtered = clientsData.filter(c=>!clientSearch||
-                c.alias?.toLowerCase().includes(clientSearch.toLowerCase())||
-                c.name?.toLowerCase().includes(clientSearch.toLowerCase())||
-                c.city?.toLowerCase().includes(clientSearch.toLowerCase())||
-                c.segment?.toLowerCase().includes(clientSearch.toLowerCase())||
-                c.contacts?.some(ct=>ct.name?.toLowerCase().includes(clientSearch.toLowerCase()))
-              );
+              const filtered = clientsData.filter(c=>!clientSearch||(
+                (c.alias&&c.alias.toLowerCase().includes(clientSearch.toLowerCase()))||
+                (c.name&&c.name.toLowerCase().includes(clientSearch.toLowerCase()))||
+                (c.city&&c.city.toLowerCase().includes(clientSearch.toLowerCase()))||
+                (c.segment&&c.segment.toLowerCase().includes(clientSearch.toLowerCase()))||
+                (c.contacts&&c.contacts.some(ct=>ct.name&&ct.name.toLowerCase().includes(clientSearch.toLowerCase())))
+              ));
 
               if (clientView2==="list") return (
                 <div style={{display:"flex",gap:"12px",alignItems:"flex-start"}}>
@@ -2723,13 +2722,13 @@ function App() {
                         <tbody>
                           {filtered.map(c=>{
                             const oppCount = oppFc.filter(o=>(o.customer&&c.alias&&o.customer.toLowerCase().includes(c.alias.toLowerCase()))||o.customer===c.alias).length;
-                            const sel2 = selClient?.alias===c.alias;
+                            const sel2 = (selClient?selClient.alias:null)===c.alias;
                             return (
                               <tr key={c.alias} onClick={()=>setSelClient(sel2?null:c)}
                                 style={{borderBottom:"1px solid var(--border2)",cursor:"pointer",background:sel2?"rgba(140,26,26,0.08)":"transparent"}}>
                                 <td style={{padding:"8px 10px"}}>
                                   <div style={{fontWeight:600,color:"var(--text-primary)",fontSize:"12px"}}>{c.alias}</div>
-                                  <div style={{fontSize:"10px",color:"var(--text-secondary)"}}>{c.name?.slice(0,40)}</div>
+                                  <div style={{fontSize:"10px",color:"var(--text-secondary)"}}>{c.name?c.name.slice(0,40):""}</div>
                                 </td>
                                 <td style={{padding:"8px 10px",color:"var(--text-secondary)",whiteSpace:"nowrap"}}>{c.city}/{c.state}</td>
                                 <td style={{padding:"8px 10px"}}><span style={{fontSize:"10px",padding:"2px 7px",borderRadius:"8px",background:"var(--bg-card2)",color:"var(--text-secondary)"}}>{c.segment}</span></td>
@@ -2738,7 +2737,7 @@ function App() {
                                     ?<span style={{fontSize:"10px",padding:"2px 7px",borderRadius:"8px",background:"rgba(29,158,117,0.15)",color:"#1D9E75",fontWeight:700}}>🧠 SIM</span>
                                     :<span style={{fontSize:"9px",color:"var(--text-muted)"}}>—</span>}
                                 </td>
-                                <td style={{padding:"8px 10px",color:"var(--text-secondary)",textAlign:"center"}}>{c.contacts?.length||0}</td>
+                                <td style={{padding:"8px 10px",color:"var(--text-secondary)",textAlign:"center"}}>{c.contacts?c.contacts.length:0}</td>
                                 <td style={{padding:"8px 10px",textAlign:"center"}}>
                                   {oppCount>0?<span style={{fontSize:"10px",padding:"2px 7px",borderRadius:"8px",background:"rgba(140,26,26,0.15)",color:"var(--text-accent)",fontWeight:600}}>{oppCount}</span>:"—"}
                                 </td>
@@ -2766,7 +2765,7 @@ function App() {
                           <div style={{width:"44px",height:"44px",borderRadius:"8px",border:"1px dashed var(--border)",background:"var(--bg-card2)",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
                             {selClient.logo
                               ?<img src={selClient.logo} alt={selClient.alias} style={{width:"100%",height:"100%",objectFit:"contain"}}/>
-                              :<span style={{fontSize:"18px",fontWeight:700,color:"var(--text-accent)"}}>{selClient.alias?.[0]}</span>}
+                              :<span style={{fontSize:"18px",fontWeight:700,color:"var(--text-accent)"}}>{selClient.alias?selClient.alias[0]:"?"}</span>}
                           </div>
                           <div style={{fontSize:"8px",color:"var(--text-muted)",textAlign:"center",marginTop:"2px"}}>📷 logo</div>
                           <input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{
@@ -2827,7 +2826,7 @@ function App() {
                       </div>
                       {/* Oportunidades abertas */}
                       {(()=>{
-                        const clientOpps = opps.filter(o=>o.company?.toLowerCase().includes(selClient.alias?.toLowerCase())||o.company===selClient.alias);
+                        const clientOpps = oppFc.filter(o=>(o.customer&&selClient.alias&&o.customer.toLowerCase().includes(selClient.alias.toLowerCase()))||o.customer===selClient.alias)
                         if (clientOpps.length===0) return null;
                         return (
                           <div style={{marginBottom:"10px"}}>
@@ -2835,10 +2834,10 @@ function App() {
                             {clientOpps.slice(0,4).map(o=>{
                               const stg = STAGES.find(s=>s.id===o.stage);
                               return (
-                                <div key={o.id} onClick={()=>{setSel(o);setView("oportunidades");}} style={{display:"flex",gap:"6px",alignItems:"center",padding:"5px 7px",borderRadius:"5px",background:"var(--bg-card2)",marginBottom:"3px",cursor:"pointer",borderLeft:`2px solid ${stg?.color||"#888"}`}}>
+                                <div key={o.id} onClick={()=>{setSel(o);setView("oportunidades");}} style={{display:"flex",gap:"6px",alignItems:"center",padding:"5px 7px",borderRadius:"5px",background:"var(--bg-card2)",marginBottom:"3px",cursor:"pointer",borderLeft:`2px solid ${(stg?stg.color:"—")}`}}>
                                   <div style={{flex:1,minWidth:0}}>
                                     <div style={{fontSize:"10px",fontWeight:600,color:"var(--text-primary)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.title}</div>
-                                    <div style={{fontSize:"9px",color:"var(--text-secondary)"}}>{o.supplier} · {stg?.tag}</div>
+                                    <div style={{fontSize:"9px",color:"var(--text-secondary)"}}>{o.supplier} · {stg?stg.tag:"—"}</div>
                                   </div>
                                   {o.value>0&&<span style={{fontSize:"9px",color:"var(--text-accent)",fontWeight:600,flexShrink:0}}>R${(o.value/1000).toFixed(0)}k</span>}
                                 </div>
@@ -2850,7 +2849,7 @@ function App() {
                       })()}
                       {/* Contatos */}
                       <div>
-                        <div style={{fontSize:"10px",fontWeight:600,color:"var(--text-secondary)",textTransform:"uppercase",letterSpacing:".08em",marginBottom:"6px"}}>Contatos ({selClient.contacts?.length||0}) — clique para abrir perfil</div>
+                        <div style={{fontSize:"10px",fontWeight:600,color:"var(--text-secondary)",textTransform:"uppercase",letterSpacing:".08em",marginBottom:"6px"}}>Contatos ({(selClient.contacts?selClient.contacts.length:0)} — clique para abrir perfil</div>
                         <div style={{maxHeight:"260px",overflowY:"auto",display:"flex",flexDirection:"column",gap:"4px"}}>
                           {(selClient.contacts||[]).map((ct,i)=>(
                             <div key={i} onClick={()=>setSelContact({...ct,_clientAlias:selClient.alias,_idx:i})}
@@ -2900,16 +2899,16 @@ function App() {
               return (
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:"12px"}}>
                   {filtered.map(c=>{
-                    const oppCount = opps.filter(o=>o.company?.toLowerCase().includes(c.alias?.toLowerCase())||o.company===c.alias).length;
-                    const oppVal   = opps.filter(o=>o.company?.toLowerCase().includes(c.alias?.toLowerCase())||o.company===c.alias).reduce((s,o)=>s+(o.value||0),0);
-                    const mainContact = c.contacts?.[0];
+                    const oppCount = oppFc.filter(o=>(o.customer&&c.alias&&o.customer.toLowerCase().includes(c.alias.toLowerCase()))||o.customer===c.alias).length
+                    const oppVal = oppFc.filter(o=>(o.customer&&c.alias&&o.customer.toLowerCase().includes(c.alias.toLowerCase()))||o.customer===c.alias).reduce((s,o)=>{const a=parseFloat(String(o.amount||'0').replace(/[^0-9.]/g,''))||0;return s+a;},0)
+                    const mainContact = (c.contacts?c.contacts[0]:null);
                     return (
                       <div key={c.alias} onClick={()=>setSelClient(c)}
                         style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:"12px",padding:"14px",cursor:"pointer",transition:"transform .15s, box-shadow .15s, border-color .15s",position:"relative",overflow:"hidden"}}
                         onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow="0 6px 20px rgba(0,0,0,0.25)";e.currentTarget.style.borderColor="#8C1A1A";}}
                         onMouseLeave={e=>{e.currentTarget.style.transform="";e.currentTarget.style.boxShadow="";e.currentTarget.style.borderColor="var(--border)";}}>
                         {/* Faixa de cor lateral por segmento */}
-                        <div style={{position:"absolute",left:0,top:0,bottom:0,width:"3px",background:c.segment?.toLowerCase().includes("auto")||c.segment?.toLowerCase().includes("veíc")?"#185FA5":c.segment?.toLowerCase().includes("agro")?"#1D9E75":c.segment?.toLowerCase().includes("aero")?"#7F77DD":"#8C1A1A",borderRadius:"12px 0 0 12px"}}/>
+                        <div style={{position:"absolute",left:0,top:0,bottom:0,width:"3px",background:(c.segment&&c.segment.toLowerCase().includes("auto")||c.segment&&c.segment.toLowerCase().includes("veíc")?"#185FA5":c.segment&&c.segment.toLowerCase().includes("agro")?"#1D9E75":c.segment&&c.segment.toLowerCase().includes("aero")?"#7F77DD":"#8C1A1A"),borderRadius:"12px 0 0 12px"}}/>)
                         <div style={{paddingLeft:"6px"}}>
                           {/* Logo clicável para upload */}
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"8px"}}>
@@ -2917,7 +2916,7 @@ function App() {
                               <div style={{width:"36px",height:"36px",borderRadius:"8px",background:"rgba(140,26,26,0.1)",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",border:"1px dashed var(--border)",flexShrink:0}}>
                                 {c.logo
                                   ?<img src={c.logo} alt={c.alias} style={{width:"100%",height:"100%",objectFit:"contain"}}/>
-                                  :<span style={{fontSize:"15px",fontWeight:700,color:"var(--text-accent)"}}>{c.alias?.[0]?.toUpperCase()||"?"}</span>}
+                                  :<span style={{fontSize:"15px",fontWeight:700,color:"var(--text-accent)"}}>{c.alias&&c.alias[0]?c.alias[0].toUpperCase():"?"}</span>}
                               </div>
                               <input type="file" accept="image/*" style={{display:"none"}} onClick={e=>e.stopPropagation()} onChange={e=>{
                                 e.stopPropagation();
@@ -3069,7 +3068,8 @@ function App() {
                         const selOpps = relSelected.map(id=>opps.find(o=>o.id===id)).filter(Boolean);
                         const subject = encodeURIComponent(selOpps.length>1
                           ? `Relatório de Oportunidades Sinuelo (${selOpps.length})`
-                          : `Oportunidade: ${selOpps[0]?.company||""} · ${selOpps[0]?.title?.slice(0,40)||""}`);
+                          : `Oportunidade: ${(selOpps[0]&&selOpps[0].customer)||""} · ${(selOpps[0]&&selOpps[0].description?selOpps[0].description.slice(0,40):"")}`);
+
                         const bodyRaw = relText;
                         // Outlook suporta ~2000 chars no mailto body
                         const bodyEnc = encodeURIComponent(bodyRaw.length>1900?bodyRaw.slice(0,1890)+"\n\n[relatório truncado — copie o texto completo do CRM]":bodyRaw);
@@ -3582,7 +3582,7 @@ function App() {
                     const sc={"aberto":"#378ADD","aprovado":"#1D9E75","perdido":"#E24B4A","em_negociacao":"#EF9F27","aguardando":"#888780"}[o.status]||"#888";
                     const linkedOpp = oppFc.find(op=>op.id===o.oppId);
                     return (
-                      <tr key={o.id} onClick={()=>setSelOrc(selOrc?.id===o.id?null:o)} style={{borderBottom:"1px solid var(--border2)",cursor:"pointer",background:selOrc?.id===o.id?"rgba(140,26,26,0.08)":"transparent"}}>
+                      <tr key={o.id} onClick={()=>setSelOrc((selOrc?selOrc.id:null)===o.id?null:o)} style={{borderBottom:"1px solid var(--border2)",cursor:"pointer",background:(selOrc?selOrc.id:null)===o.id?"rgba(140,26,26,0.08)":"transparent"}}>
                         <td style={{padding:"7px 9px",color:"var(--text-accent)",fontWeight:700}}>{o.number}</td>
                         <td style={{padding:"7px 9px",color:"var(--text-primary)"}}>{o.client}</td>
                         <td style={{padding:"7px 9px",color:"var(--text-secondary)"}}>{o.supplier||"—"}</td>
@@ -3724,8 +3724,8 @@ function App() {
                   const stLabels={"em_andamento":"Em andamento","aguardando_cliente":"Aguard. cliente","em_producao":"Em produção","concluido":"Concluído","cancelado":"Cancelado"};
                   const opp = oppFc.find(o=>o.id===p.oppId);
                   return (
-                    <div key={p.id} onClick={()=>setSelProj(selProj?.id===p.id?null:p)}
-                      style={{background:"var(--bg-card)",border:`1px solid ${selProj?.id===p.id?"#8C1A1A":"var(--border)"}`,borderLeft:`3px solid ${supColor}`,borderRadius:"8px",padding:"12px 14px",cursor:"pointer"}}>
+                    <div key={p.id} onClick={()=>setSelProj((selProj?selProj.id:null)===p.id?null:p)}
+                      style={{background:"var(--bg-card)",border:`1px solid ${(selProj?selProj.id:null)===p.id?"#8C1A1A":"var(--border)"}`,borderLeft:`3px solid ${supColor}`,borderRadius:"8px",padding:"12px 14px",cursor:"pointer"}}>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px"}}>
                         <div style={{flex:1,minWidth:0}}>
                           <div style={{fontSize:"13px",fontWeight:700,color:"var(--text-primary)",marginBottom:"2px"}}>{p.name}</div>
@@ -3836,7 +3836,7 @@ function App() {
               <div style={{display:"flex",gap:"4px",flexWrap:"wrap",marginBottom:"8px"}}>
                 <span style={{fontSize:"10px",padding:"2px 7px",borderRadius:"8px",background:"rgba(140,26,26,0.2)",color:"var(--text-accent)",fontWeight:600}}>R$ {(sel.value||0).toLocaleString("pt-BR")}</span>
                 <span style={{fontSize:"10px",padding:"2px 7px",borderRadius:"8px",background:PRI_BG[sel.priority],color:PRI_TXT[sel.priority],fontWeight:600}}>{sel.priority}</span>
-                <span style={{fontSize:"10px",padding:"2px 7px",borderRadius:"8px",background:(STAGES.find(s=>s.id===sel.stage)?.color||"#888")+"22",color:STAGES.find(s=>s.id===sel.stage)?.color,fontWeight:600}}>{STAGES.find(s=>s.id===sel.stage)?.label}</span>
+                <span style={{fontSize:"10px",padding:"2px 7px",borderRadius:"8px",background:(STAGES.find(s=>s.id===sel.stage)||{color:"#888"}).color+"22",color:(STAGES.find(s=>s.id===sel.stage)||{color:"#888"}).color,fontWeight:600}}>{(STAGES.find(s=>s.id===sel.stage)||{label:"—"}).label}</span>
               </div>
               <div style={{display:"flex",gap:"4px",marginBottom:"10px"}}>
                 <button onClick={()=>move(sel.id,-1)} style={{flex:1,padding:"4px",fontSize:"10px",borderRadius:"5px",border:"1px solid var(--border)",background:"transparent",cursor:"pointer",color:"var(--text-secondary)"}}>← Recuar</button>
@@ -3950,7 +3950,7 @@ function App() {
                     </div>
                   </div>
                   <div style={{display:"flex",gap:"5px"}}>
-                    <button onClick={()=>openAI(`Analise a oportunidade "${sel.title}" da ${sel.company} na etapa ${STAGES.find(s=>s.id===sel.stage)?.label}. Próximos passos com 3S+M?`)} style={{flex:1,padding:"7px",fontSize:"11px",borderRadius:"6px",border:"1px solid #6B3A3A",background:"rgba(140,26,26,0.2)",color:"var(--text-accent)",cursor:"pointer",fontWeight:600}}>Analisar com IA</button>
+                    <button onClick={()=>openAI(`Analise a oportunidade "${sel.title}" da ${sel.company} na etapa ${(STAGES.find(s=>s.id===sel.stage)||{label:""}).label}. Próximos passos com 3S+M?`)} style={{flex:1,padding:"7px",fontSize:"11px",borderRadius:"6px",border:"1px solid #6B3A3A",background:"rgba(140,26,26,0.2)",color:"var(--text-accent)",cursor:"pointer",fontWeight:600}}>Analisar com IA</button>
                     {isGestor&&<button onClick={()=>delOpp(sel.id)} style={{padding:"7px 10px",fontSize:"11px",borderRadius:"6px",border:"1px solid #5A2A2A",background:"rgba(80,20,20,0.3)",color:"#FF9090",cursor:"pointer"}}>Excluir</button>}
                   </div>
                 </div>
@@ -4042,10 +4042,10 @@ function App() {
             {/* Atalhos de contexto */}
             <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
               {[
-                ["📅 Planejar semana", `Hoje é ${new Date().toLocaleDateString("pt-BR",{weekday:"long",day:"numeric",month:"long"})}. Tenho estas oportunidades em aberto: ${opps.filter(o=>o.stage!=="fechado").slice(0,12).map(o=>`${o.company}/${o.supplier}(${o.stage})`).join(", ")}. Com base na metodologia 3S+M, me ajude a priorizar a semana: quais clientes visitar, o que oferecer a cada um e qual o argumento comercial mais forte. Organize por dia da semana.`],
-                ["🎯 Priorizar hoje", `São ${new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}. Tarefas de hoje: ${tasks.filter(t=>!t.done&&t.date===today).map(t=>t.title+" ("+t.company+")").join(", ")||"nenhuma cadastrada"}. Oportunidades quentes: ${opps.filter(o=>["proposta","negociacao"].includes(o.stage)).map(o=>o.company+" - "+o.title.slice(0,30)).join("; ")||"nenhuma"}. O que devo focar agora?`],
+                ["📅 Planejar semana", `Hoje é ${new Date().toLocaleDateString("pt-BR",{weekday:"long",day:"numeric",month:"long"})}. Tenho estas oportunidades em aberto: ${oppFc.filter(o=>o.stage!=="fechado").slice(0,12).map(o=>`${o.customer}/${o.supplier}(${o.stage})`).join(", ")}. Com base na metodologia 3S+M, me ajude a priorizar a semana: quais clientes visitar, o que oferecer a cada um e qual o argumento comercial mais forte. Organize por dia da semana.`],
+                ["🎯 Priorizar hoje", `São ${new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}. Tarefas de hoje: ${tasks.filter(t=>!t.done&&t.date===today).map(t=>t.title+" ("+t.company+")").join(", ")||"nenhuma cadastrada"}. Oportunidades quentes: ${oppFc.filter(o=>["proposta","negociacao"].includes(o.stage)).map(o=>o.customer+" - "+o.title.slice(0,30)).join("; ")||"nenhuma"}. O que devo focar agora?`],
                 ["💡 O que oferecer", sel?`Para ${sel.company} (${sel.title}, etapa ${sel.stage}), com base no histórico: ${sel.nextAction}. Qual produto/solução Sinuelo devo apresentar? Qual argumento técnico e comercial usar com ${sel.contact}? Use 3S+M.`:`Selecione uma oportunidade primeiro para análise específica.`],
-                ["📊 Pipeline crítico", `Analise meu pipeline atual. Oportunidades acima de R$50k: ${opps.filter(o=>o.value>50000&&o.stage!=="fechado").map(o=>`${o.company}(R$${(o.value/1000).toFixed(0)}k,${o.stage})`).join(", ")}. Quais estão em risco? O que fazer para avançar cada uma?`],
+                ["📊 Pipeline crítico", `Analise meu pipeline atual. Oportunidades acima de R$50k: ${oppFc.filter(o=>o.value>50000&&o.stage!=="fechado").map(o=>`${o.customer}(R$${(o.value/1000).toFixed(0)}k,${o.stage})`).join(", ")}. Quais estão em risco? O que fazer para avançar cada uma?`],
               ].map(([label, prompt])=>(
                 <button key={label} onClick={()=>chat(prompt)}
                   style={{fontSize:"9px",padding:"3px 7px",borderRadius:"5px",border:"1px solid var(--border)",background:"var(--bg-card2)",color:"var(--text-secondary)",cursor:"pointer",whiteSpace:"nowrap"}}>{label}</button>
@@ -4431,9 +4431,9 @@ function App() {
                 </div>
                 <div>
                   <label style={lbl}>Vincular oportunidade</label>
-                  <select value={projForm.oppId} onChange={e=>setProjForm({...projForm,oppId:e.target.value,client:e.target.value?opps.find(o=>o.id===e.target.value)?.company||projForm.client:projForm.client})} style={inp}>
+                  <select value={projForm.oppId} onChange={e=>setProjForm({...projForm,oppId:e.target.value,client:e.target.value?(oppFc.find(o=>o.id===e.target.value)||{}).customer||projForm.client:projForm.client})} style={inp}>
                     <option value="">— Nenhuma —</option>
-                    {opps.filter(o=>o.stage!=="fechado").map(o=><option key={o.id} value={o.id}>{o.company} · {o.title.slice(0,35)}</option>)}
+                    {oppFc.filter(o=>o.stage!=="fechado").map(o=><option key={o.id} value={o.id}>{o.customer} · {o.title.slice(0,35)}</option>)}
                   </select>
                 </div>
               </div>
@@ -4856,7 +4856,7 @@ function App() {
                 <div style={{fontSize:"14px",fontWeight:600,color:"var(--text-primary)"}}>Novo follow-up</div>
                 <button onClick={()=>setFupModal(false)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--text-muted)",fontSize:"16px"}}>✕</button>
               </div>
-              <div style={{fontSize:"11px",color:"var(--text-accent)",marginBottom:"14px"}}>{sel.company} · {sel.title?.slice(0,50)}</div>
+              <div style={{fontSize:"11px",color:"var(--text-accent)",marginBottom:"14px"}}>{sel.company} · {sel.title?sel.title.slice(0,50):"—"}</div>
 
               <div style={{display:"grid",gridTemplateColumns:"130px 1fr",gap:"8px",marginBottom:"10px"}}>
                 <div>
@@ -4893,8 +4893,8 @@ function App() {
               </div>
 
               <div style={{display:"flex",gap:"8px"}}>
-                <button onClick={saveFollowUp} disabled={!fupForm.text?.trim() || overLimit}
-                  style={{flex:1,padding:"10px",fontSize:"13px",borderRadius:"6px",border:"none",background:(fupForm.text?.trim() && !overLimit)?"#185FA5":"#2A3C4F",color:(fupForm.text?.trim() && !overLimit)?"#fff":"#7A8090",cursor:(fupForm.text?.trim() && !overLimit)?"pointer":"default",fontWeight:600}}>
+                <button onClick={saveFollowUp} disabled={!(fupForm.text&&fupForm.text.trim()) || overLimit}
+                  style={{flex:1,padding:"10px",fontSize:"13px",borderRadius:"6px",border:"none",background:(fupForm.text&&fupForm.text.trim()&&!overLimit)?"#185FA5":"#2A3C4F",color:(fupForm.text&&fupForm.text.trim()&&!overLimit)?"#fff":"#7A8090",cursor:(fupForm.text&&fupForm.text.trim()&&!overLimit)?"pointer":"default",fontWeight:600}}>
                   Salvar follow-up
                 </button>
                 <button onClick={()=>setFupModal(false)} style={{padding:"10px 16px",fontSize:"13px",borderRadius:"6px",border:"1px solid var(--border)",background:"transparent",color:"var(--text-secondary)",cursor:"pointer"}}>Cancelar</button>
@@ -4910,7 +4910,7 @@ function App() {
           const totalSIM = simClientes.length;
           const scoreColor = s => s>=5?"#1D9E75":s>=2?"#185FA5":s>=-1?"#EF9F27":s>=-4?"#E86B3A":"#E24B4A";
           const freqColor  = f => f==="Semanal"?"#1D9E75":f==="Quinzenal"?"#185FA5":f==="Mensal"?"#EF9F27":f==="Bimestral"?"#E86B3A":"#E24B4A";
-          const clasColor  = c => c?.includes("POSITIVO FORTE")?"#1D9E75":c?.includes("POSITIVO")?"#185FA5":c?.includes("NEGATIVO FORTE")?"#E24B4A":c?.includes("NEGATIVO")?"#E86B3A":"#888";
+          const clasColor  = c => !c?"#888":c.includes("POSITIVO FORTE")?"#1D9E75":c.includes("POSITIVO")?"#185FA5":c.includes("NEGATIVO FORTE")?"#E24B4A":c.includes("NEGATIVO")?"#E86B3A":"#888"
 
           return (
             <div style={{flex:1,display:"flex",flexDirection:"column",gap:"14px",overflowY:"auto"}}>
@@ -5001,7 +5001,7 @@ function App() {
                             {/* Header do cliente */}
                             <div style={{padding:"10px 14px",borderBottom:"1px solid var(--border2)",display:"flex",alignItems:"center",gap:"10px",background:"var(--bg-card2)"}}>
                               <div style={{width:"32px",height:"32px",borderRadius:"8px",background:"rgba(140,26,26,0.12)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,overflow:"hidden"}}>
-                                {(()=>{const cl=clientsData.find(c=>c.alias===cli.alias);return cl?.logo?<img src={cl.logo} style={{width:"32px",height:"32px",objectFit:"contain"}} alt=""/>:<span style={{fontSize:"14px",fontWeight:700,color:"var(--text-accent)"}}>{cli.alias?.[0]}</span>;})()}
+                                {(()=>{const cl=clientsData.find(c=>c.alias===cli.alias);return (cl?cl.logo:null)?<img src={cl.logo} style={{width:"32px",height:"32px",objectFit:"contain"}} alt=""/>:<span style={{fontSize:"14px",fontWeight:700,color:"var(--text-accent)"}}>{cli.alias?cli.alias[0]:"?"}</span>;})()}
                               </div>
                               <div style={{flex:1,minWidth:0}}>
                                 <div style={{fontSize:"13px",fontWeight:700,color:"var(--text-primary)"}}>{cli.alias}</div>
@@ -5323,7 +5323,7 @@ function App() {
             if(!demoForm.cliente.trim()){ alert("Preencha o cliente."); return; }
             const novo={...demoForm,id:Date.now(),criadoEm:new Date().toLocaleDateString("pt-BR")};
             saveDemoList([...demoList,novo]);
-            setDemoForm({cliente:"",contato:"",data:"",resp:session?.code||"",itens:[{cod:"",desc:"",sigma:"",qtd:1,obs:""}],obs:""});
+            setDemoForm({cliente:"",contato:"",data:"",resp:(session?session.code:""),itens:[{cod:"",desc:"",sigma:"",qtd:1,obs:""}],obs:""});
             setDemoModal(false);
           }
 
@@ -5338,7 +5338,7 @@ function App() {
                 <label style={{padding:"7px 13px",fontSize:"12px",fontWeight:600,borderRadius:"7px",border:"1px solid var(--border)",background:"var(--bg-card2)",color:"var(--text-secondary)",cursor:"pointer"}}>
                   📥 Importar template .xlsx<input type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={e=>{alert("Template carregado. Use como base para exportações futuras.");e.target.value="";}}/>
                 </label>
-                <button onClick={()=>{setDemoForm({cliente:"",contato:"",data:"",resp:session?.code||"",itens:[{cod:"",desc:"",sigma:"",qtd:1,obs:""}],obs:""});setDemoModal(true);}}
+                <button onClick={()=>{setDemoForm({cliente:"",contato:"",data:"",resp:(session?session.code:""),itens:[{cod:"",desc:"",sigma:"",qtd:1,obs:""}],obs:""});setDemoModal(true);}}
                   style={{padding:"7px 14px",fontSize:"12px",fontWeight:700,borderRadius:"7px",border:"none",background:"#8C1A1A",color:"#FFD0D0",cursor:"pointer"}}>
                   + Nova solicitação
                 </button>
@@ -5511,7 +5511,7 @@ function App() {
       {/* MODAL CLIENTE FULLSCREEN (Kanban) */}
       {selClient && clientView2==="kanban" && (()=>{
         const c = selClient;
-        const clientOpps = opps.filter(o=>o.company?.toLowerCase().includes(c.alias?.toLowerCase())||o.company===c.alias);
+        const clientOpps = oppFc.filter(o=>(o.customer&&c.alias&&o.customer.toLowerCase().includes(c.alias.toLowerCase()))||o.customer===c.alias)
         const clientOppVal = clientOpps.reduce((s,o)=>s+(o.value||0),0);
 
         async function loadNews(){
@@ -5526,7 +5526,7 @@ function App() {
               <div style={{background:"linear-gradient(135deg,rgba(140,26,26,0.85),rgba(20,20,40,0.95))",padding:"24px 28px",display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                 <div style={{display:"flex",alignItems:"center",gap:"16px"}}>
                   <div style={{width:"56px",height:"56px",borderRadius:"12px",background:"rgba(255,255,255,0.1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"24px",fontWeight:700,color:"#FFD0D0",flexShrink:0}}>
-                    {c.alias?.[0]?.toUpperCase()||"?"}
+                    {(c.alias?c.alias[0]:"?")&&toUpperCase()||"?"}
                   </div>
                   <div>
                     <div style={{fontSize:"20px",fontWeight:700,color:"#fff",marginBottom:"2px"}}>{c.alias}</div>
@@ -5557,7 +5557,7 @@ function App() {
                     ):null)}
                   </div>
                   <div>
-                    <div style={{fontSize:"10px",fontWeight:700,color:"var(--text-secondary)",textTransform:"uppercase",letterSpacing:".1em",marginBottom:"10px"}}>Contatos ({c.contacts?.length||0})</div>
+                    <div style={{fontSize:"10px",fontWeight:700,color:"var(--text-secondary)",textTransform:"uppercase",letterSpacing:".1em",marginBottom:"10px"}}>Contatos {(c.contacts?c.contacts.length:0)}</div>
                     {(c.contacts||[]).map((ct,i)=>(
                       <div key={i} onClick={e=>{e.stopPropagation();setSelContact({...ct,_clientAlias:c.alias,_idx:i});}}
                         style={{background:"var(--bg-card2)",borderRadius:"8px",padding:"8px 10px",cursor:"pointer",border:"1px solid transparent",marginBottom:"6px"}}
@@ -5592,14 +5592,14 @@ function App() {
                       const fupLine=(o.nextAction||"").split("\n").find(l=>l.trim())||"";
                       return (
                         <div key={o.id} onClick={()=>{setSelClient(null);setClientNews([]);setSel(o);setView("oportunidades");}}
-                          style={{background:"var(--bg-card2)",borderRadius:"8px",padding:"10px 12px",marginBottom:"7px",cursor:"pointer",borderLeft:`3px solid ${stage?.color||"#888"}`,border:`1px solid transparent`,borderLeftWidth:"3px"}}
-                          onMouseEnter={e=>e.currentTarget.style.borderColor=stage?.color||"var(--border)"}
+                          style={{background:"var(--bg-card2)",borderRadius:"8px",padding:"10px 12px",marginBottom:"7px",cursor:"pointer",borderLeft:`3px solid ${(stage?stage.color:"—")}`,border:`1px solid transparent`,borderLeftWidth:"3px"}}
+                          onMouseEnter={e=>e.currentTarget.style.borderColor=(stage?stage.color:"—")}
                           onMouseLeave={e=>e.currentTarget.style.borderColor="transparent"}>
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"3px"}}>
                             <div style={{fontSize:"11px",fontWeight:600,color:"var(--text-primary)",flex:1,paddingRight:"8px",lineHeight:1.3}}>{o.title.slice(0,48)}{o.title.length>48?"…":""}</div>
                             <div style={{textAlign:"right",flexShrink:0}}>
                               {o.value>0&&<div style={{fontSize:"11px",fontWeight:700,color:"var(--text-accent)"}}>R${(o.value/1000).toFixed(0)}k</div>}
-                              <span style={{fontSize:"9px",padding:"1px 5px",borderRadius:"5px",background:(stage?.color||"#888")+"22",color:stage?.color||"#888",fontWeight:600}}>{stage?.tag||"—"}</span>
+                              <span style={{fontSize:"9px",padding:"1px 5px",borderRadius:"5px",background:(stage?stage.color:"#888")+"22",color:(stage?stage.color:"#888"),fontWeight:600}}>{stage?stage.tag:"—"}</span>
                             </div>
                           </div>
                           {o.supplier&&<div style={{fontSize:"10px",color:"var(--text-secondary)",marginBottom:"2px"}}>{o.supplier}</div>}
@@ -5809,15 +5809,15 @@ function App() {
       {/* MODAL PERFIL DO BUDGET */}
       {selBudget&&(()=>{
         const b = selBudget;
-        const forecast = opps.filter(o=>b.type==="supplier"
-          ? o.supplier?.toLowerCase().includes((b.supplier||"").toLowerCase())
-          : o.company?.toLowerCase().includes((b.client||"").toLowerCase())
-        );
+        const forecast = oppFc.filter(o=>b.type==="supplier"
+          ? (o.supplier&&o.supplier.toLowerCase().includes((b.supplier||"").toLowerCase()))
+          : (o.customer&&o.customer.toLowerCase().includes((b.client||"").toLowerCase())));
+
         const orcRelated = orcamentos.filter(o=>b.type==="supplier"
-          ? o.supplier?.toLowerCase().includes((b.supplier||"").toLowerCase())
-          : o.client?.toLowerCase().includes((b.client||"").toLowerCase())
-        );
-        const forecastTotal = forecast.reduce((s,o)=>s+(o.value||0),0);
+          ? (o.supplier&&o.supplier.toLowerCase().includes((b.supplier||"").toLowerCase()))
+          : (o.client&&o.client.toLowerCase().includes((b.client||"").toLowerCase())));
+
+        const forecastTotal = forecast.reduce((s,o)=>{const a=parseFloat(String(o.amount||'0').replace(/[^0-9.]/g,''))||0;return s+a;},0);
         const orcTotal = orcRelated.reduce((s,o)=>s+(o.value||0),0);
         const realizado = totalRealizado(b);
         const meta = totalMeta(b);
@@ -5883,7 +5883,7 @@ function App() {
                     <div style={{marginTop:"6px",borderTop:"1px solid var(--border2)",paddingTop:"5px"}}>
                       {forecast.slice(0,4).map(o=>(
                         <div key={o.id} style={{display:"flex",justifyContent:"space-between",fontSize:"10px",color:"var(--text-muted)",padding:"1px 0"}}>
-                          <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"300px"}}>{o.company} · {o.title.slice(0,32)}</span>
+                          <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"300px"}}>{o.customer} · {o.title.slice(0,32)}</span>
                           <span style={{flexShrink:0,marginLeft:"8px"}}>{fmt(o.value)}</span>
                         </div>
                       ))}
