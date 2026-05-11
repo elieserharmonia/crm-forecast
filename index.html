@@ -1965,7 +1965,14 @@ function ViewDemo({ session, isGestor, isEspecialista }) {
   }
 
   function saveForm(){
-    if(!form.cliente.trim()){ alert('Informe o cliente.'); return; }
+    var erros = [];
+    if(!form.cliente.trim())       erros.push('• Cliente obrigatório');
+    if(!form.projeto.trim())       erros.push('• Projeto / Oportunidade obrigatório');
+    if(!form.contato.trim())       erros.push('• Contato obrigatório');
+    if(!form.dataDemo)             erros.push('• Data da demonstração obrigatória');
+    if(form.itens.filter(function(it){return it.descricao.trim();}).length===0)
+      erros.push('• Informe ao menos 1 item com descrição');
+    if(erros.length>0){ alert('Preencha os campos obrigatórios:\n\n'+erros.join('\n')); return; }
     const exists = demos.find(function(d){ return d.id===form.id; });
     if(exists){ saveDemos(demos.map(function(d){ return d.id===form.id?form:d; })); }
     else { saveDemos([form,...demos]); }
@@ -1981,10 +1988,25 @@ function ViewDemo({ session, isGestor, isEspecialista }) {
   }
 
   // Busca no estoque de demo por SIGMA
-  function buscaEstDemo(sigma){
-    const s = String(sigma||'').toLowerCase();
+  function buscaEstDemo(q){
+    const s = String(q||'').toLowerCase();
     if(!s) return null;
-    return estDemo.find(function(it){ return String(it.sigma||'').toLowerCase().includes(s)||String(it.desc1||'').toLowerCase().includes(s); });
+    return estDemo.find(function(it){
+      return String(it.sigma||'').toLowerCase().includes(s)
+        ||String(it.descricao||'').toLowerCase().includes(s)
+        ||String(it.codigo||'').toLowerCase().includes(s)
+        ||String(it.desc1||'').toLowerCase().includes(s);
+    });
+  }
+
+  function searchEstDemo(q){
+    const s = String(q||'').toLowerCase().trim();
+    if(s.length<2) return [];
+    return estDemo.filter(function(it){
+      return String(it.sigma||'').toLowerCase().includes(s)
+        ||String(it.descricao||'').toLowerCase().includes(s)
+        ||String(it.codigo||'').toLowerCase().includes(s);
+    }).slice(0,12);
   }
 
   function importEstDemo(e){
@@ -2302,7 +2324,7 @@ ${d.resultados&&d.resultados.some(function(r){return r.inicio;})? '<div class="s
             {/* Itens */}
             <div style={{fontSize:11,fontWeight:700,color:'var(--text2)',marginBottom:6,textTransform:'uppercase',letterSpacing:'.06em'}}>Relação de Itens</div>
             <table className="tbl" style={{marginBottom:8}}>
-              <thead><tr><th>QTD</th><th>MARCA</th><th>SIGMA (busca)</th><th>DESCRIÇÃO</th><th>MODELO</th><th>OBS</th><th style={{width:24}}></th></tr></thead>
+              <thead><tr><th style={{width:45}}>QTD</th><th style={{width:90}}>MARCA</th><th style={{minWidth:180}}>BUSCA (descrição, SIGMA ou código)</th><th style={{minWidth:140}}>DESCRIÇÃO</th><th style={{width:100}}>MODELO</th><th style={{width:60}}>OBS</th><th style={{width:24}}></th></tr></thead>
               <tbody>
                 {form.itens.map(function(it,i){
                   const found = buscaEstDemo(it.sigma);
@@ -2310,15 +2332,44 @@ ${d.resultados&&d.resultados.some(function(r){return r.inicio;})? '<div class="s
                     <tr key={i}>
                       <td><input type="number" value={it.qtd||1} onChange={function(e){var ni=[...form.itens];ni[i]=Object.assign({},it,{qtd:e.target.value});setForm(Object.assign({},form,{itens:ni}));}} style={{width:50,padding:'3px 5px',fontSize:11}}/></td>
                       <td><input value={it.marca||''} onChange={function(e){var ni=[...form.itens];ni[i]=Object.assign({},it,{marca:e.target.value});setForm(Object.assign({},form,{itens:ni}));}} style={{width:'100%',padding:'3px 5px',fontSize:11}} placeholder="Marca"/></td>
-                      <td>
-                        <input value={it.sigma||''} onChange={function(e){
+                      <td style={{position:'relative',minWidth:180}}>
+                        <input value={it._busca!==undefined?it._busca:(it.sigma||'')} onChange={function(e){
+                          var q=e.target.value;
                           var ni=[...form.itens];
-                          var sigma=e.target.value;
-                          var fnd=buscaEstDemo(sigma);
-                          ni[i]=Object.assign({},it,{sigma,descricao:fnd?fnd.descricao:it.descricao,modelo:fnd?fnd.desc1:it.modelo,saldo:fnd?fnd.saldo:null});
+                          ni[i]=Object.assign({},it,{_busca:q,sigma:q});
                           setForm(Object.assign({},form,{itens:ni}));
-                        }} style={{width:'100%',padding:'3px 5px',fontSize:11,borderColor:found?'#16A34A':'var(--border)'}} placeholder="SIGMA"/>
-                        {found && <div style={{fontSize:9,color:'#4ADE80',marginTop:2}}>✓ Saldo: {found.saldo}</div>}
+                        }} onFocus={function(e){
+                          var ni=[...form.itens];
+                          ni[i]=Object.assign({},it,{_showDrop:true});
+                          setForm(Object.assign({},form,{itens:ni}));
+                        }} onBlur={function(){
+                          setTimeout(function(){
+                            var ni=[...form.itens];
+                            ni[i]=Object.assign({},it,{_showDrop:false});
+                            setForm(Object.assign({},form,{itens:ni}));
+                          },180);
+                        }}
+                        style={{width:'100%',padding:'3px 5px',fontSize:11,borderColor:found?'#16A34A':'var(--border)'}}
+                        placeholder="Buscar por descrição, SIGMA ou código..."/>
+                        {found && !it._showDrop && <div style={{fontSize:9,color:'#4ADE80',marginTop:2}}>✓ {found.sigma} · Saldo: {found.saldo}</div>}
+                        {it._showDrop && searchEstDemo(it._busca||it.sigma||'').length>0 && (
+                          <div style={{position:'absolute',top:'100%',left:0,right:0,zIndex:60,background:'var(--bg3)',border:'1px solid var(--blue)',borderRadius:'0 0 8px 8px',maxHeight:180,overflowY:'auto',boxShadow:'0 8px 20px rgba(0,0,0,.5)'}}>
+                            {searchEstDemo(it._busca||it.sigma||'').map(function(est,ei){
+                              return (
+                                <div key={ei} onMouseDown={function(){
+                                  var ni=[...form.itens];
+                                  ni[i]=Object.assign({},it,{sigma:est.sigma,descricao:est.descricao,modelo:est.codigo,_busca:est.sigma,saldo:est.saldo,_showDrop:false});
+                                  setForm(Object.assign({},form,{itens:ni}));
+                                }} style={{padding:'5px 8px',cursor:'pointer',borderBottom:'1px solid var(--border2)',fontSize:10}}
+                                  onMouseEnter={function(ev){ev.currentTarget.style.background='rgba(37,99,235,.15)';}}
+                                  onMouseLeave={function(ev){ev.currentTarget.style.background='transparent';}}>
+                                  <div style={{fontWeight:600,color:'var(--text)'}}>{est.descricao.slice(0,55)}</div>
+                                  <div style={{color:'var(--text3)',marginTop:1}}>SIGMA: {est.sigma} · Cód: {est.codigo} · Saldo: <span style={{color:est.saldo>0?'#4ADE80':'#F87171'}}>{est.saldo}</span></div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </td>
                       <td><input value={it.descricao||''} onChange={function(e){var ni=[...form.itens];ni[i]=Object.assign({},it,{descricao:e.target.value});setForm(Object.assign({},form,{itens:ni}));}} style={{width:'100%',padding:'3px 5px',fontSize:11}}/></td>
                       <td><input value={it.modelo||''} onChange={function(e){var ni=[...form.itens];ni[i]=Object.assign({},it,{modelo:e.target.value});setForm(Object.assign({},form,{itens:ni}));}} style={{width:'100%',padding:'3px 5px',fontSize:11}}/></td>
@@ -2915,6 +2966,75 @@ function ViewOrcamento({ session, isGestor }) {
     setTimeout(function(){w.print();},400);
   }
 
+  function importXLSX(e){
+    var file = e.target.files[0]; if(!file) return;
+    var reader = new FileReader();
+    reader.onload = function(ev){
+      try{
+        var wb = XLSX.read(ev.target.result,{type:'binary'});
+        var ws = wb.Sheets[wb.SheetNames[0]];
+        var rows = XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+        // Encontrar linha de header (ITEM, DESCRIÇÃO, CÓDIGO, etc.)
+        var hdr = -1, headers = [];
+        for(var ri=0;ri<Math.min(20,rows.length);ri++){
+          var r = rows[ri].map(function(c){return String(c||'').trim().toUpperCase();});
+          if(r.indexOf('ITEM')>=0 && r.indexOf('DESCRIÇÃO')>=0){hdr=ri;headers=r;break;}
+          if(r.indexOf('ITEM')>=0 && (r.indexOf('SIGMA')>=0||r.indexOf('CÓDIGO')>=0)){hdr=ri;headers=r;break;}
+        }
+        // Ler cabeçalho do orçamento (linhas acima do header)
+        var orcNum = '', orcCli = '';
+        for(var ri2=0;ri2<Math.min(hdr,10);ri2++){
+          var row = rows[ri2] || [];
+          var txt = row.map(function(c){return String(c||'');}).join(' ');
+          if(txt.match(/RB\d{4,}/i)){var m=txt.match(/RB[\w\/]+/i); if(m) orcNum=m[0];}
+        }
+        if(hdr<0){ alert('Formato não reconhecido. Certifique-se que a planilha tem colunas ITEM, DESCRIÇÃO e CÓDIGO.'); return; }
+        var iItem=headers.indexOf('ITEM'), iDesc=Math.max(headers.indexOf('DESCRIÇÃO'),headers.indexOf('DESCRICAO')), iCod=Math.max(headers.indexOf('CÓDIGO'),headers.indexOf('CODIGO'));
+        var iSig=headers.indexOf('SIGMA'), iNcm=headers.indexOf('NCM'), iQde=Math.max(headers.indexOf('QDE'),headers.indexOf('QTD'));
+        var iUni=headers.indexOf('UNITÁRIO'), iPosto=headers.indexOf('POSTOS'), iSub=headers.indexOf('SUBPOSTOS'), iTorq=headers.indexOf('TORQUES(NM)');
+        var iEnt=headers.indexOf('ENTREGA'), iOri=headers.indexOf('ORIGEM MATERIAL'), iIpi=headers.indexOf('I.P.I. / I.S.S.');
+        var itens = [];
+        for(var ri3=hdr+1;ri3<rows.length;ri3++){
+          var row3 = rows[ri3]||[];
+          var itemN = String(row3[iItem]||'').trim();
+          if(!itemN || isNaN(parseInt(itemN))) continue;
+          var desc = iDesc>=0?String(row3[iDesc]||'').trim():'';
+          if(!desc) continue;
+          itens.push({
+            item: parseInt(itemN)||itens.length+1,
+            posto:   iPosto>=0?String(row3[iPosto]||''):'',
+            subposto:iSub>=0?String(row3[iSub]||''):'',
+            torque:  iTorq>=0?String(row3[iTorq]||''):'',
+            qtd:     iQde>=0?parseFloat(row3[iQde])||1:1,
+            descricao:desc,
+            codigo:  iCod>=0?String(row3[iCod]||''):'',
+            sigma:   iSig>=0?String(row3[iSig]||''):'',
+            ncm:     iNcm>=0?String(row3[iNcm]||''):'',
+            entrega: iEnt>=0?String(row3[iEnt]||''):'',
+            origem:  iOri>=0?String(row3[iOri]||''):'0 - NACIONAL',
+            unitario:iUni>=0?parseFloat(row3[iUni])||0:0,
+            icms:0.12, pis:0.0065, cofins:0.03,
+            ipi:     iIpi>=0?parseFloat(row3[iIpi])||0:0,
+            st:0,
+          });
+        }
+        if(!itens.length){alert('Nenhum item encontrado na planilha.');return;}
+        var num2 = String(orcs.length+1).padStart(5,'0');
+        var novoOrc = Object.assign({},EMPTY_ORC,{
+          id:'orc_'+Date.now(), numero:orcNum||'RB'+num2+'/'+CUR_YEAR,
+          itens, totalBruto:totais(itens).totalBruto, totalIpi:totais(itens).totalIpi,
+          status:'rascunho',
+        });
+        setForm(novoOrc);
+        setCliSearch(''); setShowCliDrop(false);
+        setModal(true);
+        alert(itens.length+' itens importados. Revise e salve o orçamento.');
+      }catch(err){alert('Erro ao importar: '+err.message);}
+    };
+    reader.readAsBinaryString(file);
+    e.target.value='';
+  }
+
   var clientsData = load(KEYS.clients,[]);
   var cliFiltered = cliSearch.length>=1 ? clientsData.filter(function(c){var q=cliSearch.toLowerCase();return (c.apelido&&c.apelido.toLowerCase().includes(q))||(c.nome&&c.nome.toLowerCase().includes(q));}).slice(0,8) : [];
   var fcOpps = load(KEYS.forecast,[]);
@@ -2936,6 +3056,10 @@ function ViewOrcamento({ session, isGestor }) {
       <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
         <input value={search} onChange={function(e){setSearch(e.target.value);}} placeholder="Buscar por nº, cliente, fornecedor..." style={{flex:1,minWidth:180}}/>
         <button className="btn btn-primary" onClick={openNew}>+ Novo orçamento</button>
+        <label className="btn btn-blue" style={{cursor:'pointer'}}>
+          📥 Importar Excel
+          <input type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={importXLSX}/>
+        </label>
       </div>
 
       {orcs.length===0 ? (
@@ -3251,38 +3375,41 @@ function ViewDashboard({ session }) {
           {suppData.length===0 ? (
             <div style={{color:'var(--text3)',padding:'20px 0',textAlign:'center'}}>Importe o Budget para ver os dados</div>
           ) : (
-            <svg width={Math.max(600,suppData.length*110+60)} height={220} style={{overflow:'visible'}}>
+            <svg width={Math.max(600,suppData.length*120+60)} height={240} style={{overflow:'visible'}}>
               {(function(){
                 var max = Math.max.apply(null, suppData.map(function(d){return Math.max(d.tgt,d.rlz,d.fc);}));
                 if(max===0) max=1;
-                var bW=28; var grpW=bW*3+12; var padL=44; var padT=16; var h=160;
+                var bW=32; var grpW=bW*3+14; var padL=44; var padT=30; var h=170;
                 return suppData.map(function(d,gi){
-                  var gx = padL+gi*(grpW+16);
+                  var gx = padL+gi*(grpW+18);
+                  var pctRlz = d.tgt>0?Math.round(d.rlz/d.tgt*100):0;
+                  var pctFc  = d.tgt>0?Math.round(d.fc/d.tgt*100):0;
                   return (
                     <g key={d.sup}>
                       {gi===0 && [0,0.25,0.5,0.75,1].map(function(p,pi){
                         var y=padT+(1-p)*(h-padT);
-                        return <g key={pi}><line x1={40} y1={y} x2={suppData.length*(grpW+16)+padL} y2={y} stroke="rgba(148,163,184,.08)" strokeWidth={1}/><text x={35} y={y+3} fontSize={7} fill="rgba(148,163,184,.4)" textAnchor="end">{fmtAmt(max*p)}</text></g>;
+                        return <g key={pi}><line x1={40} y1={y} x2={suppData.length*(grpW+18)+padL} y2={y} stroke="rgba(148,163,184,.08)" strokeWidth={1}/><text x={35} y={y+3} fontSize={7} fill="rgba(148,163,184,.4)" textAnchor="end">{fmtAmt(max*p)}</text></g>;
                       })}
-                      {[{v:d.tgt,c:'#2563EB'},{v:d.rlz,c:'#16A34A'},{v:d.fc,c:'#CA8A04'}].map(function(bar,bi){
-                        var bh=Math.max(2,(bar.v/max)*(h-padT));
+                      {[{v:d.tgt,c:'#2563EB',lbl:'T'},{v:d.rlz,c:'#16A34A',lbl:'R'},{v:d.fc,c:'#CA8A04',lbl:'F'}].map(function(bar,bi){
+                        var bh=Math.max(3,(bar.v/max)*(h-padT));
                         var y=padT+(h-padT)-bh;
-                        var x=gx+bi*(bW+2);
+                        var x=gx+bi*(bW+3);
                         return (
                           <g key={bi}>
-                            <rect x={x} y={y} width={bW} height={bh} rx={2} fill={bar.c} opacity={.85}/>
-                            {bh>12&&<text x={x+bW/2} y={y-3} textAnchor="middle" fontSize={6} fill="#fff">{fmtAmt(bar.v)}</text>}
+                            <rect x={x} y={y} width={bW} height={bh} rx={3} fill={bar.c} opacity={.88}/>
+                            <text x={x+bW/2} y={y-4} textAnchor="middle" fontSize={7} fill={bar.c} fontWeight="700">{fmtAmt(bar.v)}</text>
                           </g>
                         );
                       })}
-                      <text x={gx+grpW/2} y={h+padT+12} textAnchor="middle" fontSize={7} fill="rgba(148,163,184,.7)">{d.sup.slice(0,10)}</text>
+                      <text x={gx+grpW/2} y={h+padT+14} textAnchor="middle" fontSize={8} fill="rgba(200,210,220,.85)" fontWeight="600">{d.sup.slice(0,12)}</text>
+                      <text x={gx+grpW/2} y={h+padT+25} textAnchor="middle" fontSize={7} fill={pctRlz>=100?'#4ADE80':pctRlz>=60?'#CA8A04':'#F87171'}>{'Rlz: '+pctRlz+'% | FC: '+pctFc+'%'}</text>
                     </g>
                   );
                 });
               })()}
               {/* Legenda */}
               {[{c:'#2563EB',l:'Target'},{c:'#16A34A',l:'Realizado'},{c:'#CA8A04',l:'Forecast'}].map(function(leg,i){
-                return <g key={i}><rect x={10+i*80} y={200} width={10} height={10} rx={2} fill={leg.c}/><text x={24+i*80} y={209} fontSize={8} fill="rgba(148,163,184,.7)">{leg.l}</text></g>;
+                return <g key={i}><rect x={10+i*80} y={222} width={10} height={10} rx={2} fill={leg.c}/><text x={24+i*80} y={231} fontSize={8} fill="rgba(148,163,184,.7)">{leg.l}</text></g>;
               })}
             </svg>
           )}
@@ -3296,32 +3423,35 @@ function ViewDashboard({ session }) {
           {cliData.length===0 ? (
             <div style={{color:'var(--text3)',padding:'20px 0',textAlign:'center'}}>Importe o Budget para ver os dados</div>
           ) : (
-            <svg width={Math.max(500,cliData.length*110+60)} height={220} style={{overflow:'visible'}}>
+            <svg width={Math.max(500,cliData.length*120+60)} height={240} style={{overflow:'visible'}}>
               {(function(){
                 var max=Math.max.apply(null,cliData.map(function(d){return Math.max(d.tgt,d.rlz,d.fc);}));
                 if(max===0) max=1;
-                var bW=28; var grpW=bW*3+12; var padL=44; var padT=16; var h=160;
+                var bW=32; var grpW=bW*3+14; var padL=44; var padT=30; var h=170;
                 return cliData.map(function(d,gi){
-                  var gx=padL+gi*(grpW+16);
+                  var gx=padL+gi*(grpW+18);
+                  var pctRlz=d.tgt>0?Math.round(d.rlz/d.tgt*100):0;
+                  var pctFc=d.tgt>0?Math.round(d.fc/d.tgt*100):0;
                   return (
                     <g key={d.cli}>
                       {gi===0 && [0,.25,.5,.75,1].map(function(p,pi){
                         var y=padT+(1-p)*(h-padT);
-                        return <g key={pi}><line x1={40} y1={y} x2={cliData.length*(grpW+16)+padL} y2={y} stroke="rgba(148,163,184,.08)" strokeWidth={1}/><text x={35} y={y+3} fontSize={7} fill="rgba(148,163,184,.4)" textAnchor="end">{fmtAmt(max*p)}</text></g>;
+                        return <g key={pi}><line x1={40} y1={y} x2={cliData.length*(grpW+18)+padL} y2={y} stroke="rgba(148,163,184,.08)" strokeWidth={1}/><text x={35} y={y+3} fontSize={7} fill="rgba(148,163,184,.4)" textAnchor="end">{fmtAmt(max*p)}</text></g>;
                       })}
                       {[{v:d.tgt,c:'#2563EB'},{v:d.rlz,c:'#16A34A'},{v:d.fc,c:'#CA8A04'}].map(function(bar,bi){
-                        var bh=Math.max(2,(bar.v/max)*(h-padT));
+                        var bh=Math.max(3,(bar.v/max)*(h-padT));
                         var y=padT+(h-padT)-bh;
-                        var x=gx+bi*(bW+2);
-                        return <g key={bi}><rect x={x} y={y} width={bW} height={bh} rx={2} fill={bar.c} opacity={.85}/>{bh>12&&<text x={x+bW/2} y={y-3} textAnchor="middle" fontSize={6} fill="#fff">{fmtAmt(bar.v)}</text>}</g>;
+                        var x=gx+bi*(bW+3);
+                        return <g key={bi}><rect x={x} y={y} width={bW} height={bh} rx={3} fill={bar.c} opacity={.88}/><text x={x+bW/2} y={y-4} textAnchor="middle" fontSize={7} fill={bar.c} fontWeight="700">{fmtAmt(bar.v)}</text></g>;
                       })}
-                      <text x={gx+grpW/2} y={h+padT+12} textAnchor="middle" fontSize={7} fill="rgba(148,163,184,.7)">{d.cli.slice(0,10)}</text>
+                      <text x={gx+grpW/2} y={h+padT+14} textAnchor="middle" fontSize={8} fill="rgba(200,210,220,.85)" fontWeight="600">{d.cli.slice(0,12)}</text>
+                      <text x={gx+grpW/2} y={h+padT+25} textAnchor="middle" fontSize={7} fill={pctRlz>=100?'#4ADE80':pctRlz>=60?'#CA8A04':'#F87171'}>{'Rlz: '+pctRlz+'% | FC: '+pctFc+'%'}</text>
                     </g>
                   );
                 });
               })()}
               {[{c:'#2563EB',l:'Target'},{c:'#16A34A',l:'Realizado'},{c:'#CA8A04',l:'Forecast'}].map(function(leg,i){
-                return <g key={i}><rect x={10+i*80} y={200} width={10} height={10} rx={2} fill={leg.c}/><text x={24+i*80} y={209} fontSize={8} fill="rgba(148,163,184,.7)">{leg.l}</text></g>;
+                return <g key={i}><rect x={10+i*80} y={222} width={10} height={10} rx={2} fill={leg.c}/><text x={24+i*80} y={231} fontSize={8} fill="rgba(148,163,184,.7)">{leg.l}</text></g>;
               })}
             </svg>
           )}
@@ -3355,6 +3485,290 @@ function ViewDashboard({ session }) {
             })}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── VIEW: RELATÓRIO ─────────────────────────────────────────
+function ViewRelatorio({ session, isGestor, isConsultor }) {
+  var fcOpps   = load(KEYS.forecast,  []);
+  var clients  = load(KEYS.clients,   []);
+  var orcs     = load('crm_orcs_v1',  []);
+  var budget   = load(KEYS.budget,    {});
+
+  var TIPOS = [
+    {id:'oportunidade', label:'📊 Oportunidade',    desc:'Perfil completo de uma oportunidade com histórico e próximos passos'},
+    {id:'cliente',      label:'👥 Cliente',          desc:'Todas as oportunidades e contatos de um cliente'},
+    {id:'pipeline',     label:'📈 Pipeline',         desc:'Visão geral das oportunidades por vendedor e status'},
+    {id:'orcamento',    label:'📝 Orçamento',        desc:'Relatório de orçamentos por período ou cliente'},
+    {id:'visitas',      label:'📅 Histórico visitas',desc:'Todas as visitas registradas com próximos passos 5W2H'},
+  ];
+  var [tipo,    setTipo]    = useState('oportunidade');
+  var [selIds,  setSelIds]  = useState([]);
+  var [periodo, setPeriodo] = useState('todos');
+  var [relText, setRelText] = useState('');
+  var [loading, setLoading] = useState(false);
+
+  // Visibilidade por role
+  var visOpps = (isGestor||isConsultor) ? fcOpps : fcOpps.filter(function(o){ return (o.resp||'').toUpperCase()===(session.code||'').toUpperCase(); });
+
+  function toggleSel(id){ setSelIds(function(prev){ return prev.includes(id)?prev.filter(function(x){return x!==id;}):[...prev,id]; }); }
+  function selectAll(list){ setSelIds(list.map(function(o){return o.id;})); }
+
+  // ── GERADORES ──────────────────────────────────────────────
+  function gerarRelatorio(){
+    setLoading(true); setRelText('');
+    var lines = [];
+    var sep1 = '═'.repeat(65);
+    var sep2 = '─'.repeat(65);
+
+    if(tipo==='oportunidade'){
+      var selecionadas = fcOpps.filter(function(o){return selIds.includes(o.id);});
+      if(!selecionadas.length){ alert('Selecione ao menos uma oportunidade.'); setLoading(false); return; }
+      selecionadas.forEach(function(opp,oi){
+        if(oi>0) lines.push('',''+sep1,'');
+        lines.push('FORGE B2B — RELATÓRIO DE OPORTUNIDADE');
+        lines.push(sep2);
+        lines.push('Cliente: '+opp.customer+'   |   Supplier: '+(opp.supplier||'—'));
+        lines.push('Oportunidade: '+(opp.description||'—'));
+        lines.push(sep2);
+        lines.push('FORECAST:');
+        lines.push('  Tipo: '+(opp.neg||'D')+'  |  Resp: '+(opp.resp||'—')+'  |  UF: '+(opp.uf||'—'));
+        lines.push('  Valor: '+fmtAmt(opp.amount)+'  |  Confidence: '+fmtConf(opp.confidence));
+        var meses = Object.keys(opp.months||{}).filter(function(m){return (opp.months||{})[m];}).join(', ')||'—';
+        lines.push('  Meses: '+meses+'  |  Contatos: '+(opp.contatos||'—'));
+        // Follow-up
+        if(opp.followup){
+          lines.push(''); lines.push('FOLLOW-UP:');
+          lines.push(opp.followup);
+        }
+        // Histórico de visitas
+        var hist = opp.history||[];
+        if(hist.length){
+          lines.push(''); lines.push('HISTÓRICO DE VISITAS ('+hist.length+'):');
+          hist.forEach(function(h){
+            lines.push(sep2.slice(0,40));
+            lines.push('['+(h.date||'—')+'] '+(h.time?h.time+' ':'')+(h.resp?'['+h.resp+'] ':'')+(h.processo||''));
+            lines.push(h.resumo||'');
+            if(h.proximo){
+              lines.push('');
+              lines.push('PRÓXIMO PASSO (5W2H):');
+              lines.push(h.proximo);
+            }
+          });
+        }
+      });
+    }
+
+    else if(tipo==='cliente'){
+      var cliSel = clients.filter(function(c){return selIds.includes(c.id);});
+      if(!cliSel.length){ alert('Selecione ao menos um cliente.'); setLoading(false); return; }
+      cliSel.forEach(function(c,ci){
+        if(ci>0) lines.push('',''+sep1,'');
+        lines.push('FORGE B2B — RELATÓRIO DE CLIENTE');
+        lines.push(sep2);
+        lines.push(''+c.apelido+' — '+c.nome);
+        lines.push('CNPJ: '+(c.cnpj||'—')+'  |  Segmento: '+(c.segmento||'—')+'  |  Região: '+(c.regiao||'—'));
+        lines.push('Cidade: '+(c.cidade||'—')+'/'+(c.estado||'—')+'  |  Vendedor: '+(c.vendedor||'—'));
+        lines.push(sep2);
+        // Contatos
+        if(c.contatos&&c.contatos.length){
+          lines.push('CONTATOS ('+c.contatos.length+'):');
+          c.contatos.forEach(function(ct){
+            lines.push('  '+ct.nome+(ct.dpto?' — '+ct.dpto:'')+(ct.cel?' | '+ct.cel:'')+(ct.email?' | '+ct.email:''));
+          });
+        }
+        // Oportunidades do cliente
+        var cliOpps = fcOpps.filter(function(o){return o.customer&&c.apelido&&o.customer.toLowerCase().includes(c.apelido.toLowerCase().slice(0,8));});
+        if(cliOpps.length){
+          lines.push(''); lines.push('OPORTUNIDADES ('+cliOpps.length+'):');
+          cliOpps.forEach(function(o){
+            lines.push('  ['+fmtConf(o.confidence)+'] '+fmtAmt(o.amount)+' — '+(o.supplier||'?')+' — '+(o.description||'—'));
+          });
+          var totFC = cliOpps.reduce(function(s,o){return s+amtNum(o.amount)*parseFloat(o.confidence||0);},0);
+          lines.push('  Pipeline ponderado: '+fmtAmt(totFC));
+        }
+      });
+    }
+
+    else if(tipo==='pipeline'){
+      lines.push('FORGE B2B — RELATÓRIO DE PIPELINE');
+      lines.push('Gerado em: '+new Date().toLocaleDateString('pt-BR'));
+      lines.push(sep2);
+      var filtrados = periodo==='todos'?visOpps:visOpps.filter(function(o){
+        var meses=o.months||{};
+        if(periodo==='mes') return meses[MONTHS[new Date().getMonth()]];
+        if(periodo==='trimestre') return [MONTHS[new Date().getMonth()],MONTHS[(new Date().getMonth()+1)%12],MONTHS[(new Date().getMonth()+2)%12]].some(function(m){return meses[m];});
+        return true;
+      });
+      var totalPond = filtrados.reduce(function(s,o){return s+amtNum(o.amount)*parseFloat(o.confidence||0);},0);
+      var totalBrut = filtrados.reduce(function(s,o){return s+amtNum(o.amount);},0);
+      lines.push('Total oportunidades: '+filtrados.length+'  |  Pipeline ponderado: '+fmtAmt(totalPond)+'  |  Bruto: '+fmtAmt(totalBrut));
+      lines.push('');
+      // Por confidence
+      [[1,'Contratos (100%)'],[0.5,'Alta prioridade (50-99%)'],[0.3,'Média (30-49%)'],[0,'Baixa (<30%)']].forEach(function(faixa){
+        var grp = filtrados.filter(function(o){
+          var c=parseFloat(o.confidence||0);
+          if(faixa[0]===1) return c>=1;
+          if(faixa[0]===0.5) return c>=0.5&&c<1;
+          if(faixa[0]===0.3) return c>=0.3&&c<0.5;
+          return c<0.3;
+        });
+        if(!grp.length) return;
+        lines.push(faixa[1]+' ('+grp.length+'):');
+        grp.forEach(function(o){
+          lines.push('  '+o.customer+' | '+(o.supplier||'—')+' | '+fmtAmt(o.amount)+' | '+(o.description||'').slice(0,50)+' ['+o.resp+']');
+        });
+        lines.push('');
+      });
+    }
+
+    else if(tipo==='orcamento'){
+      var orcFilt = periodo==='todos'?orcs:orcs.filter(function(o){
+        return o.data&&o.data.includes(String(CUR_YEAR));
+      });
+      if(selIds.length) orcFilt = orcFilt.filter(function(o){return selIds.includes(o.id);});
+      if(!orcFilt.length){ alert('Nenhum orçamento selecionado.'); setLoading(false); return; }
+      lines.push('FORGE B2B — RELATÓRIO DE ORÇAMENTOS');
+      lines.push(sep2);
+      orcFilt.forEach(function(o,oi){
+        if(oi>0) lines.push('');
+        var t={totalBruto:o.totalBruto||0,totalIpi:o.totalIpi||0};
+        lines.push(o.numero+'  |  '+o.cliente+'  |  '+(o.supplier||'—')+'  |  Status: '+o.status);
+        lines.push('  Valor bruto: '+fmtAmt(t.totalBruto)+'  |  Com IPI: '+fmtAmt(t.totalIpi)+'  |  Data: '+(o.data||'—'));
+        if(o.itens&&o.itens.length) o.itens.forEach(function(it){ lines.push('  '+it.item+'. ['+it.qtd+'x] '+(it.descricao||'').slice(0,60)+' — R$'+(it.unitario||0)); });
+      });
+      var totGeral = orcFilt.reduce(function(s,o){return s+(o.totalBruto||0);},0);
+      lines.push(''); lines.push(sep2);
+      lines.push('TOTAL GERAL: '+fmtAmt(totGeral)+'  ('+orcFilt.length+' orçamentos)');
+    }
+
+    else if(tipo==='visitas'){
+      lines.push('FORGE B2B — RELATÓRIO DE VISITAS');
+      lines.push('Gerado em: '+new Date().toLocaleDateString('pt-BR'));
+      lines.push(sep2);
+      var comHistorico = visOpps.filter(function(o){return (o.history||[]).length>0;});
+      if(selIds.length) comHistorico = comHistorico.filter(function(o){return selIds.includes(o.id);});
+      if(!comHistorico.length){ lines.push('Nenhuma visita registrada.'); }
+      else {
+        comHistorico.forEach(function(opp){
+          lines.push(opp.customer+' — '+(opp.description||'').slice(0,50));
+          ;(opp.history||[]).forEach(function(h){
+            lines.push('  ['+h.date+'] '+(h.time?h.time+' ':'')+'['+h.resp+'] '+(h.processo||''));
+            lines.push('  '+h.resumo);
+            if(h.proximo){ lines.push('  → PRÓX.: '+h.proximo.replace(/\n/g,' ')); }
+            lines.push('');
+          });
+        });
+      }
+    }
+
+    setRelText(lines.join('\n'));
+    setLoading(false);
+  }
+
+  function exportarRelatorio(){
+    if(!relText) return;
+    var blob = new Blob([relText], {type:'text/plain;charset=utf-8'});
+    var url  = URL.createObjectURL(blob);
+    var a    = document.createElement('a');
+    a.href   = url;
+    a.download = 'relatorio_'+tipo+'_'+new Date().toISOString().slice(0,10)+'.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function imprimirRelatorio(){
+    if(!relText) return;
+    var w = window.open('','_blank','width=800,height:700');
+    w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Relatório</title><style>body{font-family:monospace;font-size:9pt;margin:10mm;white-space:pre-wrap;}@media print{body{margin:5mm;}}</style></head><body>'+relText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</body></html>');
+    w.document.close(); w.focus();
+    setTimeout(function(){w.print();},300);
+  }
+
+  // Listas para seleção
+  var listaOpts = tipo==='cliente'?clients:tipo==='orcamento'?orcs:visOpps.filter(function(o){return (o.history||[]).length>0;});
+  var mostrarSel = ['oportunidade','cliente','orcamento','visitas'].includes(tipo);
+
+  return (
+    <div style={{display:'flex',gap:14,height:'100%',minHeight:0}}>
+      {/* Painel esquerdo — configuração */}
+      <div style={{width:280,flexShrink:0,display:'flex',flexDirection:'column',gap:10}}>
+        {/* Tipo de relatório */}
+        <div className="card" style={{padding:12}}>
+          <div style={{fontSize:10,fontWeight:700,color:'var(--text2)',marginBottom:8,textTransform:'uppercase',letterSpacing:'.06em'}}>Tipo</div>
+          {TIPOS.map(function(t){
+            return (
+              <button key={t.id} onClick={function(){setTipo(t.id);setSelIds([]);setRelText('');}}
+                style={{width:'100%',textAlign:'left',padding:'8px 10px',marginBottom:4,borderRadius:7,border:'1px solid '+(tipo===t.id?'var(--blue)':'var(--border)'),background:tipo===t.id?'rgba(37,99,235,.15)':'transparent',color:tipo===t.id?'#60A5FA':'var(--text)',cursor:'pointer',fontSize:11,fontWeight:tipo===t.id?600:400}}>
+                {t.label}
+                {tipo===t.id&&<div style={{fontSize:9,color:'var(--text3)',marginTop:2,fontWeight:400}}>{t.desc}</div>}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Período (para pipeline e orçamentos) */}
+        {(tipo==='pipeline'||tipo==='orcamento') && (
+          <div className="card" style={{padding:12}}>
+            <div style={{fontSize:10,fontWeight:700,color:'var(--text2)',marginBottom:8,textTransform:'uppercase',letterSpacing:'.06em'}}>Período</div>
+            {[['todos','Todos'],['mes','Mês atual'],['trimestre','Trimestre'],['ano','Ano']].map(function(p){
+              return <button key={p[0]} onClick={function(){setPeriodo(p[0]);}} style={{display:'block',width:'100%',textAlign:'left',padding:'6px 10px',marginBottom:3,borderRadius:6,border:'none',background:periodo===p[0]?'rgba(37,99,235,.15)':'transparent',color:periodo===p[0]?'#60A5FA':'var(--text3)',cursor:'pointer',fontSize:11,fontWeight:periodo===p[0]?600:400}}>{p[1]}</button>;
+            })}
+          </div>
+        )}
+
+        {/* Seleção */}
+        {mostrarSel && tipo!=='pipeline' && (
+          <div className="card" style={{padding:12,flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+              <div style={{fontSize:10,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'.06em'}}>Selecionar</div>
+              <button onClick={function(){selectAll(listaOpts);}} style={{background:'none',border:'none',color:'#60A5FA',cursor:'pointer',fontSize:10}}>Todos</button>
+            </div>
+            <div style={{overflowY:'auto',flex:1}}>
+              {listaOpts.map(function(o){
+                var id  = o.id;
+                var lbl = tipo==='cliente'?o.apelido:tipo==='orcamento'?(o.numero+' — '+o.cliente):(o.customer+' · '+(o.description||'').slice(0,30));
+                var sel = selIds.includes(id);
+                return (
+                  <div key={id} onClick={function(){toggleSel(id);}} style={{display:'flex',gap:6,alignItems:'flex-start',padding:'5px 6px',borderRadius:5,cursor:'pointer',marginBottom:2,background:sel?'rgba(37,99,235,.12)':'transparent'}}>
+                    <input type="checkbox" checked={sel} onChange={function(){}} style={{marginTop:1,flexShrink:0}}/>
+                    <span style={{fontSize:10,color:sel?'#60A5FA':'var(--text)',lineHeight:1.4}}>{lbl}</span>
+                  </div>
+                );
+              })}
+              {listaOpts.length===0&&<div style={{fontSize:11,color:'var(--text3)',textAlign:'center',padding:'20px 0'}}>Sem itens disponíveis</div>}
+            </div>
+          </div>
+        )}
+
+        <button className="btn btn-primary" onClick={gerarRelatorio} style={{width:'100%',justifyContent:'center',padding:10,fontSize:13}} disabled={loading}>
+          {loading?'Gerando...':'⚡ Gerar Relatório'}
+        </button>
+      </div>
+
+      {/* Painel direito — resultado */}
+      <div style={{flex:1,display:'flex',flexDirection:'column',gap:8,minWidth:0}}>
+        {relText ? (
+          <div style={{display:'flex',flexDirection:'column',gap:8,height:'100%'}}>
+            <div style={{display:'flex',gap:8,flexShrink:0}}>
+              <button className="btn btn-secondary" onClick={imprimirRelatorio}>🖨 Imprimir</button>
+              <button className="btn btn-green" onClick={exportarRelatorio}>💾 Exportar .txt</button>
+              <button className="btn btn-secondary" onClick={function(){navigator.clipboard&&navigator.clipboard.writeText(relText);}} title="Copiar texto">📋 Copiar</button>
+              <button className="btn btn-secondary" style={{marginLeft:'auto'}} onClick={function(){setRelText('');}}>✕ Limpar</button>
+            </div>
+            <pre style={{flex:1,overflowY:'auto',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:8,padding:'14px 16px',fontSize:11,lineHeight:1.7,fontFamily:'monospace',whiteSpace:'pre-wrap',wordBreak:'break-word',margin:0}}>
+              {relText}
+            </pre>
+          </div>
+        ) : (
+          <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:12,color:'var(--text3)'}}>
+            <div style={{fontSize:40}}>📋</div>
+            <div style={{fontSize:14,fontWeight:600}}>Nenhum relatório gerado</div>
+            <div style={{fontSize:12}}>Selecione o tipo, configure os filtros e clique em <b>Gerar Relatório</b></div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -3422,6 +3836,8 @@ function App() {
     {id:'budget',      icon:'💰', label:'Budget'},
     {id:'divider1',    divider:true},
     {id:'orcamento',   icon:'📝', label:'Orçamento'},
+    {id:'relatorio',   icon:'📋', label:'Relatórios'},
+    {id:'divider2',    divider:true},
     {id:'demo',        icon:'🔧', label:'Demonstração'},
     {id:'estoque',     icon:'📦', label:'Estoque'},
     {id:'projetos',    icon:'⚙',  label:'Projetos'},
@@ -3439,6 +3855,7 @@ function App() {
     if (view==='clientes')  return <ViewClientes  session={session}/>;
     if (view==='budget')    return <ViewBudget    session={session} isGestor={isGestor}/>;
     if (view==='orcamento') return <ViewOrcamento session={session} isGestor={isGestor}/>;
+    if (view==='relatorio') return <ViewRelatorio session={session} isGestor={isGestor} isConsultor={isConsultor}/>;
     if (view==='demo')      return <ViewDemo      session={session} isGestor={isGestor} isEspecialista={isEspecialista}/>;
     if (view==='estoque')   return <ViewEstoque   session={session}/>;
     if (view==='projetos')  return <ViewProjetos  session={session} isGestor={isGestor} isEspecialista={isEspecialista}/>;
