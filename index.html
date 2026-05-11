@@ -142,6 +142,9 @@ const KEYS = {
   clients:  'crm_clients_v1',
   budget:   'crm_budget_v1',
   settings: 'crm_settings_v1',
+  demo:     'crm_demo_v1',
+  estoque:  'crm_estoque_v1',
+  projetos: 'crm_projetos_v1',
 };
 
 const ROLES = {
@@ -1086,7 +1089,7 @@ function ViewClientes({ session }) {
                         <td style={{color:'var(--text3)',fontSize:10}}>{ct.tel}</td>
                         <td style={{color:'var(--text3)',fontSize:10}}>{ct.cel}</td>
                         <td style={{fontSize:10}}>
-                          <div style={{display:'flex',alignItems:'center',gap:8}}>
+                          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}>
                             <span style={{color:'#60A5FA'}}>{ct.email}</span>
                             {waNum && (
                               <a href={waUrl} target="_blank" rel="noopener noreferrer"
@@ -1657,12 +1660,791 @@ function ModalPerfil({ session, onClose, onLogout }) {
   );
 }
 
+// ─── VIEW: DEMONSTRAÇÃO ──────────────────────────────────────
+function ViewDemo({ session, isGestor, isEspecialista }) {
+  const [demos,    setDemos]    = useState(function(){ return load(KEYS.demo, []); });
+  const [estDemo,  setEstDemo]  = useState(function(){ return load(KEYS.estoque+'_demo', []); });
+  const [modal,    setModal]    = useState(false);
+  const [form,     setForm]     = useState(null);
+  const [search,   setSearch]   = useState('');
+  const settings = load(KEYS.settings, {});
+
+  const EMPTY_DEMO = {
+    id:'', codVend: session.code||'', seq:'001', ano:String(CUR_YEAR),
+    cliente:'', projeto:'', cnpj:'', endereco:'', cep:'', cidadeUf:'', dpto:'',
+    contato:'', fone:'', email:'', engenheiro:'', dataDemo:'', dataRetorno:'', movimentacao:'',
+    nf:'', numDemo:'',
+    itens: [{sigma:'',descricao:'',modelo:'',marca:'',qtd:1,obs:''}],
+    soquetes:[{consumoAnual:'',concorrentes:'',potencial:'',aplicacao:'',comentarios:''}],
+    testes:  [{range:'',operacao:'',linha:'',posto:''}],
+    resultados:[{inicio:'',fim:'',homologado:false,naoHomologado:false,consideracao:''}],
+  };
+
+  function saveDemos(list){ setDemos(list); save(KEYS.demo, list); }
+
+  function openNew(){
+    const seq = String(demos.length+1).padStart(3,'0');
+    setForm(Object.assign({}, EMPTY_DEMO, {id:'demo_'+Date.now(), seq}));
+    setModal(true);
+  }
+  function openEdit(d){ setForm(Object.assign({},d)); setModal(true); }
+
+  function saveForm(){
+    if(!form.cliente.trim()){ alert('Informe o cliente.'); return; }
+    const exists = demos.find(function(d){ return d.id===form.id; });
+    if(exists){ saveDemos(demos.map(function(d){ return d.id===form.id?form:d; })); }
+    else { saveDemos([form,...demos]); }
+    setModal(false);
+  }
+
+  function deleteDemo(id){ if(confirm('Excluir?')) saveDemos(demos.filter(function(d){ return d.id!==id; })); }
+
+  function nomeArquivo(d){
+    const cli = (d.cliente||'CLIENTE').replace(/\s+/g,'-').replace(/[^A-Za-z0-9-]/g,'').toUpperCase().slice(0,20);
+    const prj = (d.projeto||'DEMO').replace(/\s+/g,'-').replace(/[^A-Za-z0-9-]/g,'').toUpperCase().slice(0,15);
+    return (d.codVend||'XXXX')+'-'+(d.seq||'001')+'-'+(d.ano||CUR_YEAR)+'-'+cli+'-'+prj;
+  }
+
+  // Busca no estoque de demo por SIGMA
+  function buscaEstDemo(sigma){
+    const s = String(sigma||'').toLowerCase();
+    if(!s) return null;
+    return estDemo.find(function(it){ return String(it.sigma||'').toLowerCase().includes(s)||String(it.desc1||'').toLowerCase().includes(s); });
+  }
+
+  function importEstDemo(e){
+    const file = e.target.files[0]; if(!file) return;
+    const reader = new FileReader();
+    reader.onload = function(ev){
+      try{
+        const wb = XLSX.read(ev.target.result,{type:'binary'});
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+        const items = [];
+        for(var ri=1;ri<rows.length;ri++){
+          const row = rows[ri];
+          if(!row||!row[0]) continue;
+          items.push({
+            sigma: String(row[0]||'').trim(),
+            descricao: String(row[1]||'').trim(),
+            desc1: String(row[2]||'').trim(),
+            desc2: String(row[3]||'').trim(),
+            saldo: parseFloat(row[4])||0,
+          });
+        }
+        setEstDemo(items);
+        save(KEYS.estoque+'_demo', items);
+        alert(items.length+' itens de demonstração carregados.');
+      }catch(err){ alert('Erro: '+err.message); }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value='';
+  }
+
+  // Exportar PDF — usa window.print com layout dedicado
+  function exportPDF(d){
+    const nome = nomeArquivo(d);
+    const itensHTML = d.itens.map(function(it,i){
+      return '<tr><td>'+(i+1)+'</td><td>'+it.qtd+'</td><td>'+(it.marca||'')+'</td><td colspan="3">'+(it.descricao||'')+'</td><td>'+(it.modelo||'')+'</td><td>'+(it.sigma||'')+'</td><td></td></tr>';
+    }).join('');
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${nome}</title>
+<style>
+body{font-family:Arial,sans-serif;font-size:9pt;margin:10mm;}
+h2{text-align:center;font-size:13pt;margin-bottom:6px;}
+table{width:100%;border-collapse:collapse;font-size:8pt;}
+td,th{border:1px solid #999;padding:3px 5px;}
+th{background:#ddd;font-weight:bold;font-size:7.5pt;}
+.lbl{font-size:7pt;color:#555;font-weight:bold;}
+.hdr{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:8px;}
+.field{border:1px solid #ccc;padding:4px 6px;}
+.field .l{font-size:7pt;color:#777;}
+.section{background:#eee;font-weight:bold;font-size:8pt;padding:3px 6px;margin:8px 0 4px;}
+.footer{margin-top:20px;font-size:7.5pt;border-top:1px solid #ccc;padding-top:6px;text-align:center;}
+.sig{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:30px;}
+.sig-line{border-top:1px solid #333;padding-top:4px;text-align:center;font-size:8pt;}
+@media print{body{margin:5mm;}}
+</style></head><body>
+<h2>FORMULÁRIO PEDIDO DEMONSTRAÇÃO</h2>
+<div class="hdr">
+  <div class="field"><div class="l">NÚMERO NF:</div>${d.nf||''}</div>
+  <div class="field"><div class="l">NUMERO DEMO:</div>${d.numDemo||nomeArquivo(d)}</div>
+  <div class="field"><div class="l">REPRESENTANTE:</div>${d.contato||session.name}</div>
+  <div class="field"><div class="l">DATA SOLICITAÇÃO:</div>${new Date().toLocaleDateString('pt-BR')}</div>
+  <div class="field"><div class="l">NOME CLIENTE:</div>${d.cliente||''}</div>
+  <div class="field"><div class="l">CPF/CNPJ:</div>${d.cnpj||''}</div>
+  <div class="field" style="grid-column:1/3"><div class="l">ENDEREÇO:</div>${d.endereco||''}</div>
+  <div class="field"><div class="l">CIDADE/UF:</div>${d.cidadeUf||''}</div>
+  <div class="field"><div class="l">CEP:</div>${d.cep||''}</div>
+  <div class="field"><div class="l">CONTATO:</div>${d.contato||''}</div>
+  <div class="field"><div class="l">FONE:</div>${d.fone||''}</div>
+  <div class="field"><div class="l">E-MAIL:</div>${d.email||''}</div>
+  <div class="field"><div class="l">ENGENHEIRO DE APLICAÇÃO:</div>${d.engenheiro||''}</div>
+  <div class="field"><div class="l">DATA DEMONSTRAÇÃO:</div>${d.dataDemo||''}</div>
+  <div class="field"><div class="l">DATA PREVISÃO RETORNO:</div>${d.dataRetorno||''}</div>
+  <div class="field" style="grid-column:1/3"><div class="l">MOVIMENTAÇÃO:</div>${d.movimentacao||''}</div>
+</div>
+<div class="section">RELAÇÃO DE ITENS</div>
+<table><thead><tr><th>ITEM</th><th>QTD</th><th>MARCA</th><th colspan="3">DESCRIÇÃO</th><th>MODELO</th><th>SIGMA</th><th>ESTOQUE</th></tr></thead>
+<tbody>${itensHTML}</tbody></table>
+${d.soquetes&&d.soquetes.some(function(s){return s.consumoAnual||s.concorrentes;})? '<div class="section">DEMONSTRAÇÃO DE SOQUETES</div><table><thead><tr><th>CONSUMO ANUAL</th><th>CONCORRENTES</th><th>POTENCIAL</th><th>APLICAÇÃO</th><th>COMENTÁRIOS</th></tr></thead><tbody>'+d.soquetes.map(function(s){ return '<tr><td>'+(s.consumoAnual||'')+'</td><td>'+(s.concorrentes||'')+'</td><td>'+(s.potencial||'')+'</td><td>'+(s.aplicacao||'')+'</td><td>'+(s.comentarios||'')+'</td></tr>'; }).join('')+'</tbody></table>':''}
+${d.testes&&d.testes.some(function(t){return t.operacao;})? '<div class="section">TESTES REALIZADOS</div><table><thead><tr><th>ITEM</th><th>RANGE</th><th colspan="4">OPERAÇÃO</th><th>LINHA</th><th>POSTO</th></tr></thead><tbody>'+d.testes.map(function(t,i){ return '<tr><td>'+(i+1)+'</td><td>'+(t.range||'')+'</td><td colspan="4">'+(t.operacao||'')+'</td><td>'+(t.linha||'')+'</td><td>'+(t.posto||'')+'</td></tr>'; }).join('')+'</tbody></table>':''}
+${d.resultados&&d.resultados.some(function(r){return r.inicio;})? '<div class="section">PERÍODO DE TESTE / RESULTADOS</div><table><thead><tr><th>ITEM</th><th>INÍCIO</th><th>FIM</th><th>HOMOLOGADO</th><th>NÃO HOMOLOGADO</th><th>CONSIDERAÇÃO</th></tr></thead><tbody>'+d.resultados.map(function(r,i){ return '<tr><td>'+(i+1)+'</td><td>'+(r.inicio||'')+'</td><td>'+(r.fim||'')+'</td><td style="text-align:center">'+(r.homologado?'✓':'')+'</td><td style="text-align:center">'+(r.naoHomologado?'✓':'')+'</td><td>'+(r.consideracao||'')+'</td></tr>'; }).join('')+'</tbody></table>':''}
+<div class="sig">
+  <div class="sig-line">Assinatura Cliente</div>
+  <div class="sig-line">Assinatura Vendedor</div>
+</div>
+<div class="footer">SINUELO SERVICE LTDA — Rua Antonio Kaminski, 190 - Orleans — Curitiba - PR — CEP 81200-402<br>crm@sinuelo.com | www.sinuelo.com | 041-33355005 / 041-33352324</div>
+</body></html>`;
+    const win = window.open('','_blank','width=900,height=700');
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(function(){ win.print(); }, 400);
+  }
+
+  const filtered = demos.filter(function(d){
+    if(!search.trim()) return true;
+    const q = search.toLowerCase();
+    return (d.cliente&&d.cliente.toLowerCase().includes(q))||(d.projeto&&d.projeto.toLowerCase().includes(q));
+  });
+
+  const inp = {width:'100%'};
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:12,height:'100%'}}>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+        <input value={search} onChange={function(e){setSearch(e.target.value);}} placeholder="Buscar cliente ou projeto..." style={{flex:1,minWidth:180}}/>
+        <button className="btn btn-primary" onClick={openNew}>+ Nova solicitação</button>
+        <label className="btn btn-blue" style={{cursor:'pointer'}} title="Estoque de demonstração">
+          📦 Estoque demo
+          <input type="file" accept=".xls,.xlsx" style={{display:'none'}} onChange={importEstDemo}/>
+        </label>
+        {estDemo.length>0 && <span style={{fontSize:10,color:'var(--text3)'}}>{estDemo.length} itens</span>}
+      </div>
+
+      {demos.length===0 ? (
+        <div className="card" style={{textAlign:'center',padding:'60px 20px',color:'var(--text3)'}}>
+          <div style={{fontSize:32,marginBottom:12}}>🔧</div>
+          <div style={{fontWeight:600,marginBottom:6}}>Nenhuma solicitação de demonstração</div>
+          <div>Clique em <b>+ Nova solicitação</b> para criar</div>
+        </div>
+      ) : (
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          {filtered.map(function(d){
+            return (
+              <div key={d.id} className="card" style={{display:'flex',gap:12,alignItems:'center'}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:'flex',gap:10,alignItems:'baseline',flexWrap:'wrap'}}>
+                    <span style={{fontWeight:700,fontSize:13}}>{d.cliente}</span>
+                    <span style={{fontSize:11,color:'var(--text3)'}}>·</span>
+                    <span style={{fontSize:11,color:'var(--text2)'}}>{d.projeto}</span>
+                    <span style={{fontSize:10,padding:'1px 7px',borderRadius:5,background:'rgba(37,99,235,0.15)',color:'#60A5FA',fontWeight:600}}>{nomeArquivo(d)}</span>
+                  </div>
+                  <div style={{fontSize:10,color:'var(--text3)',marginTop:3}}>
+                    {d.dataDemo&&'Demo: '+d.dataDemo+' · '}
+                    {d.itens.filter(function(i){return i.sigma;}).length} itens ·
+                    {d.contato&&' '+d.contato}
+                  </div>
+                </div>
+                <div style={{display:'flex',gap:6,flexShrink:0}}>
+                  <button className="btn btn-secondary" style={{padding:'5px 10px',fontSize:11}} onClick={function(){openEdit(d);}}>✏️ Editar</button>
+                  <button className="btn btn-green" style={{padding:'5px 10px',fontSize:11}} onClick={function(){exportPDF(d);}}>📄 PDF</button>
+                  <button onClick={function(){deleteDemo(d.id);}} style={{background:'none',border:'none',color:'var(--text3)',cursor:'pointer',fontSize:13,opacity:.4}} onMouseEnter={function(ev){ev.target.style.opacity=1;}} onMouseLeave={function(ev){ev.target.style.opacity=.4;}}>✕</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* MODAL FORMULÁRIO */}
+      {modal && form && (
+        <div className="modal-bg">
+          <div className="modal" style={{maxWidth:800}}>
+            <div className="modal-hd">
+              <h2>🔧 Solicitação de Demonstração</h2>
+              <button className="modal-close" onClick={function(){setModal(false);}}>✕</button>
+            </div>
+            {/* Nome do arquivo */}
+            <div style={{background:'rgba(37,99,235,0.08)',border:'1px solid rgba(37,99,235,0.2)',borderRadius:6,padding:'6px 12px',marginBottom:12,fontSize:11,color:'#60A5FA',fontFamily:'monospace'}}>
+              📁 {nomeArquivo(form)}.pdf
+            </div>
+
+            {/* Cabeçalho */}
+            <div className="grid-4" style={{marginBottom:10}}>
+              <div className="field"><label>Cód. Vendedor</label><input value={form.codVend||''} onChange={function(e){setForm(Object.assign({},form,{codVend:e.target.value}));}} style={inp} placeholder="EF"/></div>
+              <div className="field"><label>Seq.</label><input value={form.seq||''} onChange={function(e){setForm(Object.assign({},form,{seq:e.target.value}));}} style={inp} placeholder="001"/></div>
+              <div className="field"><label>Nº NF</label><input value={form.nf||''} onChange={function(e){setForm(Object.assign({},form,{nf:e.target.value}));}} style={inp}/></div>
+              <div className="field"><label>Nº Demo</label><input value={form.numDemo||''} onChange={function(e){setForm(Object.assign({},form,{numDemo:e.target.value}));}} style={inp}/></div>
+            </div>
+            <div className="grid-2" style={{marginBottom:10}}>
+              <div className="field"><label>Nome Cliente *</label><input value={form.cliente||''} onChange={function(e){setForm(Object.assign({},form,{cliente:e.target.value}));}} style={inp} autoFocus/></div>
+              <div className="field"><label>Projeto / Oportunidade</label><input value={form.projeto||''} onChange={function(e){setForm(Object.assign({},form,{projeto:e.target.value}));}} style={inp}/></div>
+            </div>
+            <div className="grid-3" style={{marginBottom:10}}>
+              <div className="field"><label>CPF/CNPJ</label><input value={form.cnpj||''} onChange={function(e){setForm(Object.assign({},form,{cnpj:e.target.value}));}} style={inp}/></div>
+              <div className="field"><label>Cidade/UF</label><input value={form.cidadeUf||''} onChange={function(e){setForm(Object.assign({},form,{cidadeUf:e.target.value}));}} style={inp}/></div>
+              <div className="field"><label>CEP</label><input value={form.cep||''} onChange={function(e){setForm(Object.assign({},form,{cep:e.target.value}));}} style={inp}/></div>
+            </div>
+            <div className="grid-2" style={{marginBottom:10}}>
+              <div className="field"><label>Endereço</label><input value={form.endereco||''} onChange={function(e){setForm(Object.assign({},form,{endereco:e.target.value}));}} style={inp}/></div>
+              <div className="field"><label>Departamento</label><input value={form.dpto||''} onChange={function(e){setForm(Object.assign({},form,{dpto:e.target.value}));}} style={inp}/></div>
+            </div>
+            <div className="grid-3" style={{marginBottom:10}}>
+              <div className="field"><label>Contato</label><input value={form.contato||''} onChange={function(e){setForm(Object.assign({},form,{contato:e.target.value}));}} style={inp}/></div>
+              <div className="field"><label>Fone</label><input value={form.fone||''} onChange={function(e){setForm(Object.assign({},form,{fone:e.target.value}));}} style={inp}/></div>
+              <div className="field"><label>E-mail</label><input value={form.email||''} onChange={function(e){setForm(Object.assign({},form,{email:e.target.value}));}} style={inp}/></div>
+            </div>
+            <div className="grid-3" style={{marginBottom:12}}>
+              <div className="field"><label>Engenheiro de Aplicação</label><input value={form.engenheiro||''} onChange={function(e){setForm(Object.assign({},form,{engenheiro:e.target.value}));}} style={inp}/></div>
+              <div className="field"><label>Data Demonstração</label><input type="date" value={form.dataDemo||''} onChange={function(e){setForm(Object.assign({},form,{dataDemo:e.target.value}));}} style={inp}/></div>
+              <div className="field"><label>Previsão Retorno</label><input type="date" value={form.dataRetorno||''} onChange={function(e){setForm(Object.assign({},form,{dataRetorno:e.target.value}));}} style={inp}/></div>
+            </div>
+            <div className="field" style={{marginBottom:12}}>
+              <label>Movimentação</label>
+              <input value={form.movimentacao||''} onChange={function(e){setForm(Object.assign({},form,{movimentacao:e.target.value}));}} style={inp}/>
+            </div>
+
+            {/* Itens */}
+            <div style={{fontSize:11,fontWeight:700,color:'var(--text2)',marginBottom:6,textTransform:'uppercase',letterSpacing:'.06em'}}>Relação de Itens</div>
+            <table className="tbl" style={{marginBottom:8}}>
+              <thead><tr><th>QTD</th><th>MARCA</th><th>SIGMA (busca)</th><th>DESCRIÇÃO</th><th>MODELO</th><th>OBS</th><th style={{width:24}}></th></tr></thead>
+              <tbody>
+                {form.itens.map(function(it,i){
+                  const found = buscaEstDemo(it.sigma);
+                  return (
+                    <tr key={i}>
+                      <td><input type="number" value={it.qtd||1} onChange={function(e){var ni=[...form.itens];ni[i]=Object.assign({},it,{qtd:e.target.value});setForm(Object.assign({},form,{itens:ni}));}} style={{width:50,padding:'3px 5px',fontSize:11}}/></td>
+                      <td><input value={it.marca||''} onChange={function(e){var ni=[...form.itens];ni[i]=Object.assign({},it,{marca:e.target.value});setForm(Object.assign({},form,{itens:ni}));}} style={{width:'100%',padding:'3px 5px',fontSize:11}} placeholder="Marca"/></td>
+                      <td>
+                        <input value={it.sigma||''} onChange={function(e){
+                          var ni=[...form.itens];
+                          var sigma=e.target.value;
+                          var fnd=buscaEstDemo(sigma);
+                          ni[i]=Object.assign({},it,{sigma,descricao:fnd?fnd.descricao:it.descricao,modelo:fnd?fnd.desc1:it.modelo,saldo:fnd?fnd.saldo:null});
+                          setForm(Object.assign({},form,{itens:ni}));
+                        }} style={{width:'100%',padding:'3px 5px',fontSize:11,borderColor:found?'#16A34A':'var(--border)'}} placeholder="SIGMA"/>
+                        {found && <div style={{fontSize:9,color:'#4ADE80',marginTop:2}}>✓ Saldo: {found.saldo}</div>}
+                      </td>
+                      <td><input value={it.descricao||''} onChange={function(e){var ni=[...form.itens];ni[i]=Object.assign({},it,{descricao:e.target.value});setForm(Object.assign({},form,{itens:ni}));}} style={{width:'100%',padding:'3px 5px',fontSize:11}}/></td>
+                      <td><input value={it.modelo||''} onChange={function(e){var ni=[...form.itens];ni[i]=Object.assign({},it,{modelo:e.target.value});setForm(Object.assign({},form,{itens:ni}));}} style={{width:'100%',padding:'3px 5px',fontSize:11}}/></td>
+                      <td><input value={it.obs||''} onChange={function(e){var ni=[...form.itens];ni[i]=Object.assign({},it,{obs:e.target.value});setForm(Object.assign({},form,{itens:ni}));}} style={{width:'100%',padding:'3px 5px',fontSize:11}}/></td>
+                      <td><button onClick={function(){setForm(Object.assign({},form,{itens:form.itens.filter(function(_,idx){return idx!==i;})}));}} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text3)',fontSize:13}}>✕</button></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <button className="btn btn-secondary" style={{marginBottom:14,fontSize:11}} onClick={function(){setForm(Object.assign({},form,{itens:[...form.itens,{sigma:'',descricao:'',modelo:'',marca:'',qtd:1,obs:''}]}));}}>+ Adicionar item</button>
+
+            <div style={{display:'flex',gap:8}}>
+              <button className="btn btn-primary" onClick={saveForm} style={{flex:1}}>💾 Salvar</button>
+              <button className="btn btn-green" onClick={function(){saveForm();setTimeout(function(){var d=load(KEYS.demo,[]);if(d.length)exportPDF(d[0]);},200);}} style={{flex:1}}>💾 Salvar + 📄 PDF</button>
+              <button className="btn btn-secondary" onClick={function(){setModal(false);}}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── VIEW: ESTOQUE ───────────────────────────────────────────
+function ViewEstoque({ session }) {
+  const [estoque,   setEstoque]   = useState(function(){ return load(KEYS.estoque, []); });
+  const [search,    setSearch]    = useState('');
+  const [selected,  setSelected]  = useState({});
+  const [loading,   setLoading]   = useState(false);
+
+  function saveEst(list){ setEstoque(list); save(KEYS.estoque, list); }
+
+  function importXLSX(e){
+    const file = e.target.files[0]; if(!file) return;
+    setLoading(true);
+    const reader = new FileReader();
+    reader.onload = function(ev){
+      try{
+        const wb = XLSX.read(ev.target.result,{type:'binary'});
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+        const items = [];
+        var grupoAtual = '';
+        for(var ri=0;ri<rows.length;ri++){
+          const row = rows[ri];
+          if(!row||!row.some(function(c){return c!==null&&c!=='';})) continue;
+          const r = row.map(function(c){return String(c||'').trim();});
+          // Linha de grupo: primeiro campo é número simples, segundo é nome
+          if(/^\d+$/.test(r[0]) && r[1] && !r[2] && !r[3]){
+            grupoAtual = r[1];
+          } else if(r[0].length>=6 && /^[\d.]+$/.test(r[0]) && r[1]){
+            const sf = parseFloat(r[5])||0;
+            const sd = parseFloat(r[6])||0;
+            // Col 0 = SIGMA (código Sinuelo), col 2 = código comercial
+            items.push({
+              sigma: r[0],
+              descricao: r[1],
+              codigo: r[2]||r[3]||'',
+              grupo: grupoAtual,
+              sf: Math.round(sf),
+              sd: Math.round(sd),
+            });
+          }
+        }
+        saveEst(items);
+        setLoading(false);
+        alert(items.length+' itens importados.');
+      }catch(err){ setLoading(false); alert('Erro: '+err.message); }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value='';
+  }
+
+  const q = search.trim().toLowerCase();
+  const filtered = q.length<2 ? estoque.slice(0,200) : estoque.filter(function(it){
+    return it.descricao.toLowerCase().includes(q)||it.codigo.toLowerCase().includes(q)||it.sigma.toLowerCase().includes(q);
+  }).slice(0,500);
+
+  const selList = estoque.filter(function(it){ return selected[it.sigma]; });
+
+  function toggleSel(sigma){ setSelected(function(prev){ var n=Object.assign({},prev); if(n[sigma]) delete n[sigma]; else n[sigma]=true; return n; }); }
+  function clearSel(){ setSelected({}); }
+
+  function exportSel(){
+    const XLSX2 = window.XLSX;
+    const header = ['QUANTIDADE','DESCRIÇÃO','CÓDIGO DO FORNECEDOR','SIGMA'];
+    const rows = selList.map(function(it){ return [it.sd, it.descricao, it.codigo, it.sigma]; });
+    const ws = XLSX2.utils.aoa_to_sheet([header,...rows]);
+    ws['!cols']=[{wch:12},{wch:55},{wch:18},{wch:14}];
+    const wb = XLSX2.utils.book_new();
+    XLSX2.utils.book_append_sheet(wb,ws,'Estoque Selecionado');
+    XLSX2.writeFile(wb,'estoque_selecionado_'+new Date().toISOString().slice(0,10)+'.xlsx');
+  }
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:12,height:'100%'}}>
+      {/* Controles */}
+      <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+        <input value={search} onChange={function(e){setSearch(e.target.value);}}
+          placeholder="Buscar por palavra-chave, código do fornecedor ou SIGMA..."
+          style={{flex:1,minWidth:220}}/>
+        {selList.length>0 && (
+          <button className="btn btn-green" onClick={exportSel}>📊 Exportar {selList.length} selecionado(s)</button>
+        )}
+        {selList.length>0 && <button className="btn btn-secondary" onClick={clearSel}>Limpar seleção</button>}
+        <label className="btn btn-blue" style={{cursor:'pointer'}}>
+          {loading?'Importando...':'📥 Importar planilha'}
+          <input type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={importXLSX}/>
+        </label>
+      </div>
+
+      {/* Info */}
+      <div style={{display:'flex',gap:10,alignItems:'center',fontSize:11,color:'var(--text3)'}}>
+        <span>{estoque.length.toLocaleString()} itens no estoque</span>
+        {q.length>=2 && <span>· {filtered.length} resultado(s)</span>}
+        {q.length<2 && estoque.length>200 && <span>· exibindo 200 — digite para filtrar</span>}
+        {selList.length>0 && <span style={{color:'#4ADE80'}}>· {selList.length} selecionado(s)</span>}
+      </div>
+
+      {estoque.length===0 ? (
+        <div className="card" style={{textAlign:'center',padding:'60px 20px',color:'var(--text3)'}}>
+          <div style={{fontSize:32,marginBottom:12}}>📦</div>
+          <div style={{fontWeight:600,marginBottom:6}}>Estoque não carregado</div>
+          <div>Importe o arquivo <b>estoque.xlsx</b></div>
+        </div>
+      ) : (
+        <div className="tbl-wrap" style={{flex:1,overflowY:'auto'}}>
+          <table className="tbl">
+            <thead style={{position:'sticky',top:0,zIndex:2,background:'var(--bg3)'}}>
+              <tr>
+                <th style={{width:28}}>
+                  <input type="checkbox" onChange={function(e){
+                    if(e.target.checked){ var ns={}; filtered.forEach(function(it){ns[it.sigma]=true;}); setSelected(ns); }
+                    else clearSel();
+                  }} checked={filtered.length>0&&filtered.every(function(it){return selected[it.sigma];})}/>
+                </th>
+                <th style={{width:70,textAlign:'center'}}>QUANTIDADE</th>
+                <th>DESCRIÇÃO</th>
+                <th style={{width:140}}>CÓDIGO DO FORNECEDOR</th>
+                <th style={{width:120}}>SIGMA</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(function(it,i){
+                const isSel = selected[it.sigma];
+                return (
+                  <tr key={it.sigma+i} onClick={function(){toggleSel(it.sigma);}} style={{cursor:'pointer',background:isSel?'rgba(37,99,235,0.1)':'',borderLeft:isSel?'2px solid #2563EB':'2px solid transparent'}}>
+                    <td style={{textAlign:'center'}}><input type="checkbox" checked={!!isSel} onChange={function(){}} onClick={function(e){e.stopPropagation();toggleSel(it.sigma);}}/></td>
+                    <td style={{textAlign:'center',fontWeight:700,color:it.sd>0?'#4ADE80':'#F87171'}}>{it.sd}</td>
+                    <td style={{fontWeight:500}} title={it.grupo}>{it.descricao}</td>
+                    <td style={{fontFamily:'monospace',fontSize:11,color:'#60A5FA'}}>{it.codigo}</td>
+                    <td style={{fontFamily:'monospace',fontSize:11,color:'var(--text2)'}}>{it.sigma}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── VIEW: PROJETOS ──────────────────────────────────────────
+function ViewProjetos({ session, isGestor, isEspecialista }) {
+  const INQUIRY_SUPPS = ['3ARM','LÜBBERING','JAGER','NOMUDA','TECNA','HS-T','PANASONIC 4.0','BOSCH IW'];
+  const [projetos,  setProjetos]  = useState(function(){ return load(KEYS.projetos, []); });
+  const [modal,     setModal]     = useState(false);
+  const [form,      setForm]      = useState(null);
+  const [viewProj,  setViewProj]  = useState(null);
+  const [search,    setSearch]    = useState('');
+
+  function saveProjs(list){ setProjetos(list); save(KEYS.projetos, list); }
+
+  const EMPTY_PROJ = {
+    id:'', fornecedor:'3ARM', cliente:'', contato:'', telefone:'', email:'', projeto:'',
+    responsavel: session.code||'', status:'em_andamento',
+    // Campos comuns
+    obs:'', imagens:[],
+    // 3ARM
+    tipoFerramenta:[], marca:'', peso:'', torqueMax:'', reacaoBar:false,
+    posicao:[], movimentaEstacao:false, trocaFerramenta:false,
+    alturaMin:'', alturaMax:'', alcance:'', limitacoes:'', fotos:false,
+    montagem:'bottom',
+    // LÜBBERING
+    lubTorque:'', lubPrecisao:'', lubSocket:'', lubOutput:'', lubAdaptacao:'',
+    lubMinMax:'min',
+    // GENÉRICO
+    descProcesso:'', volumeProd:'', cicloMin:'', ergonomia:'', risco:'',
+  };
+
+  function openNew(){ setForm(Object.assign({},EMPTY_PROJ,{id:'prj_'+Date.now()})); setModal(true); }
+  function openEdit(p){ setForm(Object.assign({},p)); setModal(true); }
+
+  function saveForm(){
+    if(!form.cliente.trim()||!form.projeto.trim()){ alert('Cliente e Projeto são obrigatórios.'); return; }
+    const exists = projetos.find(function(p){ return p.id===form.id; });
+    if(exists) saveProjs(projetos.map(function(p){ return p.id===form.id?form:p; }));
+    else saveProjs([form,...projetos]);
+    setModal(false);
+  }
+
+  function deleteProj(id){ if(confirm('Excluir?')) saveProjs(projetos.filter(function(p){ return p.id!==id; })); }
+
+  function handleImages(e){
+    const files = Array.from(e.target.files);
+    const readers = files.map(function(file){
+      return new Promise(function(resolve){
+        const r = new FileReader();
+        r.onload = function(ev){ resolve({name:file.name,type:file.type,data:ev.target.result}); };
+        if(file.type.startsWith('video/')) r.readAsDataURL(file);
+        else r.readAsDataURL(file);
+      });
+    });
+    Promise.all(readers).then(function(imgs){
+      setForm(function(f){ return Object.assign({},f,{imagens:[...(f.imagens||[]),...imgs]}); });
+    });
+    e.target.value='';
+  }
+
+  function removeImagem(idx){
+    setForm(function(f){ return Object.assign({},f,{imagens:f.imagens.filter(function(_,i){return i!==idx;})}); });
+  }
+
+  const statusColor = {em_andamento:'#CA8A04',aprovado:'#16A34A',reprovado:'#DC2626',aguardando:'#2563EB'};
+  const statusLabel = {em_andamento:'Em andamento',aprovado:'Aprovado',reprovado:'Reprovado',aguardando:'Aguardando'};
+
+  const filtered = projetos.filter(function(p){
+    if(!search.trim()) return true;
+    const q=search.toLowerCase();
+    return (p.cliente&&p.cliente.toLowerCase().includes(q))||(p.fornecedor&&p.fornecedor.toLowerCase().includes(q))||(p.projeto&&p.projeto.toLowerCase().includes(q));
+  });
+
+  const inp = {width:'100%'};
+  const is3arm = form && form.fornecedor==='3ARM';
+  const isLub  = form && form.fornecedor==='LÜBBERING';
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:12,height:'100%'}}>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+        <input value={search} onChange={function(e){setSearch(e.target.value);}} placeholder="Buscar projeto, cliente, fornecedor..." style={{flex:1,minWidth:180}}/>
+        <button className="btn btn-primary" onClick={openNew}>+ Novo projeto</button>
+      </div>
+
+      {projetos.length===0 ? (
+        <div className="card" style={{textAlign:'center',padding:'60px 20px',color:'var(--text3)'}}>
+          <div style={{fontSize:32,marginBottom:12}}>⚙</div>
+          <div style={{fontWeight:600,marginBottom:6}}>Nenhum projeto de aplicação</div>
+          <div>Clique em <b>+ Novo projeto</b> para criar um inquiry form</div>
+          <div style={{marginTop:8,fontSize:11,color:'var(--text3)'}}>Fornecedores: {INQUIRY_SUPPS.join(' · ')}</div>
+        </div>
+      ) : (
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          {filtered.map(function(p){
+            const sc = statusColor[p.status]||'#888';
+            const sl = statusLabel[p.status]||p.status;
+            return (
+              <div key={p.id} className="card" style={{display:'flex',gap:12,alignItems:'center',borderLeft:'3px solid '+sc}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:'flex',gap:8,alignItems:'baseline',flexWrap:'wrap',marginBottom:3}}>
+                    <span style={{fontWeight:700,fontSize:13}}>{p.cliente}</span>
+                    <span style={{fontSize:11,color:'#60A5FA',fontWeight:600,padding:'1px 7px',borderRadius:5,background:'rgba(37,99,235,0.15)'}}>{p.fornecedor}</span>
+                    <span style={{fontSize:11,color:'var(--text2)'}}>{p.projeto}</span>
+                    <span style={{fontSize:10,padding:'1px 7px',borderRadius:5,background:sc+'22',color:sc,fontWeight:600}}>{sl}</span>
+                  </div>
+                  <div style={{fontSize:10,color:'var(--text3)'}}>
+                    {p.responsavel&&'Resp: '+p.responsavel+' · '}
+                    {p.imagens&&p.imagens.length>0&&p.imagens.length+' mídia(s) · '}
+                    {p.contato&&p.contato}
+                  </div>
+                </div>
+                <div style={{display:'flex',gap:6,flexShrink:0}}>
+                  {(isGestor||isEspecialista) && (
+                    <button className="btn btn-secondary" style={{padding:'5px 10px',fontSize:11}} onClick={function(){setViewProj(p);}}>🖼 Mídias</button>
+                  )}
+                  <button className="btn btn-secondary" style={{padding:'5px 10px',fontSize:11}} onClick={function(){openEdit(p);}}>✏️</button>
+                  <button onClick={function(){deleteProj(p.id);}} style={{background:'none',border:'none',color:'var(--text3)',cursor:'pointer',fontSize:13,opacity:.4}} onMouseEnter={function(ev){ev.target.style.opacity=1;}} onMouseLeave={function(ev){ev.target.style.opacity=.4;}}>✕</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* MODAL VIEWER DE MÍDIAS (gestor/especialista) */}
+      {viewProj && (
+        <div className="modal-bg" onClick={function(){setViewProj(null);}}>
+          <div className="modal" style={{maxWidth:800}} onClick={function(e){e.stopPropagation();}}>
+            <div className="modal-hd">
+              <div>
+                <h2>🖼 Mídias — {viewProj.cliente}</h2>
+                <div style={{fontSize:11,color:'var(--text3)'}}>{viewProj.fornecedor} · {viewProj.projeto}</div>
+              </div>
+              <button className="modal-close" onClick={function(){setViewProj(null);}}>✕</button>
+            </div>
+            {(!viewProj.imagens||viewProj.imagens.length===0) ? (
+              <div style={{textAlign:'center',padding:'40px 20px',color:'var(--text3)'}}>Nenhuma mídia enviada para este projeto.</div>
+            ) : (
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))',gap:10}}>
+                {viewProj.imagens.map(function(img,i){
+                  const isVid = img.type&&img.type.startsWith('video/');
+                  return (
+                    <div key={i} style={{borderRadius:8,overflow:'hidden',border:'1px solid var(--border)',background:'var(--bg3)'}}>
+                      {isVid
+                        ? <video src={img.data} controls style={{width:'100%',maxHeight:140,objectFit:'cover'}}/>
+                        : <img src={img.data} alt={img.name} style={{width:'100%',maxHeight:140,objectFit:'cover',display:'block'}}/>}
+                      <div style={{padding:'4px 8px',fontSize:9,color:'var(--text3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={img.name}>{img.name}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL FORMULÁRIO */}
+      {modal && form && (
+        <div className="modal-bg">
+          <div className="modal" style={{maxWidth:760}}>
+            <div className="modal-hd">
+              <h2>⚙ Inquiry Form — {form.fornecedor}</h2>
+              <button className="modal-close" onClick={function(){setModal(false);}}>✕</button>
+            </div>
+
+            {/* Fornecedor */}
+            <div className="grid-3" style={{marginBottom:10}}>
+              <div className="field">
+                <label>Fornecedor</label>
+                <select value={form.fornecedor} onChange={function(e){setForm(Object.assign({},form,{fornecedor:e.target.value}));}} style={inp}>
+                  {INQUIRY_SUPPS.map(function(s){ return <option key={s} value={s}>{s}</option>; })}
+                </select>
+              </div>
+              <div className="field">
+                <label>Status</label>
+                <select value={form.status} onChange={function(e){setForm(Object.assign({},form,{status:e.target.value}));}} style={inp}>
+                  <option value="em_andamento">Em andamento</option>
+                  <option value="aguardando">Aguardando</option>
+                  <option value="aprovado">Aprovado</option>
+                  <option value="reprovado">Reprovado</option>
+                </select>
+              </div>
+              <div className="field"><label>Responsável</label><input value={form.responsavel||''} onChange={function(e){setForm(Object.assign({},form,{responsavel:e.target.value}));}} style={inp}/></div>
+            </div>
+
+            {/* Dados do cliente */}
+            <div style={{fontSize:10,fontWeight:700,color:'var(--text2)',marginBottom:6,textTransform:'uppercase',letterSpacing:'.06em'}}>Dados do Cliente (Contact Details)</div>
+            <div className="grid-3" style={{marginBottom:10}}>
+              <div className="field"><label>Cliente / Empresa *</label><input value={form.cliente||''} onChange={function(e){setForm(Object.assign({},form,{cliente:e.target.value}));}} style={inp} autoFocus/></div>
+              <div className="field"><label>Nome do Contato</label><input value={form.contato||''} onChange={function(e){setForm(Object.assign({},form,{contato:e.target.value}));}} style={inp}/></div>
+              <div className="field"><label>Telefone</label><input value={form.telefone||''} onChange={function(e){setForm(Object.assign({},form,{telefone:e.target.value}));}} style={inp}/></div>
+            </div>
+            <div className="grid-2" style={{marginBottom:10}}>
+              <div className="field"><label>E-mail</label><input value={form.email||''} onChange={function(e){setForm(Object.assign({},form,{email:e.target.value}));}} style={inp}/></div>
+              <div className="field"><label>Projeto / Aplicação *</label><input value={form.projeto||''} onChange={function(e){setForm(Object.assign({},form,{projeto:e.target.value}));}} style={inp}/></div>
+            </div>
+
+            {/* Campos específicos 3ARM */}
+            {is3arm && (
+              <div>
+                <div style={{fontSize:10,fontWeight:700,color:'#60A5FA',marginBottom:6,textTransform:'uppercase',letterSpacing:'.06em'}}>3ARM — Kind of Tool</div>
+                <div className="grid-3" style={{marginBottom:8}}>
+                  <div className="field"><label>Marca da ferramenta</label><input value={form.marca||''} onChange={function(e){setForm(Object.assign({},form,{marca:e.target.value}));}} style={inp} placeholder="Ex: Bosch, Milwaukee"/></div>
+                  <div className="field"><label>Peso máx. (kg)</label><input type="number" value={form.peso||''} onChange={function(e){setForm(Object.assign({},form,{peso:e.target.value}));}} style={inp}/></div>
+                  <div className="field"><label>Torque máx. (Nm)</label><input type="number" value={form.torqueMax||''} onChange={function(e){setForm(Object.assign({},form,{torqueMax:e.target.value}));}} style={inp}/></div>
+                </div>
+                <div style={{marginBottom:8}}>
+                  <label style={{display:'block',fontSize:10,fontWeight:600,color:'var(--text2)',marginBottom:4,textTransform:'uppercase',letterSpacing:'.05em'}}>Tipo de ferramenta</label>
+                  <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
+                    {['Esmerilhadeira','Furadeira','Furadeira magnética','Chave de impacto','Ferramenta de aperto'].map(function(t){
+                      const arr = form.tipoFerramenta||[];
+                      const on  = arr.includes(t);
+                      return <label key={t} style={{display:'flex',gap:5,alignItems:'center',fontSize:11,cursor:'pointer'}}>
+                        <input type="checkbox" checked={on} onChange={function(){
+                          setForm(Object.assign({},form,{tipoFerramenta:on?arr.filter(function(x){return x!==t;}):[...arr,t]}));
+                        }}/>{t}</label>;
+                    })}
+                  </div>
+                </div>
+                <div style={{fontSize:10,fontWeight:700,color:'#60A5FA',marginBottom:6,textTransform:'uppercase',letterSpacing:'.06em'}}>Working Conditions</div>
+                <div style={{display:'flex',gap:16,flexWrap:'wrap',marginBottom:8}}>
+                  {[['Vertical','vertical'],['Horizontal','horizontal'],['Qualquer ângulo','qualquer']].map(function(p){
+                    const arr=form.posicao||[];
+                    const on=arr.includes(p[1]);
+                    return <label key={p[1]} style={{display:'flex',gap:5,alignItems:'center',fontSize:11,cursor:'pointer'}}>
+                      <input type="checkbox" checked={on} onChange={function(){ setForm(Object.assign({},form,{posicao:on?arr.filter(function(x){return x!==p[1];}):[...arr,p[1]]})); }}/>{p[0]}</label>;
+                  })}
+                  <label style={{display:'flex',gap:5,alignItems:'center',fontSize:11,cursor:'pointer'}}>
+                    <input type="checkbox" checked={!!form.reacaoBar} onChange={function(){setForm(Object.assign({},form,{reacaoBar:!form.reacaoBar}));}}/> Usa barra de reação
+                  </label>
+                  <label style={{display:'flex',gap:5,alignItems:'center',fontSize:11,cursor:'pointer'}}>
+                    <input type="checkbox" checked={!!form.movimentaEstacao} onChange={function(){setForm(Object.assign({},form,{movimentaEstacao:!form.movimentaEstacao}));}}/> Move de estação
+                  </label>
+                  <label style={{display:'flex',gap:5,alignItems:'center',fontSize:11,cursor:'pointer'}}>
+                    <input type="checkbox" checked={!!form.trocaFerramenta} onChange={function(){setForm(Object.assign({},form,{trocaFerramenta:!form.trocaFerramenta}));}}/> Troca de ferramenta
+                  </label>
+                </div>
+                <div style={{fontSize:10,fontWeight:700,color:'#60A5FA',marginBottom:6,textTransform:'uppercase',letterSpacing:'.06em'}}>Work Place</div>
+                <div className="grid-4" style={{marginBottom:8}}>
+                  <div className="field"><label>Altura mín. (mm)</label><input type="number" value={form.alturaMin||''} onChange={function(e){setForm(Object.assign({},form,{alturaMin:e.target.value}));}} style={inp}/></div>
+                  <div className="field"><label>Altura máx. (mm)</label><input type="number" value={form.alturaMax||''} onChange={function(e){setForm(Object.assign({},form,{alturaMax:e.target.value}));}} style={inp}/></div>
+                  <div className="field"><label>Alcance (mm)</label><input type="number" value={form.alcance||''} onChange={function(e){setForm(Object.assign({},form,{alcance:e.target.value}));}} style={inp}/></div>
+                  <div className="field">
+                    <label>Montagem</label>
+                    <select value={form.montagem||'bottom'} onChange={function(e){setForm(Object.assign({},form,{montagem:e.target.value}));}} style={inp}>
+                      <option value="top">Top mount</option>
+                      <option value="bottom">Bottom mount</option>
+                    </select>
+                  </div>
+                </div>
+                <div style={{display:'flex',gap:16,marginBottom:8,flexWrap:'wrap'}}>
+                  <label style={{display:'flex',gap:5,alignItems:'center',fontSize:11,cursor:'pointer'}}>
+                    <input type="checkbox" checked={!!form.fotos} onChange={function(){setForm(Object.assign({},form,{fotos:!form.fotos}));}}/> Pode fornecer fotos/sketch
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {/* Campos específicos LÜBBERING */}
+            {isLub && (
+              <div>
+                <div style={{fontSize:10,fontWeight:700,color:'#60A5FA',marginBottom:6,textTransform:'uppercase',letterSpacing:'.06em'}}>LÜBBERING — Dados Técnicos (Technical Details)</div>
+                <div className="grid-4" style={{marginBottom:8}}>
+                  <div className="field">
+                    <label>Min / Max</label>
+                    <select value={form.lubMinMax||'min'} onChange={function(e){setForm(Object.assign({},form,{lubMinMax:e.target.value}));}} style={inp}>
+                      <option value="min">Mínimo</option>
+                      <option value="max">Máximo</option>
+                    </select>
+                  </div>
+                  <div className="field"><label>Torque (Nm)</label><input type="number" value={form.lubTorque||''} onChange={function(e){setForm(Object.assign({},form,{lubTorque:e.target.value}));}} style={inp}/></div>
+                  <div className="field"><label>Precisão</label><input value={form.lubPrecisao||''} onChange={function(e){setForm(Object.assign({},form,{lubPrecisao:e.target.value}));}} style={inp} placeholder="±5%"/></div>
+                  <div className="field"><label>Tamanho soquete (mm)</label><input value={form.lubSocket||''} onChange={function(e){setForm(Object.assign({},form,{lubSocket:e.target.value}));}} style={inp}/></div>
+                </div>
+                <div className="grid-2" style={{marginBottom:8}}>
+                  <div className="field">
+                    <label>Tipo de output (saída)</label>
+                    <select value={form.lubOutput||''} onChange={function(e){setForm(Object.assign({},form,{lubOutput:e.target.value}));}} style={inp}>
+                      <option value="">Selecione...</option>
+                      <option value="closed_offset_1">Closed offset (tipo 1)</option>
+                      <option value="closed_offset_2">Closed offset (tipo 2)</option>
+                      <option value="open_offset">Open offset</option>
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label>Tipo de adaptação</label>
+                    <select value={form.lubAdaptacao||''} onChange={function(e){setForm(Object.assign({},form,{lubAdaptacao:e.target.value}));}} style={inp}>
+                      <option value="">Selecione...</option>
+                      <option value="90">Angle head 90°</option>
+                      <option value="110">Angle head 110°</option>
+                      <option value="reto">Straight spindle</option>
+                      <option value="pistola">Pistol grip</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Campos genéricos (todos os fornecedores) */}
+            <div style={{fontSize:10,fontWeight:700,color:'var(--text2)',marginBottom:6,marginTop:10,textTransform:'uppercase',letterSpacing:'.06em'}}>Processo e Aplicação</div>
+            <div className="grid-3" style={{marginBottom:10}}>
+              <div className="field"><label>Descrição do processo</label><input value={form.descProcesso||''} onChange={function(e){setForm(Object.assign({},form,{descProcesso:e.target.value}));}} style={inp} placeholder="Montagem de rodas, flange, etc."/></div>
+              <div className="field"><label>Volume / turno</label><input value={form.volumeProd||''} onChange={function(e){setForm(Object.assign({},form,{volumeProd:e.target.value}));}} style={inp}/></div>
+              <div className="field"><label>Ciclo (min)</label><input value={form.cicloMin||''} onChange={function(e){setForm(Object.assign({},form,{cicloMin:e.target.value}));}} style={inp}/></div>
+            </div>
+            <div className="grid-2" style={{marginBottom:10}}>
+              <div className="field"><label>Ergonomia / fadiga atual</label><input value={form.ergonomia||''} onChange={function(e){setForm(Object.assign({},form,{ergonomia:e.target.value}));}} style={inp}/></div>
+              <div className="field"><label>Risco / problema atual</label><input value={form.risco||''} onChange={function(e){setForm(Object.assign({},form,{risco:e.target.value}));}} style={inp}/></div>
+            </div>
+            <div className="field" style={{marginBottom:10}}>
+              <label>Observações / Notes</label>
+              <textarea value={form.obs||''} onChange={function(e){setForm(Object.assign({},form,{obs:e.target.value}));}} style={{width:'100%',height:60,resize:'vertical'}}/>
+            </div>
+
+            {/* Upload de mídias */}
+            <div style={{marginBottom:14}}>
+              <label style={{display:'block',fontSize:10,fontWeight:600,color:'var(--text2)',marginBottom:6,textTransform:'uppercase',letterSpacing:'.05em'}}>
+                Imagens e vídeos do processo
+              </label>
+              <label className="btn btn-secondary" style={{cursor:'pointer',display:'inline-flex',gap:6,marginBottom:8}}>
+                📎 Adicionar mídia
+                <input type="file" accept="image/*,video/*" multiple style={{display:'none'}} onChange={handleImages}/>
+              </label>
+              {form.imagens&&form.imagens.length>0 && (
+                <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                  {form.imagens.map(function(img,i){
+                    const isVid = img.type&&img.type.startsWith('video/');
+                    return (
+                      <div key={i} style={{position:'relative',borderRadius:6,overflow:'hidden',border:'1px solid var(--border)',width:90,height:70,background:'var(--bg3)'}}>
+                        {isVid
+                          ? <video src={img.data} style={{width:'100%',height:'100%',objectFit:'cover'}}/>
+                          : <img src={img.data} alt={img.name} style={{width:'100%',height:'100%',objectFit:'cover'}}/>}
+                        <button onClick={function(){removeImagem(i);}} style={{position:'absolute',top:2,right:2,width:16,height:16,borderRadius:'50%',background:'rgba(0,0,0,.7)',border:'none',color:'#fff',fontSize:9,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1}}>✕</button>
+                        {isVid&&<div style={{position:'absolute',bottom:2,left:2,fontSize:8,color:'#fff',background:'rgba(0,0,0,.5)',borderRadius:3,padding:'1px 3px'}}>▶ vídeo</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div style={{display:'flex',gap:8}}>
+              <button className="btn btn-primary" onClick={saveForm} style={{flex:1}}>💾 Salvar</button>
+              <button className="btn btn-secondary" onClick={function(){setModal(false);}}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── APP PRINCIPAL ────────────────────────────────────────────
 function App() {
   const [session, setSession] = useState(function(){ return load(KEYS.session, null); });
   const [view, setView] = useState('forecast');
   const [showSettings, setShowSettings] = useState(false);
   const [showPerfil, setShowPerfil] = useState(false);
+  const [corDia, setCorDia] = useState(function(){ return load('crm_cor_dia',''); });
 
   useEffect(function(){ initUsers(); }, []);
 
@@ -1670,16 +2452,37 @@ function App() {
     return <Login onLogin={function(u){ setSession(u); save(KEYS.session, u); }}/>;
   }
 
-  const isGestor    = session.role === 'gestor';
-  const isConsultor = session.role === 'consultor';
-  const isVendedor  = session.role === 'vendedor';
+  const isGestor      = session.role === 'gestor';
+  const isConsultor   = session.role === 'consultor';
+  const isEspecialista= session.role === 'especialista';
+  const settings      = load(KEYS.settings, {specialistLabel:'Especialista'});
+  const espLabel      = settings.specialistLabel || 'Especialista';
 
-  const settings = load(KEYS.settings, {specialistLabel:'Especialista'});
+  const COR_DIA_OPTS = [
+    {c:'',        label:'Padrão',      border:'var(--border)'},
+    {c:'#4A90D9', label:'Azul',        border:'#4A90D9'},
+    {c:'#27AE60', label:'Verde',       border:'#27AE60'},
+    {c:'#E67E22', label:'Laranja',     border:'#E67E22'},
+    {c:'#8E44AD', label:'Roxo',        border:'#8E44AD'},
+    {c:'#C0392B', label:'Vermelho',    border:'#C0392B'},
+  ];
+
+  function setCorDiaVal(c){
+    setCorDia(c);
+    save('crm_cor_dia', c);
+    // Aplicar cor no CSS
+    if(c) document.documentElement.style.setProperty('--accent', c);
+    else   document.documentElement.style.removeProperty('--accent');
+  }
 
   const NAV = [
-    {id:'forecast', icon:'📊', label:'Forecast'},
-    {id:'clientes', icon:'👥', label:'Clientes'},
-    {id:'budget',   icon:'💰', label:'Budget'},
+    {id:'forecast',    icon:'📊', label:'Forecast'},
+    {id:'clientes',    icon:'👥', label:'Clientes'},
+    {id:'budget',      icon:'💰', label:'Budget'},
+    {id:'divider1',    divider:true},
+    {id:'demo',        icon:'🔧', label:'Demonstração'},
+    {id:'estoque',     icon:'📦', label:'Estoque'},
+    {id:'projetos',    icon:'⚙',  label:'Projetos'},
   ];
 
   function handleLogout() {
@@ -1692,6 +2495,9 @@ function App() {
     if (view==='forecast') return <ViewForecast session={session} isGestor={isGestor} isConsultor={isConsultor}/>;
     if (view==='clientes') return <ViewClientes session={session}/>;
     if (view==='budget')   return <ViewBudget   session={session} isGestor={isGestor}/>;
+    if (view==='demo')     return <ViewDemo     session={session} isGestor={isGestor} isEspecialista={isEspecialista}/>;
+    if (view==='estoque')  return <ViewEstoque  session={session}/>;
+    if (view==='projetos') return <ViewProjetos session={session} isGestor={isGestor} isEspecialista={isEspecialista}/>;
     return <div style={{padding:20,color:'var(--text3)'}}>Em desenvolvimento...</div>;
   }
 
@@ -1699,9 +2505,40 @@ function App() {
     <div className="crm">
       <Sidebar view={view} setView={setView} items={NAV}/>
       <div className="main">
-        <Topbar session={session} view={view} views={NAV}
-          onSettings={function(){setShowSettings(true);}}
-          onProfile={function(){setShowPerfil(true);}}/>
+        {/* TOPBAR com cor do dia */}
+        <div className="topbar" style={corDia?{borderBottom:'2px solid '+corDia}:{}}>
+          <div style={{display:'flex',alignItems:'center',gap:6,opacity:.85}}>
+            {(function(){
+              try{
+                var logoB64 = document.querySelector('link[rel="icon"]');
+                if(logoB64) return <img src={logoB64.href} style={{width:28,height:28,objectFit:'contain',borderRadius:4}} alt="logo"/>;
+              }catch(ex){}
+              return null;
+            })()}
+            <span style={{fontSize:11,fontWeight:800,letterSpacing:'.08em',color:'var(--text2)'}}>SINUELO</span>
+          </div>
+          <span className="topbar-title">
+            {(NAV.find(function(v){return v.id===view;})||{}).label||view}
+          </span>
+          <div className="topbar-right">
+            {/* Cor do dia */}
+            <div style={{display:'flex',gap:3,alignItems:'center',marginRight:4}} title="Cor do dia">
+              {COR_DIA_OPTS.map(function(opt){
+                var selected = corDia===opt.c;
+                return (
+                  <button key={opt.c} onClick={function(){setCorDiaVal(opt.c);}}
+                    title={opt.label}
+                    style={{width:14,height:14,borderRadius:'50%',background:opt.c||'var(--bg3)',border:'2px solid '+(selected?'#fff':opt.border),cursor:'pointer',padding:0,flexShrink:0,transition:'transform .1s',transform:selected?'scale(1.3)':'scale(1)'}}>
+                  </button>
+                );
+              })}
+            </div>
+            <button className="tb-btn" onClick={function(){setShowSettings(true);}} title="Configurações">⚙</button>
+            <button className="avatar-btn" onClick={function(){setShowPerfil(true);}} title={session.name} style={corDia?{background:corDia}:{}}>
+              {initials(session.name)}
+            </button>
+          </div>
+        </div>
         <div className="content">
           {renderView()}
         </div>
