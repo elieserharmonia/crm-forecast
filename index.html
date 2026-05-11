@@ -5512,7 +5512,7 @@ function App() {
       {selClient && clientView2==="kanban" && (()=>{
         const c = selClient;
         const clientOpps = oppFc.filter(o=>(o.customer&&c.alias&&o.customer.toLowerCase().includes(c.alias.toLowerCase()))||o.customer===c.alias)
-        const clientOppVal = clientOpps.reduce((s,o)=>s+(o.value||0),0);
+        const clientOppVal = clientOpps.reduce((s,o)=>{const a=parseFloat(String(o.amount||"0").replace(/[^0-9.]/g,""))||0;return s+a;},0);
 
         async function loadNews(){
           setClientNews([{title:"Funcionalidade de notícias requer configuração de proxy. Use o Radar de Mercado na aba 🧠 Inteligência.",url:"",description:"",source:"",age:""}]);
@@ -5526,7 +5526,7 @@ function App() {
               <div style={{background:"linear-gradient(135deg,rgba(140,26,26,0.85),rgba(20,20,40,0.95))",padding:"24px 28px",display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                 <div style={{display:"flex",alignItems:"center",gap:"16px"}}>
                   <div style={{width:"56px",height:"56px",borderRadius:"12px",background:"rgba(255,255,255,0.1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"24px",fontWeight:700,color:"#FFD0D0",flexShrink:0}}>
-                    {(c.alias?c.alias[0]:"?")&&toUpperCase()||"?"}
+                    {c.alias&&c.alias[0]?c.alias[0].toUpperCase():"?"}
                   </div>
                   <div>
                     <div style={{fontSize:"20px",fontWeight:700,color:"#fff",marginBottom:"2px"}}>{c.alias}</div>
