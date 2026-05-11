@@ -947,9 +947,12 @@ var var_radius = 'var(--radius)';
 
 // ─── VIEW: CLIENTES ──────────────────────────────────────────
 function ViewClientes({ session }) {
-  const [clients, setClients] = useState(function(){ return load(KEYS.clients, []); });
-  const [search, setSearch] = useState('');
-  const [sel, setSel] = useState(null);
+  const [clients,    setClients]    = useState(function(){ return load(KEYS.clients, []); });
+  const [search,     setSearch]     = useState('');
+  const [sel,        setSel]        = useState(null);
+  const [editMode,   setEditMode]   = useState(false);   // editar cliente
+  const [editClient, setEditClient] = useState(null);    // cópia editável
+  const [editCtcIdx, setEditCtcIdx] = useState(null);    // índice contato em edição
 
   function saveClients(list) { setClients(list); save(KEYS.clients, list); }
 
@@ -1068,73 +1071,172 @@ function ViewClientes({ session }) {
       {/* Perfil do cliente */}
       {sel && (
         <div className="modal-bg">
-          <div className="modal" style={{maxWidth:660}}>
+          <div className="modal" style={{maxWidth:700}}>
             <div className="modal-hd">
               <div>
                 <h2>{sel.apelido}</h2>
                 <div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>{sel.nome}</div>
               </div>
-              <button className="modal-close" onClick={function(){setSel(null);}}>✕</button>
+              <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                <button className="btn btn-secondary" style={{fontSize:11,padding:'5px 10px'}}
+                  onClick={function(){ setEditClient(JSON.parse(JSON.stringify(sel))); setEditMode(true); setEditCtcIdx(null); }}>
+                  ✏️ Editar cliente
+                </button>
+                <button className="modal-close" onClick={function(){setSel(null);setEditMode(false);}}>✕</button>
+              </div>
             </div>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:14}}>
-              {[
-                {l:'CNPJ',     v:sel.cnpj},
-                {l:'Cidade/UF',v:sel.cidade+(sel.estado?' / '+sel.estado:'')},
-                {l:'Segmento', v:sel.segmento},
-                {l:'Região',   v:sel.regiao},
-                {l:'Vendedor', v:sel.vendedor},
-                {l:'Endereço', v:sel.endereco+(sel.cep?' - CEP '+sel.cep:'')},
-              ].map(function(f,i){
-                return (
-                  <div key={i} style={{background:'var(--bg3)',borderRadius:6,padding:'8px 10px'}}>
-                    <div style={{fontSize:9,color:'var(--text3)',marginBottom:3,textTransform:'uppercase',letterSpacing:'.05em'}}>{f.l}</div>
-                    <div style={{fontSize:12,color:'var(--text2)'}}>{f.v||'—'}</div>
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{fontSize:10,fontWeight:600,color:'var(--text2)',marginBottom:8,textTransform:'uppercase',letterSpacing:'.05em'}}>
-              Contatos ({sel.contatos.length})
-            </div>
-            {sel.contatos.length===0 ? (
-              <div style={{color:'var(--text3)',fontSize:12,padding:'12px 0'}}>Nenhum contato cadastrado.</div>
-            ) : (
-              <table className="tbl" style={{marginBottom:8}}>
-                <thead>
-                  <tr>
-                    <th>NOME</th><th>DEPARTAMENTO</th><th>TEL.</th><th>CEL.</th><th>E-MAIL</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sel.contatos.map(function(ct,i){
-                    const waNum = (ct.cel||ct.tel||'').replace(/\D/g,'');
-                    const waUrl = 'https://wa.me/55'+waNum;
+
+            {/* MODO EDIÇÃO */}
+            {editMode && editClient ? (
+              <div>
+                <div style={{fontSize:10,fontWeight:700,color:'var(--text2)',marginBottom:8,textTransform:'uppercase',letterSpacing:'.06em'}}>Dados da empresa</div>
+                <div className="grid-2" style={{marginBottom:8}}>
+                  {[
+                    {k:'apelido',l:'Apelido / Nome curto'},{k:'nome',l:'Nome completo'},
+                    {k:'cnpj',l:'CNPJ'},{k:'segmento',l:'Segmento'},
+                    {k:'cidade',l:'Cidade'},{k:'estado',l:'Estado'},
+                    {k:'cep',l:'CEP'},{k:'regiao',l:'Região'},
+                    {k:'vendedor',l:'Vendedor'},
+                  ].map(function(f){
                     return (
-                      <tr key={i}>
-                        <td style={{fontWeight:600}}>{ct.nome}</td>
-                        <td style={{color:'var(--text3)',fontSize:10}}>{ct.dpto}</td>
-                        <td style={{color:'var(--text3)',fontSize:10}}>{ct.tel}</td>
-                        <td style={{color:'var(--text3)',fontSize:10}}>{ct.cel}</td>
-                        <td style={{fontSize:10}}>
-                          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}>
-                            <span style={{color:'#60A5FA'}}>{ct.email}</span>
-                            {waNum && (
-                              <a href={waUrl} target="_blank" rel="noopener noreferrer"
-                                title={'WhatsApp: '+ct.cel}
-                                style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:22,height:22,borderRadius:5,background:'rgba(37,211,102,0.15)',border:'1px solid rgba(37,211,102,0.3)',textDecoration:'none',flexShrink:0}}>
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="#25D166">
-                                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
-                                  <path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.553 4.116 1.522 5.847L.057 23.5l5.796-1.521A11.94 11.94 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.938a9.908 9.908 0 01-5.032-1.374l-.361-.214-3.741.981.999-3.648-.235-.374A9.86 9.86 0 012.062 12C2.062 6.792 6.792 2.062 12 2.062S21.938 6.792 21.938 12 17.208 21.938 12 21.938z"/>
-                                </svg>
-                              </a>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
+                      <div key={f.k} className="field">
+                        <label>{f.l}</label>
+                        <input value={editClient[f.k]||''} onChange={function(e){
+                          setEditClient(Object.assign({},editClient,{[f.k]:e.target.value}));
+                        }} style={{width:'100%'}}/>
+                      </div>
                     );
                   })}
-                </tbody>
-              </table>
+                </div>
+                <div className="field" style={{marginBottom:12}}>
+                  <label>Endereço</label>
+                  <input value={editClient.endereco||''} onChange={function(e){setEditClient(Object.assign({},editClient,{endereco:e.target.value}));}} style={{width:'100%'}}/>
+                </div>
+
+                {/* Contatos editáveis */}
+                <div style={{fontSize:10,fontWeight:700,color:'var(--text2)',marginBottom:8,textTransform:'uppercase',letterSpacing:'.06em'}}>
+                  Contatos ({(editClient.contatos||[]).length})
+                </div>
+                {(editClient.contatos||[]).map(function(ct,i){
+                  var isEditing = editCtcIdx===i;
+                  return (
+                    <div key={i} style={{background:'var(--bg3)',borderRadius:6,padding:'8px 10px',marginBottom:6,border:'1px solid '+(isEditing?'var(--blue)':'var(--border)')}}>
+                      {isEditing ? (
+                        <div>
+                          <div className="grid-3" style={{marginBottom:6}}>
+                            {[{k:'nome',l:'Nome'},{k:'dpto',l:'Departamento'},{k:'tel',l:'Telefone'},{k:'cel',l:'Celular'},{k:'email',l:'E-mail'}].map(function(f){
+                              return (
+                                <div key={f.k} className="field" style={{marginBottom:4}}>
+                                  <label>{f.l}</label>
+                                  <input value={ct[f.k]||''} onChange={function(e){
+                                    var nc = (editClient.contatos||[]).map(function(x,xi){ return xi===i?Object.assign({},x,{[f.k]:e.target.value}):x; });
+                                    setEditClient(Object.assign({},editClient,{contatos:nc}));
+                                  }} style={{width:'100%',padding:'4px 8px',fontSize:11}}/>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div style={{display:'flex',gap:6}}>
+                            <button className="btn btn-primary" style={{padding:'4px 10px',fontSize:11}} onClick={function(){setEditCtcIdx(null);}}>✓ Ok</button>
+                            <button onClick={function(){
+                              var nc=(editClient.contatos||[]).filter(function(_,xi){return xi!==i;});
+                              setEditClient(Object.assign({},editClient,{contatos:nc}));
+                              setEditCtcIdx(null);
+                            }} style={{background:'none',border:'1px solid #DC2626',borderRadius:6,color:'#F87171',cursor:'pointer',padding:'4px 10px',fontSize:11}}>🗑 Remover</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                          <div>
+                            <span style={{fontWeight:600,fontSize:12}}>{ct.nome}</span>
+                            <span style={{fontSize:10,color:'var(--text3)',marginLeft:8}}>{ct.dpto}</span>
+                            <span style={{fontSize:10,color:'var(--text3)',marginLeft:8}}>{ct.cel||ct.tel}</span>
+                          </div>
+                          <button onClick={function(){setEditCtcIdx(i);}} style={{background:'none',border:'1px solid var(--border)',borderRadius:5,color:'var(--text3)',cursor:'pointer',padding:'3px 8px',fontSize:10}}>✏️ Editar</button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                <button className="btn btn-secondary" style={{fontSize:11,marginBottom:12}} onClick={function(){
+                  var nc=[...(editClient.contatos||[]),{nome:'',dpto:'',tel:'',cel:'',email:''}];
+                  setEditClient(Object.assign({},editClient,{contatos:nc}));
+                  setEditCtcIdx(nc.length-1);
+                }}>+ Novo contato</button>
+
+                <div style={{display:'flex',gap:8}}>
+                  <button className="btn btn-primary" onClick={function(){
+                    var updated = clients.map(function(c){ return c.id===editClient.id?editClient:c; });
+                    saveClients(updated);
+                    setSel(editClient);
+                    setEditMode(false);
+                  }} style={{flex:1}}>💾 Salvar alterações</button>
+                  <button className="btn btn-secondary" onClick={function(){setEditMode(false);}}>Cancelar</button>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:14}}>
+                  {[
+                    {l:'CNPJ',     v:sel.cnpj},
+                    {l:'Cidade/UF',v:sel.cidade+(sel.estado?' / '+sel.estado:'')},
+                    {l:'Segmento', v:sel.segmento},
+                    {l:'Região',   v:sel.regiao},
+                    {l:'Vendedor', v:sel.vendedor},
+                    {l:'Endereço', v:sel.endereco+(sel.cep?' - CEP '+sel.cep:'')},
+                  ].map(function(f,i){
+                    return (
+                      <div key={i} style={{background:'var(--bg3)',borderRadius:6,padding:'8px 10px'}}>
+                        <div style={{fontSize:9,color:'var(--text3)',marginBottom:3,textTransform:'uppercase',letterSpacing:'.05em'}}>{f.l}</div>
+                        <div style={{fontSize:12,color:'var(--text2)'}}>{f.v||'—'}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{fontSize:10,fontWeight:600,color:'var(--text2)',marginBottom:8,textTransform:'uppercase',letterSpacing:'.05em'}}>
+                  Contatos ({sel.contatos.length})
+                </div>
+                {sel.contatos.length===0 ? (
+                  <div style={{color:'var(--text3)',fontSize:12,padding:'12px 0'}}>Nenhum contato cadastrado.</div>
+                ) : (
+                  <table className="tbl" style={{marginBottom:8}}>
+                    <thead>
+                      <tr>
+                        <th>NOME</th><th>DEPARTAMENTO</th><th>TEL.</th><th>CEL.</th><th>E-MAIL</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sel.contatos.map(function(ct,i){
+                        const waNum = (ct.cel||ct.tel||'').replace(/\D/g,'');
+                        const waUrl = 'https://wa.me/55'+waNum;
+                        return (
+                          <tr key={i}>
+                            <td style={{fontWeight:600}}>{ct.nome}</td>
+                            <td style={{color:'var(--text3)',fontSize:10}}>{ct.dpto}</td>
+                            <td style={{color:'var(--text3)',fontSize:10}}>{ct.tel}</td>
+                            <td style={{color:'var(--text3)',fontSize:10}}>{ct.cel}</td>
+                            <td style={{fontSize:10}}>
+                              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}>
+                                <span style={{color:'#60A5FA'}}>{ct.email}</span>
+                                {waNum && (
+                                  <a href={waUrl} target="_blank" rel="noopener noreferrer"
+                                    title={'WhatsApp: '+ct.cel}
+                                    style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:22,height:22,borderRadius:5,background:'rgba(37,211,102,0.15)',border:'1px solid rgba(37,211,102,0.3)',textDecoration:'none',flexShrink:0}}>
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="#25D166">
+                                      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+                                      <path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.553 4.116 1.522 5.847L.057 23.5l5.796-1.521A11.94 11.94 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.938a9.908 9.908 0 01-5.032-1.374l-.361-.214-3.741.981.999-3.648-.235-.374A9.86 9.86 0 012.062 12C2.062 6.792 6.792 2.062 12 2.062S21.938 6.792 21.938 12 17.208 21.938 12 21.938z"/>
+                                    </svg>
+                                  </a>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -1689,11 +1791,15 @@ function ModalPerfil({ session, onClose, onLogout }) {
 
 // ─── VIEW: DEMONSTRAÇÃO ──────────────────────────────────────
 function ViewDemo({ session, isGestor, isEspecialista }) {
-  const [demos,    setDemos]    = useState(function(){ return load(KEYS.demo, []); });
-  const [estDemo,  setEstDemo]  = useState(function(){ return load(KEYS.estoque+'_demo', []); });
-  const [modal,    setModal]    = useState(false);
-  const [form,     setForm]     = useState(null);
-  const [search,   setSearch]   = useState('');
+  const [demos,       setDemos]      = useState(function(){ return load(KEYS.demo, []); });
+  const [estDemo,     setEstDemo]    = useState(function(){ return load(KEYS.estoque+'_demo', []); });
+  const [modal,       setModal]      = useState(false);
+  const [form,        setForm]       = useState(null);
+  const [search,      setSearch]     = useState('');
+  // Autocomplete estados (nível correto — fora do IIFE)
+  const [cliSearch,   setCliSearch]  = useState('');
+  const [showCliList, setShowCliList]= useState(false);
+  const [contatoSel,  setContatoSel] = useState('');
   const settings = load(KEYS.settings, {});
 
   const EMPTY_DEMO = {
@@ -1712,9 +1818,14 @@ function ViewDemo({ session, isGestor, isEspecialista }) {
   function openNew(){
     const seq = String(demos.length+1).padStart(3,'0');
     setForm(Object.assign({}, EMPTY_DEMO, {id:'demo_'+Date.now(), seq}));
+    setCliSearch(''); setShowCliList(false); setContatoSel('');
     setModal(true);
   }
-  function openEdit(d){ setForm(Object.assign({},d)); setModal(true); }
+  function openEdit(d){
+    setForm(Object.assign({},d));
+    setCliSearch(''); setShowCliList(false); setContatoSel(d.contato||'');
+    setModal(true);
+  }
 
   function saveForm(){
     if(!form.cliente.trim()){ alert('Informe o cliente.'); return; }
@@ -1908,9 +2019,6 @@ ${d.resultados&&d.resultados.some(function(r){return r.inicio;})? '<div class="s
             {/* Seleção de cliente com autocomplete */}
             {(function(){
               var clientsData = load(KEYS.clients, []);
-              var [cliSearch, setCliSearch] = useState('');
-              var [showCliList, setShowCliList] = useState(false);
-              var [contatoSel, setContatoSel] = useState('');
 
               var cliFiltered = cliSearch.length >= 1
                 ? clientsData.filter(function(c){
@@ -1919,8 +2027,7 @@ ${d.resultados&&d.resultados.some(function(r){return r.inicio;})? '<div class="s
                   }).slice(0,8)
                 : [];
 
-              // Cliente selecionado (pelo apelido atual do form)
-              var cliSel = clientsData.find(function(c){ return c.apelido===form._cliApelido; });
+              var cliSel = clientsData.find(function(c){ return form && c.apelido===form._cliApelido; });
               var contatos = cliSel ? (cliSel.contatos||[]) : [];
 
               function selectCliente(c){
@@ -2592,6 +2699,530 @@ function ViewProjetos({ session, isGestor, isEspecialista }) {
   );
 }
 
+// ─── VIEW: ORÇAMENTO ─────────────────────────────────────────
+function ViewOrcamento({ session, isGestor }) {
+  const [orcs,    setOrcs]    = useState(function(){ return load('crm_orcs_v1', []); });
+  const [modal,   setModal]   = useState(false);
+  const [form,    setForm]    = useState(null);
+  const [search,  setSearch]  = useState('');
+  const [selOrc,  setSelOrc]  = useState(null);
+  const [cliSearch,  setCliSearch]   = useState('');
+  const [showCliDrop,setShowCliDrop] = useState(false);
+
+  function saveOrcs(list){ setOrcs(list); save('crm_orcs_v1', list); }
+
+  const EMPTY_ORC = {
+    id:'', numero:'', cliente:'', _cliApelido:'', contato:'', email:'',
+    supplier:'', descricao:'', oppId:'',
+    itens:[{item:1,posto:'',subposto:'',torque:'',qtd:1,descricao:'',codigo:'',sigma:'',ncm:'',entrega:'',origem:'0 - NACIONAL',unitario:0,icms:0.12,pis:0.0065,cofins:0.03,ipi:0,st:0}],
+    status:'rascunho', data:'', validade:'', obs:'',
+  };
+
+  function openNew(){
+    var num = String(orcs.length+1).padStart(5,'0');
+    setForm(Object.assign({},EMPTY_ORC,{id:'orc_'+Date.now(),numero:'RB'+num+'/'+CUR_YEAR}));
+    setCliSearch(''); setShowCliDrop(false);
+    setModal(true);
+  }
+  function openEdit(o){ setForm(Object.assign({},o)); setCliSearch(''); setShowCliDrop(false); setModal(true); }
+  function deleteOrc(id){ if(confirm('Excluir?')) saveOrcs(orcs.filter(function(o){return o.id!==id;})); }
+
+  function calcItem(it){
+    var u  = parseFloat(it.unitario)||0;
+    var q  = parseFloat(it.qtd)||1;
+    var total = u*q;
+    var semIcms = u*(1-(parseFloat(it.icms)||0)-(parseFloat(it.pis)||0)-(parseFloat(it.cofins)||0));
+    var comIpi  = u+(parseFloat(it.ipi)||0);
+    var comSt   = comIpi+(parseFloat(it.st)||0);
+    return {total:total.toFixed(2), semIcms:semIcms.toFixed(2), comIpi:comIpi.toFixed(2), comSt:comSt.toFixed(2), totalIpi:(comIpi*q).toFixed(2), totalSt:(comSt*q).toFixed(2)};
+  }
+
+  function totais(itens){
+    return itens.reduce(function(acc,it){
+      var c = calcItem(it);
+      return {
+        totalBruto: acc.totalBruto + parseFloat(c.total),
+        totalIpi:   acc.totalIpi   + parseFloat(c.totalIpi),
+        totalSt:    acc.totalSt    + parseFloat(c.totalSt),
+      };
+    },{totalBruto:0,totalIpi:0,totalSt:0});
+  }
+
+  function saveForm(){
+    if(!form.cliente.trim()){alert('Informe o cliente.');return;}
+    var exists = orcs.find(function(o){return o.id===form.id;});
+    var updated = Object.assign({},form,{
+      totalBruto: totais(form.itens||[]).totalBruto,
+      totalIpi:   totais(form.itens||[]).totalIpi,
+    });
+    if(exists) saveOrcs(orcs.map(function(o){return o.id===form.id?updated:o;}));
+    else saveOrcs([updated,...orcs]);
+    setModal(false);
+  }
+
+  function exportPDF(o){
+    var t = totais(o.itens||[]);
+    var rows = (o.itens||[]).map(function(it,i){
+      var c = calcItem(it);
+      return '<tr><td>'+(i+1)+'</td><td>'+(it.posto||'')+'</td><td>'+(it.subposto||'')+'</td><td>'+(it.torque||'')+'</td><td>'+(it.qtd||'')+'</td><td>'+(it.descricao||'')+'</td><td>'+(it.codigo||'')+'</td><td>'+(it.sigma||'')+'</td><td>'+(it.ncm||'')+'</td><td>'+(it.entrega||'')+'</td><td>'+(it.origem||'')+'</td><td>R$'+parseFloat(it.unitario).toFixed(2)+'</td><td>R$'+c.total+'</td><td>'+(Math.round((parseFloat(it.icms)||0)*100))+'%</td><td>'+(Math.round((parseFloat(it.pis)||0)*100*10)/10)+'%</td><td>'+(Math.round((parseFloat(it.cofins)||0)*100))+'%</td><td>'+(it.ipi||0)+'</td><td></td><td>'+(it.st||0)+'</td><td>R$'+c.semIcms+'</td><td>R$'+c.comIpi+'</td><td>R$'+c.comSt+'</td><td>R$'+c.totalIpi+'</td><td>R$'+c.totalSt+'</td></tr>';
+    }).join('');
+    var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'+o.numero+'</title><style>body{font-family:Arial,sans-serif;font-size:8pt;margin:8mm;}h2{font-size:12pt;text-align:center;margin-bottom:6px;}table{width:100%;border-collapse:collapse;font-size:7pt;}td,th{border:1px solid #999;padding:2px 4px;}th{background:#ddd;font-weight:bold;}.hdr{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:10px;}.field{border:1px solid #ccc;padding:4px;}.l{font-size:6.5pt;color:#555;}.totais{margin-top:8px;text-align:right;font-size:9pt;}.footer{margin-top:14px;font-size:7pt;border-top:1px solid #ccc;text-align:center;padding-top:4px;}@media print{body{margin:4mm;}}</style></head><body>';
+    html += '<h2>PLANILHA ORÇAMENTÁRIA — '+o.numero+'</h2>';
+    html += '<div class="hdr"><div class="field"><div class="l">CLIENTE</div>'+o.cliente+'</div><div class="field"><div class="l">CONTATO</div>'+o.contato+'</div><div class="field"><div class="l">FORNECEDOR</div>'+o.supplier+'</div><div class="field"><div class="l">DATA / VALIDADE</div>'+o.data+' / '+o.validade+'</div></div>';
+    html += '<table><thead><tr><th>IT</th><th>POSTO</th><th>SUBP.</th><th>TORQUE</th><th>QDE</th><th>DESCRIÇÃO</th><th>CÓDIGO</th><th>SIGMA</th><th>NCM</th><th>ENTREGA</th><th>ORIGEM</th><th>V.UNIT</th><th>TOTAL</th><th>ICMS</th><th>PIS</th><th>COFINS</th><th>IPI</th><th>V.IPI</th><th>ST</th><th>LÍQ.S/ICMS</th><th>COM IPI</th><th>COM IPI+ST</th><th>TOT.IPI</th><th>TOT.ST</th></tr></thead><tbody>'+rows+'</tbody></table>';
+    html += '<div class="totais"><b>Total bruto:</b> R$'+t.totalBruto.toFixed(2)+' &nbsp;&nbsp; <b>Total com IPI:</b> R$'+t.totalIpi.toFixed(2)+' &nbsp;&nbsp; <b>Total com IPI/ST:</b> R$'+t.totalSt.toFixed(2)+'</div>';
+    if(o.obs) html += '<p style="margin-top:8px;font-size:8pt"><b>Observações:</b> '+o.obs+'</p>';
+    html += '<div class="footer">SINUELO SERVICE LTDA — Rua Antonio Kaminski, 190 - Orleans — Curitiba PR — crm@sinuelo.com | www.sinuelo.com</div></body></html>';
+    var w = window.open('','_blank','width=1100,height=700');
+    w.document.write(html); w.document.close(); w.focus();
+    setTimeout(function(){w.print();},400);
+  }
+
+  var clientsData = load(KEYS.clients,[]);
+  var cliFiltered = cliSearch.length>=1 ? clientsData.filter(function(c){var q=cliSearch.toLowerCase();return (c.apelido&&c.apelido.toLowerCase().includes(q))||(c.nome&&c.nome.toLowerCase().includes(q));}).slice(0,8) : [];
+  var fcOpps = load(KEYS.forecast,[]);
+
+  var statusColor = {rascunho:'#64748B',enviado:'#2563EB',aprovado:'#16A34A',reprovado:'#DC2626'};
+  var statusLabel = {rascunho:'Rascunho',enviado:'Enviado',aprovado:'Aprovado',reprovado:'Reprovado'};
+
+  var filtered = orcs.filter(function(o){
+    if(!search.trim()) return true;
+    var q=search.toLowerCase();
+    return (o.cliente&&o.cliente.toLowerCase().includes(q))||(o.numero&&o.numero.toLowerCase().includes(q))||(o.supplier&&o.supplier.toLowerCase().includes(q));
+  });
+
+  var inp = {width:'100%'};
+  var SUPPLIERS = ['BOSCH IW','BOSCH PT','HS-T','LÜBBERING','MILWAUKEE','MOMENTO','NORBAR','ENERPAC','PANASONIC','STAHLWILLE','STURTEVANT','3ARM','KISTLER','SCHATZ','TECNA','JAGER','NOMUDA','VESSEL','OUTROS'];
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:12,height:'100%'}}>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+        <input value={search} onChange={function(e){setSearch(e.target.value);}} placeholder="Buscar por nº, cliente, fornecedor..." style={{flex:1,minWidth:180}}/>
+        <button className="btn btn-primary" onClick={openNew}>+ Novo orçamento</button>
+      </div>
+
+      {orcs.length===0 ? (
+        <div className="card" style={{textAlign:'center',padding:'60px 20px',color:'var(--text3)'}}>
+          <div style={{fontSize:32,marginBottom:12}}>📝</div>
+          <div style={{fontWeight:600,marginBottom:6}}>Nenhum orçamento</div>
+          <div>Clique em <b>+ Novo orçamento</b> para criar</div>
+        </div>
+      ) : (
+        <div style={{display:'flex',flexDirection:'column',gap:6}}>
+          {filtered.map(function(o){
+            var sc = statusColor[o.status]||'#888';
+            var t  = totais(o.itens||[]);
+            return (
+              <div key={o.id} className="card" style={{display:'flex',gap:12,alignItems:'center',borderLeft:'3px solid '+sc}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:'flex',gap:8,alignItems:'baseline',flexWrap:'wrap',marginBottom:2}}>
+                    <span style={{fontWeight:700,fontSize:12,fontFamily:'monospace',color:'#60A5FA'}}>{o.numero}</span>
+                    <span style={{fontWeight:600,fontSize:13}}>{o.cliente}</span>
+                    {o.supplier && <span style={{fontSize:11,padding:'1px 7px',borderRadius:5,background:'rgba(37,99,235,0.15)',color:'#60A5FA'}}>{o.supplier}</span>}
+                    <span style={{fontSize:10,padding:'1px 7px',borderRadius:5,background:sc+'22',color:sc,fontWeight:600}}>{statusLabel[o.status]||o.status}</span>
+                  </div>
+                  <div style={{fontSize:10,color:'var(--text3)'}}>
+                    {o.data&&o.data+' · '}
+                    {(o.itens||[]).length} iten(s) ·
+                    <b style={{color:'#4ADE80'}}> R${t.totalBruto.toFixed(0)}</b> bruto /
+                    <b style={{color:'#60A5FA'}}> R${t.totalIpi.toFixed(0)}</b> c/ IPI
+                    {o.descricao && ' · '+o.descricao}
+                  </div>
+                </div>
+                <div style={{display:'flex',gap:6,flexShrink:0}}>
+                  <button className="btn btn-secondary" style={{padding:'5px 10px',fontSize:11}} onClick={function(){openEdit(o);}}>✏️</button>
+                  <button className="btn btn-green" style={{padding:'5px 10px',fontSize:11}} onClick={function(){exportPDF(o);}}>📄 PDF</button>
+                  <button onClick={function(){deleteOrc(o.id);}} style={{background:'none',border:'none',color:'var(--text3)',cursor:'pointer',fontSize:13,opacity:.4}} onMouseEnter={function(ev){ev.target.style.opacity=1;}} onMouseLeave={function(ev){ev.target.style.opacity=.4;}}>✕</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* MODAL ORÇAMENTO */}
+      {modal && form && (
+        <div className="modal-bg">
+          <div className="modal" style={{maxWidth:900}}>
+            <div className="modal-hd">
+              <h2>📝 {form.numero}</h2>
+              <button className="modal-close" onClick={function(){setModal(false);}}>✕</button>
+            </div>
+            <div className="grid-4" style={{marginBottom:10}}>
+              <div className="field"><label>Nº Orçamento</label><input value={form.numero||''} onChange={function(e){setForm(Object.assign({},form,{numero:e.target.value}));}} style={inp}/></div>
+              <div className="field"><label>Data</label><input type="date" value={form.data||''} onChange={function(e){setForm(Object.assign({},form,{data:e.target.value}));}} style={inp}/></div>
+              <div className="field"><label>Validade</label><input type="date" value={form.validade||''} onChange={function(e){setForm(Object.assign({},form,{validade:e.target.value}));}} style={inp}/></div>
+              <div className="field">
+                <label>Status</label>
+                <select value={form.status||'rascunho'} onChange={function(e){setForm(Object.assign({},form,{status:e.target.value}));}} style={inp}>
+                  <option value="rascunho">Rascunho</option>
+                  <option value="enviado">Enviado</option>
+                  <option value="aprovado">Aprovado</option>
+                  <option value="reprovado">Reprovado</option>
+                </select>
+              </div>
+            </div>
+            <div className="grid-3" style={{marginBottom:10}}>
+              {/* Cliente autocomplete */}
+              <div className="field" style={{position:'relative'}}>
+                <label>Cliente *</label>
+                {!form._cliApelido ? (
+                  <div>
+                    <input value={cliSearch} onChange={function(e){setCliSearch(e.target.value);setShowCliDrop(true);}} onFocus={function(){setShowCliDrop(true);}} placeholder="Buscar empresa..." style={inp}/>
+                    {showCliDrop && cliFiltered.length>0 && (
+                      <div style={{position:'absolute',top:'100%',left:0,right:0,zIndex:50,background:'var(--bg3)',border:'1px solid var(--blue)',borderRadius:'0 0 8px 8px',maxHeight:200,overflowY:'auto',boxShadow:'0 8px 24px rgba(0,0,0,.5)'}}>
+                        {cliFiltered.map(function(c){
+                          return <div key={c.id||c.apelido} onClick={function(){
+                            setForm(Object.assign({},form,{_cliApelido:c.apelido,cliente:c.apelido,contato:(c.contatos&&c.contatos[0]?c.contatos[0].nome:''),email:(c.contatos&&c.contatos[0]?c.contatos[0].email:'')}));
+                            setCliSearch(''); setShowCliDrop(false);
+                          }} style={{padding:'8px 12px',cursor:'pointer',borderBottom:'1px solid var(--border2)'}} onMouseEnter={function(ev){ev.currentTarget.style.background='rgba(37,99,235,.15)';}} onMouseLeave={function(ev){ev.currentTarget.style.background='transparent';}}>
+                            <div style={{fontWeight:600,fontSize:12}}>{c.apelido}</div>
+                            <div style={{fontSize:10,color:'var(--text3)'}}>{c.nome}</div>
+                          </div>;
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{display:'flex',alignItems:'center',gap:6,background:'rgba(37,99,235,.1)',border:'1px solid rgba(37,99,235,.3)',borderRadius:8,padding:'7px 10px'}}>
+                    <span style={{flex:1,fontWeight:600,fontSize:12}}>{form.cliente}</span>
+                    <button onClick={function(){setForm(Object.assign({},form,{_cliApelido:'',cliente:''}));setCliSearch('');}} style={{background:'none',border:'none',color:'var(--text3)',cursor:'pointer',fontSize:14}}>✕</button>
+                  </div>
+                )}
+              </div>
+              <div className="field"><label>Contato</label><input value={form.contato||''} onChange={function(e){setForm(Object.assign({},form,{contato:e.target.value}));}} style={inp}/></div>
+              <div className="field">
+                <label>Fornecedor / Marca</label>
+                <select value={form.supplier||''} onChange={function(e){setForm(Object.assign({},form,{supplier:e.target.value}));}} style={inp}>
+                  <option value="">Selecione...</option>
+                  {SUPPLIERS.map(function(s){return <option key={s} value={s}>{s}</option>;})}
+                </select>
+              </div>
+            </div>
+            <div className="grid-2" style={{marginBottom:10}}>
+              <div className="field">
+                <label>Vincular ao Forecast</label>
+                <select value={form.oppId||''} onChange={function(e){setForm(Object.assign({},form,{oppId:e.target.value}));}} style={inp}>
+                  <option value="">— Nenhuma —</option>
+                  {fcOpps.filter(function(o){return !form._cliApelido||o.customer===form._cliApelido;}).map(function(o){
+                    return <option key={o.id} value={o.id}>{o.customer} · {(o.description||'').slice(0,50)}</option>;
+                  })}
+                </select>
+              </div>
+              <div className="field"><label>Descrição geral</label><input value={form.descricao||''} onChange={function(e){setForm(Object.assign({},form,{descricao:e.target.value}));}} style={inp}/></div>
+            </div>
+
+            {/* Itens */}
+            <div style={{fontSize:10,fontWeight:700,color:'var(--text2)',marginBottom:6,textTransform:'uppercase',letterSpacing:'.06em'}}>Itens do orçamento</div>
+            <div style={{overflowX:'auto',marginBottom:8}}>
+              <table className="tbl" style={{minWidth:900,fontSize:11}}>
+                <thead>
+                  <tr>
+                    <th style={{width:24}}>IT</th><th style={{width:55}}>POSTO</th><th style={{width:55}}>SUBP.</th>
+                    <th style={{width:65}}>TORQUE (Nm)</th><th style={{width:45}}>QDE</th>
+                    <th style={{minWidth:160}}>DESCRIÇÃO</th><th style={{width:100}}>CÓDIGO</th>
+                    <th style={{width:90}}>SIGMA</th><th style={{width:90}}>NCM</th>
+                    <th style={{width:100}}>ENTREGA</th><th style={{width:80}}>V.UNIT R$</th>
+                    <th style={{width:70}}>TOTAL</th><th style={{width:24}}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(form.itens||[]).map(function(it,i){
+                    var c = calcItem(it);
+                    function updIt(field,val){var ni=[...form.itens];ni[i]=Object.assign({},it,{[field]:val});setForm(Object.assign({},form,{itens:ni}));}
+                    return (
+                      <tr key={i}>
+                        <td style={{textAlign:'center',color:'var(--text3)'}}>{i+1}</td>
+                        <td><input value={it.posto||''} onChange={function(e){updIt('posto',e.target.value);}} style={{width:'100%',padding:'2px 4px',fontSize:10}}/></td>
+                        <td><input value={it.subposto||''} onChange={function(e){updIt('subposto',e.target.value);}} style={{width:'100%',padding:'2px 4px',fontSize:10}}/></td>
+                        <td><input value={it.torque||''} onChange={function(e){updIt('torque',e.target.value);}} style={{width:'100%',padding:'2px 4px',fontSize:10}}/></td>
+                        <td><input type="number" value={it.qtd||1} onChange={function(e){updIt('qtd',e.target.value);}} style={{width:'100%',padding:'2px 4px',fontSize:10}}/></td>
+                        <td><input value={it.descricao||''} onChange={function(e){updIt('descricao',e.target.value);}} style={{width:'100%',padding:'2px 4px',fontSize:10}}/></td>
+                        <td><input value={it.codigo||''} onChange={function(e){updIt('codigo',e.target.value);}} style={{width:'100%',padding:'2px 4px',fontSize:10,fontFamily:'monospace'}}/></td>
+                        <td><input value={it.sigma||''} onChange={function(e){updIt('sigma',e.target.value);}} style={{width:'100%',padding:'2px 4px',fontSize:10,fontFamily:'monospace'}}/></td>
+                        <td><input value={it.ncm||''} onChange={function(e){updIt('ncm',e.target.value);}} style={{width:'100%',padding:'2px 4px',fontSize:10}}/></td>
+                        <td><input value={it.entrega||''} onChange={function(e){updIt('entrega',e.target.value);}} style={{width:'100%',padding:'2px 4px',fontSize:10}}/></td>
+                        <td><input type="number" value={it.unitario||''} onChange={function(e){updIt('unitario',e.target.value);}} style={{width:'100%',padding:'2px 4px',fontSize:10}}/></td>
+                        <td style={{textAlign:'right',fontWeight:600,color:'#4ADE80',whiteSpace:'nowrap'}}>R${c.total}</td>
+                        <td><button onClick={function(){setForm(Object.assign({},form,{itens:form.itens.filter(function(_,xi){return xi!==i;})}));}} style={{background:'none',border:'none',color:'var(--text3)',cursor:'pointer',fontSize:12}}>✕</button></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <button className="btn btn-secondary" style={{fontSize:11,marginBottom:12}} onClick={function(){
+              setForm(Object.assign({},form,{itens:[...(form.itens||[]),{item:(form.itens||[]).length+1,posto:'',subposto:'',torque:'',qtd:1,descricao:'',codigo:'',sigma:'',ncm:'',entrega:'',origem:'0 - NACIONAL',unitario:0,icms:0.12,pis:0.0065,cofins:0.03,ipi:0,st:0}]}));
+            }}>+ Adicionar item</button>
+
+            {/* Totais */}
+            {(function(){
+              var t = totais(form.itens||[]);
+              return (
+                <div style={{background:'var(--bg3)',borderRadius:8,padding:'10px 14px',marginBottom:12,display:'flex',gap:20,justifyContent:'flex-end'}}>
+                  {[
+                    {l:'Total bruto (c/ ICMS)', v:'R$'+t.totalBruto.toFixed(2), c:'var(--text)'},
+                    {l:'Total com IPI',         v:'R$'+t.totalIpi.toFixed(2),   c:'#60A5FA'},
+                    {l:'Total com IPI/ST',      v:'R$'+t.totalSt.toFixed(2),    c:'#4ADE80'},
+                  ].map(function(m,i){
+                    return (
+                      <div key={i} style={{textAlign:'right'}}>
+                        <div style={{fontSize:9,color:'var(--text3)',marginBottom:2}}>{m.l}</div>
+                        <div style={{fontSize:15,fontWeight:700,color:m.c}}>{m.v}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
+            <div className="field" style={{marginBottom:12}}>
+              <label>Observações</label>
+              <textarea value={form.obs||''} onChange={function(e){setForm(Object.assign({},form,{obs:e.target.value}));}} style={{width:'100%',height:50,resize:'vertical'}}/>
+            </div>
+            <div style={{display:'flex',gap:8}}>
+              <button className="btn btn-primary" onClick={saveForm} style={{flex:1}}>💾 Salvar</button>
+              <button className="btn btn-green" onClick={function(){saveForm();exportPDF(form);}} style={{flex:1}}>💾 Salvar + 📄 PDF</button>
+              <button className="btn btn-secondary" onClick={function(){setModal(false);}}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── VIEW: DASHBOARD ─────────────────────────────────────────
+function ViewDashboard({ session }) {
+  var PERIODOS = [{id:'ano',label:'Ano inteiro'},{id:'semestre',label:'Semestre'},{id:'trimestre',label:'Trimestre'},{id:'mes',label:'Mês'}];
+  var [periodo, setPeriodo] = useState('ano');
+
+  var fcOpps   = load(KEYS.forecast, []);
+  var budget   = load(KEYS.budget,   {});
+  var orcs     = load('crm_orcs_v1', []);
+
+  var CLIENTS_COL = ['CATERPILLAR','HONDA','HYUNDAI','JACTO','RUMO','EMBRAER','AÇÚCAR & ÁLCOOL','IMPLEMENTOS AGRÍCOLAS'];
+  var ALL_SUPPS = ['BOSCH IW','BOSCH PT','HS-T','LÜBBERING','MILWAUKEE','MOMENTO','NORBAR','ENERPAC','PANASONIC','STAHLWILLE','STURTEVANT','3ARM','BOSCH IW (REP)','BOSCH REXROTH','STURTEVANT (REP)','OUTROS','SERVIÇOS','KISTLER','SCHATZ'];
+
+  // Filtrar oportunidades por período
+  var now = new Date();
+  var mos = now.getMonth();
+  var filterMonths = [];
+  if(periodo==='mes')      filterMonths = [MONTHS[mos]];
+  else if(periodo==='trimestre') filterMonths = [MONTHS[mos],MONTHS[(mos+1)%12],MONTHS[(mos+2)%12]];
+  else if(periodo==='semestre')  filterMonths = MONTHS.slice(mos>5?6:0, mos>5?12:6);
+  else filterMonths = MONTHS;
+
+  var fcFiltered = filterMonths.length===12 ? fcOpps : fcOpps.filter(function(o){
+    return filterMonths.some(function(m){return (o.months||{})[m];});
+  });
+
+  // Métricas gerais
+  var totalFc     = fcFiltered.reduce(function(s,o){return s+amtNum(o.amount)*parseFloat(o.confidence||0);},0);
+  var totalBruto  = fcFiltered.reduce(function(s,o){return s+amtNum(o.amount);},0);
+  var conf100     = fcFiltered.filter(function(o){return parseFloat(o.confidence||0)>=1;}).length;
+  var totalTarget = ALL_SUPPS.reduce(function(s,sup){ return s+CLIENTS_COL.reduce(function(ss,cli){return ss+((budget[sup]&&budget[sup][cli])?budget[sup][cli].target:0);},0);},0);
+  var totalRealiz = ALL_SUPPS.reduce(function(s,sup){ return s+CLIENTS_COL.reduce(function(ss,cli){return ss+((budget[sup]&&budget[sup][cli])?budget[sup][cli].realiz:0);},0);},0);
+  var totalOrcs   = orcs.filter(function(o){return o.status==='aprovado';}).reduce(function(s,o){return s+(o.totalBruto||0);},0);
+  var pctBudget   = totalTarget>0?Math.round(totalRealiz/totalTarget*100):0;
+
+  // SVG Bar Chart util
+  function BarChart(props){
+    var bars=props.bars; var h=props.h||160; var w=props.w||400;
+    var max=Math.max.apply(null,bars.map(function(b){return b.value||0;}));
+    if(max===0) max=1;
+    var barW = Math.floor((w-60)/bars.length)-8;
+    var pad=36;
+    return (
+      <svg width={w} height={h+50} style={{overflow:'visible'}}>
+        {[0,0.25,0.5,0.75,1].map(function(pct,i){
+          var y=pad+(1-pct)*(h-pad);
+          return <g key={i}><line x1={40} y1={y} x2={w} y2={y} stroke="rgba(148,163,184,0.1)" strokeWidth={1}/><text x={35} y={y+3} fontSize={8} fill="rgba(148,163,184,.5)" textAnchor="end">{fmtAmt(max*pct)}</text></g>;
+        })}
+        {bars.map(function(bar,i){
+          var x=44+i*(barW+8);
+          var bh=Math.max(2,(bar.value/max)*(h-pad));
+          var y=pad+(h-pad)-bh;
+          return (
+            <g key={i}>
+              <rect x={x} y={y} width={barW} height={bh} rx={3} fill={bar.color||'#2563EB'} opacity={.85}/>
+              <text x={x+barW/2} y={y-4} textAnchor="middle" fontSize={8} fill="#fff" fontWeight="600">{fmtAmt(bar.value)}</text>
+              <text x={x+barW/2} y={h+pad+10} textAnchor="middle" fontSize={8} fill="rgba(148,163,184,.7)">{bar.label}</text>
+              {bar.sub&&<text x={x+barW/2} y={h+pad+20} textAnchor="middle" fontSize={7} fill={bar.subColor||'rgba(148,163,184,.5)'}>{bar.sub}</text>}
+            </g>
+          );
+        })}
+      </svg>
+    );
+  }
+
+  // Por supplier (budget vs forecast)
+  var suppData = ALL_SUPPS.map(function(sup){
+    var tgt = CLIENTS_COL.reduce(function(s,c){return s+((budget[sup]&&budget[sup][c])?budget[sup][c].target:0);},0);
+    var rlz = CLIENTS_COL.reduce(function(s,c){return s+((budget[sup]&&budget[sup][c])?budget[sup][c].realiz:0);},0);
+    var fc  = fcFiltered.filter(function(o){return o.supplier&&o.supplier.toUpperCase()===sup.toUpperCase();}).reduce(function(s,o){return s+amtNum(o.amount)*parseFloat(o.confidence||0);},0);
+    return {sup,tgt,rlz,fc};
+  }).filter(function(d){return d.tgt>0||d.fc>0;});
+
+  // Por cliente (budget vs forecast)
+  var cliData = CLIENTS_COL.map(function(cli){
+    var tgt = ALL_SUPPS.reduce(function(s,sup){return s+((budget[sup]&&budget[sup][cli])?budget[sup][cli].target:0);},0);
+    var rlz = ALL_SUPPS.reduce(function(s,sup){return s+((budget[sup]&&budget[sup][cli])?budget[sup][cli].realiz:0);},0);
+    var fc  = fcFiltered.filter(function(o){return o.customer&&o.customer.toUpperCase().includes(cli.split(' ')[0].toUpperCase());}).reduce(function(s,o){return s+amtNum(o.amount)*parseFloat(o.confidence||0);},0);
+    return {cli,tgt,rlz,fc};
+  }).filter(function(d){return d.tgt>0||d.fc>0;});
+
+  return (
+    <div style={{overflowY:'auto',height:'100%'}}>
+      {/* Seletor de período */}
+      <div style={{display:'flex',gap:6,marginBottom:16,background:'var(--bg3)',borderRadius:10,padding:4,maxWidth:400,border:'1px solid var(--border)'}}>
+        {PERIODOS.map(function(p){
+          return (
+            <button key={p.id} onClick={function(){setPeriodo(p.id);}}
+              style={{flex:1,padding:'7px 0',fontSize:12,fontWeight:periodo===p.id?700:500,borderRadius:7,border:'none',background:periodo===p.id?'var(--card)':'transparent',color:periodo===p.id?'var(--text)':'var(--text3)',cursor:'pointer',boxShadow:periodo===p.id?'0 1px 4px rgba(0,0,0,.2)':'none',transition:'all .15s'}}>
+              {p.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* KPIs */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))',gap:10,marginBottom:20}}>
+        {[
+          {l:'Meta (Budget)',      v:fmtAmt(totalTarget), c:'#60A5FA'},
+          {l:'Realizado',         v:fmtAmt(totalRealiz), c:'#4ADE80'},
+          {l:'Atingimento',       v:pctBudget+'%',       c:pctBudget>=100?'#4ADE80':pctBudget>=60?'#CA8A04':'#F87171'},
+          {l:'Forecast ponderado',v:fmtAmt(totalFc),     c:'#FBBF24'},
+          {l:'Pipeline bruto',    v:fmtAmt(totalBruto),  c:'var(--text)'},
+          {l:'Orç. aprovados',    v:fmtAmt(totalOrcs),   c:'#A78BFA'},
+          {l:'Conf. 100%',        v:conf100+' opp',      c:'#4ADE80'},
+          {l:'Opp no período',    v:fcFiltered.length,   c:'var(--text)'},
+        ].map(function(m,i){
+          return (
+            <div key={i} className="metric">
+              <div className="metric-val" style={{fontSize:18,color:m.c}}>{m.v}</div>
+              <div className="metric-lbl">{m.l}</div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Gráfico Budget vs Realizado vs Forecast por Supplier */}
+      <div className="card" style={{marginBottom:16}}>
+        <div style={{fontSize:12,fontWeight:700,marginBottom:12,color:'var(--text2)'}}>📊 Budget × Realizado × Forecast — por Fornecedor</div>
+        <div style={{overflowX:'auto'}}>
+          {suppData.length===0 ? (
+            <div style={{color:'var(--text3)',padding:'20px 0',textAlign:'center'}}>Importe o Budget para ver os dados</div>
+          ) : (
+            <svg width={Math.max(600,suppData.length*110+60)} height={220} style={{overflow:'visible'}}>
+              {(function(){
+                var max = Math.max.apply(null, suppData.map(function(d){return Math.max(d.tgt,d.rlz,d.fc);}));
+                if(max===0) max=1;
+                var bW=28; var grpW=bW*3+12; var padL=44; var padT=16; var h=160;
+                return suppData.map(function(d,gi){
+                  var gx = padL+gi*(grpW+16);
+                  return (
+                    <g key={d.sup}>
+                      {gi===0 && [0,0.25,0.5,0.75,1].map(function(p,pi){
+                        var y=padT+(1-p)*(h-padT);
+                        return <g key={pi}><line x1={40} y1={y} x2={suppData.length*(grpW+16)+padL} y2={y} stroke="rgba(148,163,184,.08)" strokeWidth={1}/><text x={35} y={y+3} fontSize={7} fill="rgba(148,163,184,.4)" textAnchor="end">{fmtAmt(max*p)}</text></g>;
+                      })}
+                      {[{v:d.tgt,c:'#2563EB'},{v:d.rlz,c:'#16A34A'},{v:d.fc,c:'#CA8A04'}].map(function(bar,bi){
+                        var bh=Math.max(2,(bar.v/max)*(h-padT));
+                        var y=padT+(h-padT)-bh;
+                        var x=gx+bi*(bW+2);
+                        return (
+                          <g key={bi}>
+                            <rect x={x} y={y} width={bW} height={bh} rx={2} fill={bar.c} opacity={.85}/>
+                            {bh>12&&<text x={x+bW/2} y={y-3} textAnchor="middle" fontSize={6} fill="#fff">{fmtAmt(bar.v)}</text>}
+                          </g>
+                        );
+                      })}
+                      <text x={gx+grpW/2} y={h+padT+12} textAnchor="middle" fontSize={7} fill="rgba(148,163,184,.7)">{d.sup.slice(0,10)}</text>
+                    </g>
+                  );
+                });
+              })()}
+              {/* Legenda */}
+              {[{c:'#2563EB',l:'Target'},{c:'#16A34A',l:'Realizado'},{c:'#CA8A04',l:'Forecast'}].map(function(leg,i){
+                return <g key={i}><rect x={10+i*80} y={200} width={10} height={10} rx={2} fill={leg.c}/><text x={24+i*80} y={209} fontSize={8} fill="rgba(148,163,184,.7)">{leg.l}</text></g>;
+              })}
+            </svg>
+          )}
+        </div>
+      </div>
+
+      {/* Gráfico por Cliente */}
+      <div className="card" style={{marginBottom:16}}>
+        <div style={{fontSize:12,fontWeight:700,marginBottom:12,color:'var(--text2)'}}>🏢 Budget × Realizado × Forecast — por Cliente</div>
+        <div style={{overflowX:'auto'}}>
+          {cliData.length===0 ? (
+            <div style={{color:'var(--text3)',padding:'20px 0',textAlign:'center'}}>Importe o Budget para ver os dados</div>
+          ) : (
+            <svg width={Math.max(500,cliData.length*110+60)} height={220} style={{overflow:'visible'}}>
+              {(function(){
+                var max=Math.max.apply(null,cliData.map(function(d){return Math.max(d.tgt,d.rlz,d.fc);}));
+                if(max===0) max=1;
+                var bW=28; var grpW=bW*3+12; var padL=44; var padT=16; var h=160;
+                return cliData.map(function(d,gi){
+                  var gx=padL+gi*(grpW+16);
+                  return (
+                    <g key={d.cli}>
+                      {gi===0 && [0,.25,.5,.75,1].map(function(p,pi){
+                        var y=padT+(1-p)*(h-padT);
+                        return <g key={pi}><line x1={40} y1={y} x2={cliData.length*(grpW+16)+padL} y2={y} stroke="rgba(148,163,184,.08)" strokeWidth={1}/><text x={35} y={y+3} fontSize={7} fill="rgba(148,163,184,.4)" textAnchor="end">{fmtAmt(max*p)}</text></g>;
+                      })}
+                      {[{v:d.tgt,c:'#2563EB'},{v:d.rlz,c:'#16A34A'},{v:d.fc,c:'#CA8A04'}].map(function(bar,bi){
+                        var bh=Math.max(2,(bar.v/max)*(h-padT));
+                        var y=padT+(h-padT)-bh;
+                        var x=gx+bi*(bW+2);
+                        return <g key={bi}><rect x={x} y={y} width={bW} height={bh} rx={2} fill={bar.c} opacity={.85}/>{bh>12&&<text x={x+bW/2} y={y-3} textAnchor="middle" fontSize={6} fill="#fff">{fmtAmt(bar.v)}</text>}</g>;
+                      })}
+                      <text x={gx+grpW/2} y={h+padT+12} textAnchor="middle" fontSize={7} fill="rgba(148,163,184,.7)">{d.cli.slice(0,10)}</text>
+                    </g>
+                  );
+                });
+              })()}
+              {[{c:'#2563EB',l:'Target'},{c:'#16A34A',l:'Realizado'},{c:'#CA8A04',l:'Forecast'}].map(function(leg,i){
+                return <g key={i}><rect x={10+i*80} y={200} width={10} height={10} rx={2} fill={leg.c}/><text x={24+i*80} y={209} fontSize={8} fill="rgba(148,163,184,.7)">{leg.l}</text></g>;
+              })}
+            </svg>
+          )}
+        </div>
+      </div>
+
+      {/* Orçamentos vs Realizado */}
+      <div className="card" style={{marginBottom:16}}>
+        <div style={{fontSize:12,fontWeight:700,marginBottom:12,color:'var(--text2)'}}>📝 Orçados × Aprovados × Realizados</div>
+        <div style={{display:'flex',gap:20,flexWrap:'wrap',alignItems:'center'}}>
+          <BarChart w={360} h={120} bars={[
+            {label:'Orçados',   value:orcs.reduce(function(s,o){return s+(o.totalBruto||0);},0),        color:'#7C3AED', sub:orcs.length+'u'},
+            {label:'Aprovados', value:totalOrcs,                                                          color:'#16A34A', sub:orcs.filter(function(o){return o.status==='aprovado';}).length+'u'},
+            {label:'Realizado', value:totalRealiz,                                                        color:'#2563EB', sub:pctBudget+'%'},
+            {label:'Forecast',  value:totalFc,                                                            color:'#CA8A04', sub:fcFiltered.length+'u'},
+          ]}/>
+          <div style={{flex:1,minWidth:180}}>
+            {[
+              {l:'Total orçado',   v:fmtAmt(orcs.reduce(function(s,o){return s+(o.totalBruto||0);},0)), c:'#A78BFA'},
+              {l:'Aprovados',      v:fmtAmt(totalOrcs), c:'#4ADE80'},
+              {l:'Tx aprovação',   v:orcs.length>0?Math.round(orcs.filter(function(o){return o.status==='aprovado';}).length/orcs.length*100)+'%':'—', c:'#4ADE80'},
+              {l:'Budget meta',    v:fmtAmt(totalTarget), c:'#60A5FA'},
+              {l:'Budget realiz.', v:fmtAmt(totalRealiz)+' ('+pctBudget+'%)', c:pctBudget>=100?'#4ADE80':pctBudget>=60?'#CA8A04':'#F87171'},
+            ].map(function(m,i){
+              return (
+                <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'5px 0',borderBottom:'1px solid var(--border2)'}}>
+                  <span style={{fontSize:11,color:'var(--text3)'}}>{m.l}</span>
+                  <span style={{fontSize:12,fontWeight:700,color:m.c}}>{m.v}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── APP PRINCIPAL ────────────────────────────────────────────
 function App() {
   const [session, setSession] = useState(function(){ return load(KEYS.session, null); });
@@ -2648,10 +3279,12 @@ function App() {
   }
 
   const NAV = [
+    {id:'dashboard',   icon:'📈', label:'Dashboard'},
     {id:'forecast',    icon:'📊', label:'Forecast'},
     {id:'clientes',    icon:'👥', label:'Clientes'},
     {id:'budget',      icon:'💰', label:'Budget'},
     {id:'divider1',    divider:true},
+    {id:'orcamento',   icon:'📝', label:'Orçamento'},
     {id:'demo',        icon:'🔧', label:'Demonstração'},
     {id:'estoque',     icon:'📦', label:'Estoque'},
     {id:'projetos',    icon:'⚙',  label:'Projetos'},
@@ -2664,12 +3297,14 @@ function App() {
   }
 
   function renderView() {
-    if (view==='forecast') return <ViewForecast session={session} isGestor={isGestor} isConsultor={isConsultor}/>;
-    if (view==='clientes') return <ViewClientes session={session}/>;
-    if (view==='budget')   return <ViewBudget   session={session} isGestor={isGestor}/>;
-    if (view==='demo')     return <ViewDemo     session={session} isGestor={isGestor} isEspecialista={isEspecialista}/>;
-    if (view==='estoque')  return <ViewEstoque  session={session}/>;
-    if (view==='projetos') return <ViewProjetos session={session} isGestor={isGestor} isEspecialista={isEspecialista}/>;
+    if (view==='dashboard') return <ViewDashboard session={session}/>;
+    if (view==='forecast')  return <ViewForecast  session={session} isGestor={isGestor} isConsultor={isConsultor}/>;
+    if (view==='clientes')  return <ViewClientes  session={session}/>;
+    if (view==='budget')    return <ViewBudget    session={session} isGestor={isGestor}/>;
+    if (view==='orcamento') return <ViewOrcamento session={session} isGestor={isGestor}/>;
+    if (view==='demo')      return <ViewDemo      session={session} isGestor={isGestor} isEspecialista={isEspecialista}/>;
+    if (view==='estoque')   return <ViewEstoque   session={session}/>;
+    if (view==='projetos')  return <ViewProjetos  session={session} isGestor={isGestor} isEspecialista={isEspecialista}/>;
     return <div style={{padding:20,color:'var(--text3)'}}>Em desenvolvimento...</div>;
   }
 
