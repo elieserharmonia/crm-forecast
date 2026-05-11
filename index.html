@@ -505,18 +505,21 @@ function ViewForecast({ session, isGestor, isConsultor }) {
                 const anoMarked = is100 && Object.values(months).some(Boolean);
                 const isContrato = is100 && Object.values(months).filter(Boolean).length>1;
                 const rowBg = o.rowColor || (i%2===0?'transparent':'rgba(255,255,255,0.012)');
+                const rowFg = o.rowColor ? '#1A1A1A' : 'var(--text)';
+                const rowFg2 = o.rowColor ? '#333333' : 'var(--text2)';
+                const rowFg3 = o.rowColor ? '#444444' : 'var(--text3)';
                 return (
                   <tr key={o.id} style={{background:rowBg,cursor:'pointer'}}
                     onMouseEnter={function(ev){ ev.currentTarget.style.background='rgba(37,99,235,0.05)'; }}
                     onMouseLeave={function(ev){ ev.currentTarget.style.background=rowBg; }}>
                     <td onClick={function(){ openPerfil(o); }} style={{textAlign:'center'}}>
-                      <span style={{fontSize:10,fontWeight:700,color:o.neg==='R'?'#60A5FA':o.neg==='S'?'#A78BFA':'var(--text3)'}}>{o.neg||'D'}</span>
+                      <span style={{fontSize:10,fontWeight:700,color:o.rowColor?(o.neg==='R'?'#0D47A1':o.neg==='S'?'#4A0088':'#555'):o.neg==='R'?'#60A5FA':o.neg==='S'?'#A78BFA':'var(--text3)'}}>{o.neg||'D'}</span>
                     </td>
-                    <td onClick={function(){ openPerfil(o); }} style={{color:'var(--text3)',fontSize:10}}>{o.resp}</td>
-                    <td onClick={function(){ openPerfil(o); }} style={{fontWeight:600,maxWidth:160,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={o.customer}>{o.customer}</td>
-                    <td onClick={function(){ openPerfil(o); }} style={{color:'var(--text2)',maxWidth:100,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={o.supplier}>{o.supplier}</td>
-                    <td onClick={function(){ openPerfil(o); }} style={{maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={o.description}>{o.description}</td>
-                    <td onClick={function(){ openPerfil(o); }} style={{textAlign:'right',fontWeight:600,color:'var(--text2)',whiteSpace:'nowrap'}}>{fmtAmt(o.amount)}</td>
+                    <td onClick={function(){ openPerfil(o); }} style={{color:rowFg3,fontSize:10}}>{o.resp}</td>
+                    <td onClick={function(){ openPerfil(o); }} style={{fontWeight:600,maxWidth:160,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:rowFg}} title={o.customer}>{o.customer}</td>
+                    <td onClick={function(){ openPerfil(o); }} style={{color:rowFg2,maxWidth:100,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={o.supplier}>{o.supplier}</td>
+                    <td onClick={function(){ openPerfil(o); }} style={{maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:rowFg}} title={o.description}>{o.description}</td>
+                    <td onClick={function(){ openPerfil(o); }} style={{textAlign:'right',fontWeight:600,color:rowFg2,whiteSpace:'nowrap'}}>{fmtAmt(o.amount)}</td>
                     <td onClick={function(){ openPerfil(o); }} style={{textAlign:'center'}}>
                       <span className="badge" style={{background:confColor(o.confidence)+'22',color:confColor(o.confidence)}}>
                         {fmtConf(o.confidence)}
@@ -546,10 +549,10 @@ function ViewForecast({ session, isGestor, isConsultor }) {
                     </td>
                     <td onClick={function(){ openPerfil(o); }} style={{borderLeft:'1px solid var(--border2)',maxWidth:200}}>
                       {(o.followup||'').split('\n').slice(0,2).map(function(line,li){
-                        return <div key={li} style={{fontSize:10,color:li===0?'var(--text)':'var(--text3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',lineHeight:1.4}} title={o.followup}>{line}</div>;
+                        return <div key={li} style={{fontSize:10,color:li===0?rowFg:rowFg3,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',lineHeight:1.4}} title={o.followup}>{line}</div>;
                       })}
                     </td>
-                    <td onClick={function(){ openPerfil(o); }} style={{color:'var(--text3)',fontSize:10,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={o.contatos}>{o.contatos}</td>
+                    <td onClick={function(){ openPerfil(o); }} style={{color:rowFg3,fontSize:10,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={o.contatos}>{o.contatos}</td>
                     <td style={{textAlign:'center'}}>
                       <button onClick={function(){ deleteOpp(o.id); }} style={{background:'none',border:'none',color:'var(--text3)',fontSize:12,opacity:.4}} onMouseEnter={function(ev){ev.target.style.opacity=1;}} onMouseLeave={function(ev){ev.target.style.opacity=.4;}}>✕</button>
                     </td>
@@ -684,7 +687,7 @@ function ViewForecast({ session, isGestor, isConsultor }) {
 function PerfilOportunidade(props) {
   const {opp, opps, session, onClose, onSave, onDelete, onEdit, setRowColor, toggleMonth, MONTHS_VIS, confColor, fmtConf, fmtAmt} = props;
   const [tab, setTab] = useState('dados');
-  const [hForm, setHForm] = useState({date:'', time:'', resp:session.code||'', processo:'', resumo:''});
+  const [hForm, setHForm] = useState({date:'', time:'', resp:session.code||'', processo:'', resumo:'', proximo:''});
   const [addingH, setAddingH] = useState(false);
 
   // Sincronizar opp atual com opps (para refletir toggleMonth)
@@ -702,7 +705,7 @@ function PerfilOportunidade(props) {
     const newHist = [entry, ...hist];
     const updated = Object.assign({}, current, {history:newHist});
     onSave(updated);
-    setHForm({date:'', time:'', resp:session.code||'', processo:'', resumo:''});
+    setHForm({date:'', time:'', resp:session.code||'', processo:'', resumo:'', proximo:''});
     setAddingH(false);
   }
 
@@ -816,7 +819,7 @@ function PerfilOportunidade(props) {
             {!addingH && (
               <button className="btn btn-blue" style={{width:'100%',marginBottom:12,justifyContent:'center'}}
                 onClick={function(){
-                  setHForm({date:new Date().toLocaleDateString('pt-BR'), time:'', resp:session.code||'', processo:'', resumo:''});
+                  setHForm({date:new Date().toLocaleDateString('pt-BR'), time:'', resp:session.code||'', processo:'', resumo:'', proximo:''});
                   setAddingH(true);
                 }}>
                 + Registrar visita
@@ -845,6 +848,18 @@ function PerfilOportunidade(props) {
                     style={{width:'100%',height:64,resize:'vertical',lineHeight:1.5,fontSize:12}}
                     placeholder="O que foi discutido, decisões, próximos passos..."/>
                 </div>
+                <div style={{marginBottom:8}}>
+                  <label style={{display:'block',fontSize:9,color:'var(--text3)',marginBottom:3,textTransform:'uppercase',letterSpacing:'.05em'}}>
+                    Próximo passo
+                    <span style={{marginLeft:6,fontSize:9,color:'var(--text3)',fontWeight:400,textTransform:'none',letterSpacing:0}}>— baseado em 5W2H</span>
+                  </label>
+                  <div style={{background:'rgba(37,99,235,0.06)',border:'1px solid rgba(37,99,235,0.15)',borderRadius:6,padding:'8px 10px',marginBottom:5,fontSize:9,color:'rgba(148,163,184,0.7)',lineHeight:1.6}}>
+                    <span style={{fontWeight:600,color:'#60A5FA'}}>O quê</span> · <span style={{fontWeight:600,color:'#60A5FA'}}>Por quê</span> · <span style={{fontWeight:600,color:'#60A5FA'}}>Quem</span> · <span style={{fontWeight:600,color:'#60A5FA'}}>Onde</span> · <span style={{fontWeight:600,color:'#60A5FA'}}>Quando</span> · <span style={{fontWeight:600,color:'#60A5FA'}}>Como</span> · <span style={{fontWeight:600,color:'#60A5FA'}}>Quanto</span>
+                  </div>
+                  <textarea value={hForm.proximo||''} onChange={function(e){ setHForm(Object.assign({},hForm,{proximo:e.target.value})); }}
+                    style={{width:'100%',height:72,resize:'vertical',lineHeight:1.6,fontSize:12}}
+                    placeholder={'O quê: Enviar proposta técnica para torquímetro digital\nPor quê: Cliente pediu alternativa ao modelo atual\nQuem: Elieser Fernandes / Eng. Rafael\nOnde: Planta Caterpillar — Engenharia\nQuando: até 15/05/2026\nComo: E-mail + demonstração presencial\nQuanto: R$ 45.000 (orçamento inicial)'}/>
+                </div>
                 <div style={{display:'flex',gap:6}}>
                   <button className="btn btn-primary" onClick={saveHistEntry}>Salvar</button>
                   <button className="btn btn-secondary" onClick={function(){setAddingH(false);}}>Cancelar</button>
@@ -870,6 +885,12 @@ function PerfilOportunidade(props) {
                     <button onClick={function(){ deleteHEntry(h.id); }} style={{background:'none',border:'none',color:'var(--text3)',fontSize:12,cursor:'pointer',opacity:.5}} onMouseEnter={function(ev){ev.target.style.opacity=1;}} onMouseLeave={function(ev){ev.target.style.opacity=.5;}}>✕</button>
                   </div>
                   <div style={{fontSize:12,color:'var(--text2)',lineHeight:1.6,whiteSpace:'pre-wrap'}}>{h.resumo}</div>
+                  {h.proximo && (
+                    <div style={{marginTop:8,background:'rgba(37,99,235,0.08)',border:'1px solid rgba(37,99,235,0.2)',borderRadius:6,padding:'8px 10px'}}>
+                      <div style={{fontSize:9,fontWeight:700,color:'#60A5FA',marginBottom:4,textTransform:'uppercase',letterSpacing:'.06em'}}>📋 Próximo Passo (5W2H)</div>
+                      <div style={{fontSize:11,color:'var(--text2)',lineHeight:1.7,whiteSpace:'pre-wrap'}}>{h.proximo}</div>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -1049,13 +1070,29 @@ function ViewClientes({ session }) {
                 </thead>
                 <tbody>
                   {sel.contatos.map(function(ct,i){
+                    const waNum = (ct.cel||ct.tel||'').replace(/\D/g,'');
+                    const waUrl = 'https://wa.me/55'+waNum;
                     return (
                       <tr key={i}>
                         <td style={{fontWeight:600}}>{ct.nome}</td>
                         <td style={{color:'var(--text3)',fontSize:10}}>{ct.dpto}</td>
                         <td style={{color:'var(--text3)',fontSize:10}}>{ct.tel}</td>
                         <td style={{color:'var(--text3)',fontSize:10}}>{ct.cel}</td>
-                        <td style={{color:'#60A5FA',fontSize:10}}>{ct.email}</td>
+                        <td style={{fontSize:10}}>
+                          <div style={{display:'flex',alignItems:'center',gap:8}}>
+                            <span style={{color:'#60A5FA'}}>{ct.email}</span>
+                            {waNum && (
+                              <a href={waUrl} target="_blank" rel="noopener noreferrer"
+                                title={'WhatsApp: '+ct.cel}
+                                style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:22,height:22,borderRadius:5,background:'rgba(37,211,102,0.15)',border:'1px solid rgba(37,211,102,0.3)',textDecoration:'none',flexShrink:0}}>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="#25D166">
+                                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+                                  <path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.553 4.116 1.522 5.847L.057 23.5l5.796-1.521A11.94 11.94 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.938a9.908 9.908 0 01-5.032-1.374l-.361-.214-3.741.981.999-3.648-.235-.374A9.86 9.86 0 012.062 12C2.062 6.792 6.792 2.062 12 2.062S21.938 6.792 21.938 12 17.208 21.938 12 21.938z"/>
+                                </svg>
+                              </a>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     );
                   })}
@@ -1073,15 +1110,43 @@ function ViewClientes({ session }) {
 function ViewBudget({ session, isGestor }) {
   const CLIENTS_COL = ['CATERPILLAR','HONDA','HYUNDAI','JACTO','RUMO','EMBRAER','AÇÚCAR & ÁLCOOL','IMPLEMENTOS AGRÍCOLAS'];
   const SUPPLIERS = {
-    TT: ['BOSCH IW','BOSCH PT','HS-T','LÜBBERING','MILWAUKEE','MOMENTO','NORBAR','ENERPAC','PANASONIC','STAHLWILLE','STURTEVANT','3ARM'],
+    TT:  ['BOSCH IW','BOSCH PT','HS-T','LÜBBERING','MILWAUKEE','MOMENTO','NORBAR','ENERPAC','PANASONIC','STAHLWILLE','STURTEVANT','3ARM'],
     REP: ['BOSCH IW (REP)','BOSCH REXROTH','STURTEVANT (REP)','OUTROS'],
-    SV: ['SERVIÇOS','KISTLER','SCHATZ'],
+    SV:  ['SERVIÇOS','KISTLER','SCHATZ'],
   };
+  const ALL_SUPPS = [].concat(SUPPLIERS.TT, SUPPLIERS.REP, SUPPLIERS.SV);
 
-  const [budget, setBudget] = useState(function(){ return load(KEYS.budget, {}); });
-  const [selCli, setSelCli] = useState(null);
+  const [budget,  setBudget]  = useState(function(){ return load(KEYS.budget, {}); });
+  const [selCli,  setSelCli]  = useState(null);   // perfil do cliente
+  const [editing, setEditing] = useState(null);   // {sup, cli} sendo editado
+  const [editVal, setEditVal] = useState({target:'', realiz:''});
+  const [selSupp, setSelSupp] = useState(null);   // supplier dentro do perfil — abre gráfico
 
   function saveB(b) { setBudget(b); save(KEYS.budget, b); }
+
+  // Valor de uma célula
+  function cell(sup, cli) {
+    return (budget[sup] && budget[sup][cli]) ? budget[sup][cli] : {realiz:0, target:0};
+  }
+
+  function startEdit(sup, cli) {
+    const c = cell(sup, cli);
+    setEditing({sup, cli});
+    setEditVal({target:c.target||'', realiz:c.realiz||''});
+  }
+
+  function saveEdit() {
+    if (!editing) return;
+    const {sup, cli} = editing;
+    const nb = JSON.parse(JSON.stringify(budget));
+    if (!nb[sup]) nb[sup] = {};
+    nb[sup][cli] = {
+      target: parseFloat(editVal.target)||0,
+      realiz: parseFloat(editVal.realiz)||0,
+    };
+    saveB(nb);
+    setEditing(null);
+  }
 
   function importXLSX(e) {
     const file = e.target.files[0];
@@ -1093,22 +1158,17 @@ function ViewBudget({ session, isGestor }) {
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
         const b = {};
-        // Linha 3 tem clientes (índice 2), linha 5 tem SUPPLIER (índice 4)
         const cliRow = rows[2] || [];
-        // Mapear colunas de clientes
         const cliCols = {};
         cliRow.forEach(function(v,i){ if(v&&typeof v==='string'&&v.trim()&&v.trim()!=='2026') cliCols[v.trim()]=i; });
-        // Processar linhas de suppliers
-        for (let ri=5; ri<rows.length; ri++) {
+        for (var ri=5; ri<rows.length; ri++) {
           const row = rows[ri] || [];
           const supp = String(row[1]||'').trim();
           if (!supp || supp==='TOTAL' || supp==='TOTAL D + R') continue;
           b[supp] = b[supp] || {};
           Object.keys(cliCols).forEach(function(cli){
             const ci = cliCols[cli];
-            const realiz = parseFloat(row[ci])||0;
-            const target = parseFloat(row[ci+1])||0;
-            b[supp][cli] = {realiz, target};
+            b[supp][cli] = {realiz:parseFloat(row[ci])||0, target:parseFloat(row[ci+1])||0};
           });
         }
         saveB(b);
@@ -1119,37 +1179,117 @@ function ViewBudget({ session, isGestor }) {
     e.target.value='';
   }
 
-  const allSupp = [].concat(SUPPLIERS.TT, SUPPLIERS.REP, SUPPLIERS.SV);
-  const totTarget = allSupp.reduce(function(s,sup){
-    return s + CLIENTS_COL.reduce(function(ss,cli){ return ss+((budget[sup]&&budget[sup][cli])?budget[sup][cli].target:0); },0);
+  // Totais
+  const totTarget = ALL_SUPPS.reduce(function(s,sup){
+    return s + CLIENTS_COL.reduce(function(ss,cli){ return ss+cell(sup,cli).target; },0);
   },0);
-  const totRealiz = allSupp.reduce(function(s,sup){
-    return s + CLIENTS_COL.reduce(function(ss,cli){ return ss+((budget[sup]&&budget[sup][cli])?budget[sup][cli].realiz:0); },0);
+  const totRealiz = ALL_SUPPS.reduce(function(s,sup){
+    return s + CLIENTS_COL.reduce(function(ss,cli){ return ss+cell(sup,cli).realiz; },0);
   },0);
+  const pctGeral = totTarget>0?Math.round(totRealiz/totTarget*100):0;
+
+  // Para o perfil do cliente: forecast das oportunidades
+  const fcOpps = load(KEYS.forecast, []);
+
+  // Gráfico simples em SVG
+  function MiniBar(props) {
+    var target = props.target;
+    var realiz = props.realiz;
+    var forecast = props.forecast;
+    var w = props.w || 280;
+    var h = 120;
+    var max = Math.max(target, realiz, forecast, 1);
+    var pad = 32;
+    var barW = 38;
+    var gap  = 20;
+    var bars = [
+      {v:target,   label:'Target',    color:'#2563EB'},
+      {v:forecast, label:'Forecast',  color:'#CA8A04'},
+      {v:realiz,   label:'Realizado', color:'#16A34A'},
+    ];
+    var totalW = bars.length*(barW+gap);
+    var startX = (w - totalW) / 2;
+    return (
+      <svg width={w} height={h+40} style={{overflow:'visible'}}>
+        {/* Grid lines */}
+        {[0,0.25,0.5,0.75,1].map(function(pct,i){
+          var y = pad + (1-pct)*(h-pad);
+          return (
+            <g key={i}>
+              <line x1={0} y1={y} x2={w} y2={y} stroke="rgba(255,255,255,0.06)" strokeWidth={1}/>
+              <text x={2} y={y+3} fontSize={8} fill="rgba(255,255,255,0.25)">{fmtAmt(max*pct)}</text>
+            </g>
+          );
+        })}
+        {bars.map(function(bar,i){
+          var x    = startX + i*(barW+gap);
+          var barH = max>0 ? Math.max(2,(bar.v/max)*(h-pad)) : 2;
+          var y    = pad + (h-pad) - barH;
+          var pct  = target>0 ? Math.round(bar.v/target*100) : 0;
+          return (
+            <g key={i}>
+              <rect x={x} y={y} width={barW} height={barH} rx={4} fill={bar.color} opacity={.85}/>
+              <text x={x+barW/2} y={y-5} textAnchor="middle" fontSize={9} fill="#fff" fontWeight="600">{fmtAmt(bar.v)}</text>
+              <text x={x+barW/2} y={h+pad+6} textAnchor="middle" fontSize={9} fill="rgba(255,255,255,0.5)">{bar.label}</text>
+              {bar.label!=='Target' && <text x={x+barW/2} y={h+pad+17} textAnchor="middle" fontSize={8} fill={bar.color}>{pct}%</text>}
+            </g>
+          );
+        })}
+      </svg>
+    );
+  }
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:12,height:'100%'}}>
+      {/* Métricas */}
       <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
-        <div className="metric" style={{minWidth:130}}>
+        <div className="metric">
           <div className="metric-val" style={{color:'#60A5FA'}}>{fmtAmt(totTarget)}</div>
           <div className="metric-lbl">Meta total {CUR_YEAR}</div>
         </div>
-        <div className="metric" style={{minWidth:130}}>
+        <div className="metric">
           <div className="metric-val" style={{color:'#4ADE80'}}>{fmtAmt(totRealiz)}</div>
           <div className="metric-lbl">Realizado</div>
         </div>
+        <div className="metric">
+          <div className="metric-val" style={{color:pctGeral>=100?'#4ADE80':pctGeral>=60?'#CA8A04':'#F87171'}}>{pctGeral}%</div>
+          <div className="metric-lbl">Atingimento</div>
+        </div>
         <div style={{flex:1}}/>
-        <label className="btn btn-blue" style={{cursor:'pointer'}}>
-          📥 Importar Excel
-          <input type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={importXLSX}/>
-        </label>
+        {isGestor && (
+          <label className="btn btn-blue" style={{cursor:'pointer'}}>
+            📥 Importar Excel
+            <input type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={importXLSX}/>
+          </label>
+        )}
       </div>
 
+      {/* Clientes — cards clicáveis */}
+      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+        {CLIENTS_COL.map(function(cli){
+          const cliTarget = ALL_SUPPS.reduce(function(s,sup){ return s+cell(sup,cli).target; },0);
+          const cliRealiz = ALL_SUPPS.reduce(function(s,sup){ return s+cell(sup,cli).realiz; },0);
+          const pct = cliTarget>0?Math.round(cliRealiz/cliTarget*100):0;
+          const color = pct>=100?'#16A34A':pct>=60?'#CA8A04':'#DC2626';
+          return (
+            <div key={cli} onClick={function(){setSelCli(cli);}}
+              style={{background:'var(--card)',border:'1px solid var(--border)',borderRadius:8,padding:'10px 14px',cursor:'pointer',minWidth:120,transition:'border-color .15s',borderTop:'3px solid '+color}}
+              onMouseEnter={function(ev){ev.currentTarget.style.borderColor=color;}}
+              onMouseLeave={function(ev){ev.currentTarget.style.borderColor='var(--border)';}}>
+              <div style={{fontSize:11,fontWeight:700,marginBottom:4}}>{cli}</div>
+              <div style={{fontSize:15,fontWeight:700,color:'#60A5FA'}}>{fmtAmt(cliTarget)}</div>
+              <div style={{fontSize:10,color:'#4ADE80'}}>{fmtAmt(cliRealiz)} <span style={{color:color,fontWeight:700}}>({pct}%)</span></div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Tabela */}
       {Object.keys(budget).length===0 ? (
         <div className="card" style={{textAlign:'center',padding:'60px 20px',color:'var(--text3)'}}>
           <div style={{fontSize:32,marginBottom:12}}>💰</div>
           <div style={{fontWeight:600,marginBottom:6}}>Nenhum budget carregado</div>
-          <div>Importe o arquivo <b>BUDGET_2026_EF.xlsx</b></div>
+          <div>Importe o arquivo <b>BUDGET_2026_EF.xlsx</b> ou edite os valores clicando nas células.</div>
         </div>
       ) : (
         <div className="tbl-wrap" style={{flex:1,overflowX:'auto',overflowY:'auto'}}>
@@ -1158,9 +1298,7 @@ function ViewBudget({ session, isGestor }) {
               <tr>
                 <th style={{width:24}}></th>
                 <th style={{minWidth:140}}>SUPPLIER</th>
-                {CLIENTS_COL.map(function(c){
-                  return <th key={c} style={{textAlign:'right',minWidth:90,fontSize:9}}>{c}</th>;
-                })}
+                {CLIENTS_COL.map(function(c){ return <th key={c} style={{textAlign:'right',minWidth:100,fontSize:9}}>{c}</th>; })}
                 <th style={{textAlign:'right',minWidth:80}}>TOTAL</th>
               </tr>
             </thead>
@@ -1174,23 +1312,43 @@ function ViewBudget({ session, isGestor }) {
                     <td colSpan={2+CLIENTS_COL.length+1} style={{background:'var(--bg3)',fontSize:10,fontWeight:700,color:'var(--text3)',padding:'6px 10px',letterSpacing:'.07em'}}>{grupoLabel}</td>
                   </tr>,
                   supps.map(function(sup){
-                    const row = budget[sup] || {};
-                    const rowTotal = CLIENTS_COL.reduce(function(s,c){ return s+(row[c]?row[c].target:0); },0);
+                    const rowTotal = CLIENTS_COL.reduce(function(s,c){ return s+cell(sup,c).target; },0);
                     return (
                       <tr key={sup}>
                         <td></td>
                         <td style={{fontWeight:500}}>{sup}</td>
-                        {CLIENTS_COL.map(function(c){
-                          const cell = row[c]||{realiz:0,target:0};
-                          const pct = cell.target>0?(cell.realiz/cell.target*100).toFixed(0)+'%':'—';
+                        {CLIENTS_COL.map(function(cli){
+                          const c = cell(sup, cli);
+                          const isEditing = editing && editing.sup===sup && editing.cli===cli;
+                          const pct = c.target>0?Math.round(c.realiz/c.target*100):0;
                           return (
-                            <td key={c} style={{textAlign:'right'}}>
-                              {cell.target>0 ? (
-                                <div>
-                                  <div style={{fontSize:11,fontWeight:600,color:'var(--text)'}}>{fmtAmt(cell.target)}</div>
-                                  {cell.realiz>0 && <div style={{fontSize:9,color:'#4ADE80'}}>{fmtAmt(cell.realiz)} ({pct})</div>}
+                            <td key={cli} style={{textAlign:'right',padding:'4px 8px'}}>
+                              {isEditing ? (
+                                <div style={{display:'flex',flexDirection:'column',gap:3,minWidth:90}}>
+                                  <input value={editVal.target} onChange={function(e){setEditVal(Object.assign({},editVal,{target:e.target.value}));}}
+                                    placeholder="Target" type="number" style={{width:'100%',padding:'3px 6px',fontSize:10,textAlign:'right'}} autoFocus/>
+                                  <input value={editVal.realiz} onChange={function(e){setEditVal(Object.assign({},editVal,{realiz:e.target.value}));}}
+                                    placeholder="Realizado" type="number" style={{width:'100%',padding:'3px 6px',fontSize:10,textAlign:'right'}}/>
+                                  <div style={{display:'flex',gap:3}}>
+                                    <button onClick={saveEdit} style={{flex:1,padding:'2px 0',fontSize:9,background:'var(--accent)',color:'#FFD0D0',border:'none',borderRadius:4,cursor:'pointer'}}>✓</button>
+                                    <button onClick={function(){setEditing(null);}} style={{flex:1,padding:'2px 0',fontSize:9,background:'var(--bg3)',color:'var(--text3)',border:'1px solid var(--border)',borderRadius:4,cursor:'pointer'}}>✕</button>
+                                  </div>
                                 </div>
-                              ) : <span style={{color:'var(--border)'}}>—</span>}
+                              ) : (
+                                <div onClick={function(){if(isGestor)startEdit(sup,cli);}}
+                                  style={{cursor:isGestor?'pointer':'default',borderRadius:4,padding:'3px 5px',transition:'background .1s'}}
+                                  onMouseEnter={function(ev){if(isGestor)ev.currentTarget.style.background='rgba(255,255,255,0.05)';}}
+                                  onMouseLeave={function(ev){ev.currentTarget.style.background='transparent';}}>
+                                  {c.target>0 ? (
+                                    <div>
+                                      <div style={{fontSize:11,fontWeight:600,color:'var(--text)'}}>{fmtAmt(c.target)}</div>
+                                      {c.realiz>0 && <div style={{fontSize:9,color:'#4ADE80'}}>{fmtAmt(c.realiz)} <span style={{color:pct>=100?'#4ADE80':pct>=60?'#CA8A04':'#F87171',fontWeight:700}}>({pct}%)</span></div>}
+                                    </div>
+                                  ) : (
+                                    <span style={{color:'var(--border)',fontSize:11}}>{isGestor?'+ meta':'—'}</span>
+                                  )}
+                                </div>
+                              )}
                             </td>
                           );
                         })}
@@ -1202,6 +1360,126 @@ function ViewBudget({ session, isGestor }) {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* MODAL PERFIL DO CLIENTE */}
+      {selCli && (
+        <div className="modal-bg" onClick={function(){setSelCli(null);setSelSupp(null);}}>
+          <div className="modal" style={{maxWidth:780}} onClick={function(e){e.stopPropagation();}}>
+            <div className="modal-hd">
+              <div>
+                <h2>{selCli}</h2>
+                <div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>Budget {CUR_YEAR} — metas por fornecedor</div>
+              </div>
+              <button className="modal-close" onClick={function(){setSelCli(null);setSelSupp(null);}}>✕</button>
+            </div>
+
+            {/* Totais do cliente */}
+            {(function(){
+              const cliTarget = ALL_SUPPS.reduce(function(s,sup){ return s+cell(sup,selCli).target; },0);
+              const cliRealiz = ALL_SUPPS.reduce(function(s,sup){ return s+cell(sup,selCli).realiz; },0);
+              const cliFc     = fcOpps.filter(function(o){ return o.customer&&o.customer.toUpperCase().includes(selCli.split(' ')[0].toUpperCase()); })
+                .reduce(function(s,o){ return s+amtNum(o.amount)*parseFloat(o.confidence||0); },0);
+              const pct = cliTarget>0?Math.round(cliRealiz/cliTarget*100):0;
+              return (
+                <div style={{display:'flex',gap:10,marginBottom:16,flexWrap:'wrap'}}>
+                  {[
+                    {l:'Meta total', v:fmtAmt(cliTarget), c:'#60A5FA'},
+                    {l:'Realizado',  v:fmtAmt(cliRealiz), c:'#4ADE80'},
+                    {l:'Atingimento',v:pct+'%', c:pct>=100?'#4ADE80':pct>=60?'#CA8A04':'#F87171'},
+                    {l:'Forecast pond.',v:fmtAmt(cliFc), c:'#FBBF24'},
+                  ].map(function(m,i){
+                    return (
+                      <div key={i} className="metric" style={{flex:1,minWidth:100}}>
+                        <div className="metric-val" style={{color:m.c}}>{m.v}</div>
+                        <div className="metric-lbl">{m.l}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
+            {/* Lista de suppliers */}
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))',gap:8,marginBottom:selSupp?12:0}}>
+              {ALL_SUPPS.filter(function(sup){ return cell(sup,selCli).target>0||cell(sup,selCli).realiz>0; }).map(function(sup){
+                const c = cell(sup, selCli);
+                const oppsFc = fcOpps.filter(function(o){
+                  return o.supplier&&o.supplier.toUpperCase()===sup.toUpperCase()&&o.customer&&o.customer.toUpperCase().includes(selCli.split(' ')[0].toUpperCase());
+                });
+                const fcVal = oppsFc.reduce(function(s,o){ return s+amtNum(o.amount)*parseFloat(o.confidence||0); },0);
+                const pct = c.target>0?Math.round(c.realiz/c.target*100):0;
+                const color = pct>=100?'#16A34A':pct>=60?'#CA8A04':'#DC2626';
+                const isSelected = selSupp===sup;
+                return (
+                  <div key={sup} onClick={function(){ setSelSupp(isSelected?null:sup); }}
+                    style={{background:isSelected?'rgba(37,99,235,0.15)':'var(--bg3)',border:'1px solid '+(isSelected?'#2563EB':'var(--border)'),borderRadius:8,padding:'10px 12px',cursor:'pointer',borderLeft:'3px solid '+color,transition:'all .15s'}}>
+                    <div style={{fontSize:11,fontWeight:700,marginBottom:5,color:isSelected?'#60A5FA':'var(--text)'}}>{sup}</div>
+                    <div style={{fontSize:13,fontWeight:700,color:'var(--text)'}}>{fmtAmt(c.target)}</div>
+                    <div style={{fontSize:10,color:'#4ADE80',marginTop:2}}>{fmtAmt(c.realiz)} <span style={{color,fontWeight:700}}>({pct}%)</span></div>
+                    {fcVal>0 && <div style={{fontSize:9,color:'#FBBF24',marginTop:2}}>FC: {fmtAmt(fcVal)}</div>}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Card com gráfico quando supplier selecionado */}
+            {selSupp && (function(){
+              const c = cell(selSupp, selCli);
+              const oppsFc = fcOpps.filter(function(o){
+                return o.supplier&&o.supplier.toUpperCase()===selSupp.toUpperCase()&&o.customer&&o.customer.toUpperCase().includes(selCli.split(' ')[0].toUpperCase());
+              });
+              const fcVal = oppsFc.reduce(function(s,o){ return s+amtNum(o.amount)*parseFloat(o.confidence||0); },0);
+              const pct = c.target>0?Math.round(c.realiz/c.target*100):0;
+              const pctFc = c.target>0?Math.round(fcVal/c.target*100):0;
+              return (
+                <div className="card" style={{borderTop:'2px solid #2563EB'}}>
+                  <div style={{display:'flex',gap:16,alignItems:'flex-start',flexWrap:'wrap'}}>
+                    <div style={{flex:'0 0 auto'}}>
+                      <div style={{fontSize:13,fontWeight:700,marginBottom:12}}>{selSupp} × {selCli}</div>
+                      <MiniBar target={c.target} realiz={c.realiz} forecast={fcVal} w={300}/>
+                    </div>
+                    <div style={{flex:1,minWidth:180}}>
+                      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:12}}>
+                        {[
+                          {l:'Target',    v:fmtAmt(c.target),   c:'#60A5FA'},
+                          {l:'Realizado', v:fmtAmt(c.realiz),   c:'#4ADE80'},
+                          {l:'Ating.',    v:pct+'%',             c:pct>=100?'#4ADE80':pct>=60?'#CA8A04':'#F87171'},
+                          {l:'Forecast',  v:fmtAmt(fcVal),      c:'#FBBF24'},
+                          {l:'FC/Target', v:pctFc+'%',          c:pctFc>=100?'#4ADE80':pctFc>=60?'#CA8A04':'#F87171'},
+                        ].map(function(m,i){
+                          return (
+                            <div key={i} style={{background:'var(--bg3)',borderRadius:6,padding:'7px 10px'}}>
+                              <div style={{fontSize:9,color:'var(--text3)',marginBottom:2,textTransform:'uppercase',letterSpacing:'.05em'}}>{m.l}</div>
+                              <div style={{fontSize:14,fontWeight:700,color:m.c}}>{m.v}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {/* Oportunidades no Forecast */}
+                      {oppsFc.length>0 && (
+                        <div>
+                          <div style={{fontSize:10,fontWeight:600,color:'var(--text2)',marginBottom:6,textTransform:'uppercase',letterSpacing:'.05em'}}>Oportunidades no Forecast</div>
+                          {oppsFc.map(function(o,i){
+                            return (
+                              <div key={i} style={{background:'var(--bg3)',borderRadius:5,padding:'5px 8px',marginBottom:4,fontSize:10}}>
+                                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8}}>
+                                  <span style={{color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{o.description}</span>
+                                  <span style={{color:confColor(o.confidence),fontWeight:700,flexShrink:0}}>{fmtConf(o.confidence)}</span>
+                                </div>
+                                <div style={{color:'var(--text3)',marginTop:2}}>{fmtAmt(amtNum(o.amount))} pond. → {fmtAmt(amtNum(o.amount)*parseFloat(o.confidence||0))}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
         </div>
       )}
     </div>
