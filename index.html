@@ -3058,31 +3058,76 @@ function ViewOrcamento({ session, isGestor }) {
 
   function importXLSX(e){
     var file = e.target.files[0]; if(!file) return;
+    var fileName = file.name.replace(/\.xlsx?$/i,'');
     var reader = new FileReader();
     reader.onload = function(ev){
       try{
         var wb = XLSX.read(ev.target.result,{type:'binary'});
         var ws = wb.Sheets[wb.SheetNames[0]];
         var rows = XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
-        // Encontrar linha de header (ITEM, DESCRIÇÃO, CÓDIGO, etc.)
+
+        // ── Extrair info do nome do arquivo ──────────────────────────────────
+        // Padrão: RB_CLIENTE_CONTATO_RBnnnnn_AnoEF_sigmas
+        // Ex: RB_JACTO3_THIAGO_ALBERTIN_RB19827_25EF_10648286...
+        var orcNum = '', cliNomeArq = '', contNomeArq = '';
+        var partes = fileName.split(/[_\-]/);
+        // Número RB (ex: RB19827)
+        var rbMatch = fileName.match(/RB(\d{4,})/i);
+        if(rbMatch) orcNum = 'RB'+rbMatch[1]+'/'+CUR_YEAR;
+        // Primeiro token após RB_ é o cliente, segundo é o contato (primeiro nome), terceiro sobrenome
+        if(partes.length>=2 && partes[0].toUpperCase()==='RB'){
+          cliNomeArq  = partes[1]||'';   // ex: JACTO3 → vai buscar "JACTO"
+          contNomeArq = (partes[2]||'') + (partes[3]?' '+partes[3]:''); // ex: THIAGO ALBERTIN
+        }
+        // Limpar número do final do nome do cliente (JACTO3 → JACTO)
+        cliNomeArq = cliNomeArq.replace(/\d+$/,'');
+
+        // ── Cruzar cliente com cadastro ───────────────────────────────────────
+        var clientsData = load(KEYS.clients,[]);
+        var cliMatch = clientsData.find(function(c){
+          var q = cliNomeArq.toLowerCase();
+          return (c.apelido&&c.apelido.toLowerCase().includes(q))
+              || (c.nome&&c.nome.toLowerCase().includes(q));
+        });
+
+        // ── Cruzar contato ────────────────────────────────────────────────────
+        var ctMatch = null;
+        if(cliMatch && cliMatch.contatos && contNomeArq){
+          var cn = contNomeArq.toLowerCase();
+          ctMatch = cliMatch.contatos.find(function(ct){
+            return ct.nome&&ct.nome.toLowerCase().includes(cn.split(' ')[0]);
+          });
+        }
+
+        // ── Encontrar linha de header na planilha ─────────────────────────────
         var hdr = -1, headers = [];
         for(var ri=0;ri<Math.min(20,rows.length);ri++){
-          var r = rows[ri].map(function(c){return String(c||'').trim().toUpperCase();});
-          if(r.indexOf('ITEM')>=0 && r.indexOf('DESCRIÇÃO')>=0){hdr=ri;headers=r;break;}
-          if(r.indexOf('ITEM')>=0 && (r.indexOf('SIGMA')>=0||r.indexOf('CÓDIGO')>=0)){hdr=ri;headers=r;break;}
+          var r = (rows[ri]||[]).map(function(c){return String(c||'').trim().toUpperCase().replace(/\n/g,' ');});
+          if(r.indexOf('ITEM')>=0 && (r.indexOf('DESCRIÇÃO')>=0||r.indexOf('DESCRICAO')>=0)){hdr=ri;headers=r;break;}
+          if(r.indexOf('ITEM')>=0 && r.indexOf('SIGMA')>=0){hdr=ri;headers=r;break;}
         }
-        // Ler cabeçalho do orçamento (linhas acima do header)
-        var orcNum = '', orcCli = '';
-        for(var ri2=0;ri2<Math.min(hdr,10);ri2++){
-          var row = rows[ri2] || [];
-          var txt = row.map(function(c){return String(c||'');}).join(' ');
-          if(txt.match(/RB\d{4,}/i)){var m=txt.match(/RB[\w\/]+/i); if(m) orcNum=m[0];}
-        }
-        if(hdr<0){ alert('Formato não reconhecido. Certifique-se que a planilha tem colunas ITEM, DESCRIÇÃO e CÓDIGO.'); return; }
-        var iItem=headers.indexOf('ITEM'), iDesc=Math.max(headers.indexOf('DESCRIÇÃO'),headers.indexOf('DESCRICAO')), iCod=Math.max(headers.indexOf('CÓDIGO'),headers.indexOf('CODIGO'));
-        var iSig=headers.indexOf('SIGMA'), iNcm=headers.indexOf('NCM'), iQde=Math.max(headers.indexOf('QDE'),headers.indexOf('QTD'));
-        var iUni=headers.indexOf('UNITÁRIO'), iPosto=headers.indexOf('POSTOS'), iSub=headers.indexOf('SUBPOSTOS'), iTorq=headers.indexOf('TORQUES(NM)');
-        var iEnt=headers.indexOf('ENTREGA'), iOri=headers.indexOf('ORIGEM MATERIAL'), iIpi=headers.indexOf('I.P.I. / I.S.S.');
+        if(hdr<0){ alert('Formato não reconhecido.\n\nA planilha deve ter uma linha com ITEM e DESCRIÇÃO.'); return; }
+
+        // ── Mapear índices das colunas ────────────────────────────────────────
+        var iItem = headers.indexOf('ITEM');
+        var iDesc = Math.max(headers.indexOf('DESCRIÇÃO'), headers.indexOf('DESCRICAO'));
+        var iCod  = Math.max(headers.indexOf('CÓDIGO'), headers.indexOf('CODIGO'));
+        var iSig  = headers.indexOf('SIGMA');
+        var iNcm  = headers.indexOf('NCM');
+        var iQde  = Math.max(headers.indexOf('QDE'), headers.indexOf('QTD'));
+        var iUni  = Math.max(headers.indexOf('UNITÁRIO'), headers.indexOf('UNITARIO'));
+        var iPosto= headers.indexOf('POSTOS');
+        var iSub  = headers.indexOf('SUBPOSTOS');
+        var iTorq = headers.findIndex(function(h){return h.startsWith('TORQUES');});
+        var iEnt  = headers.indexOf('ENTREGA');
+        var iOri  = headers.indexOf('ORIGEM MATERIAL');
+        var iIcms = headers.indexOf('ICMS');
+        var iPis  = headers.indexOf('PIS');
+        var iCof  = headers.indexOf('COFINS');
+        var iIpi  = Math.max(headers.indexOf('I.P.I. / I.S.S.'), headers.indexOf('I.P.I./I.S.S.'));
+        var iSt   = headers.findIndex(function(h){return h.startsWith('ST');});
+
+        // ── Ler itens ─────────────────────────────────────────────────────────
         var itens = [];
         for(var ri3=hdr+1;ri3<rows.length;ri3++){
           var row3 = rows[ri3]||[];
@@ -3090,35 +3135,61 @@ function ViewOrcamento({ session, isGestor }) {
           if(!itemN || isNaN(parseInt(itemN))) continue;
           var desc = iDesc>=0?String(row3[iDesc]||'').trim():'';
           if(!desc) continue;
+          var uni = iUni>=0?parseFloat(row3[iUni])||0:0;
           itens.push({
-            item: parseInt(itemN)||itens.length+1,
-            posto:   iPosto>=0?String(row3[iPosto]||''):'',
-            subposto:iSub>=0?String(row3[iSub]||''):'',
-            torque:  iTorq>=0?String(row3[iTorq]||''):'',
-            qtd:     iQde>=0?parseFloat(row3[iQde])||1:1,
+            item:     parseInt(itemN)||itens.length+1,
+            posto:    iPosto>=0?String(row3[iPosto]||''):'',
+            subposto: iSub>=0?String(row3[iSub]||''):'',
+            torque:   iTorq>=0?String(row3[iTorq]||''):'',
+            qtd:      iQde>=0?parseFloat(row3[iQde])||1:1,
             descricao:desc,
-            codigo:  iCod>=0?String(row3[iCod]||''):'',
-            sigma:   iSig>=0?String(row3[iSig]||''):'',
-            ncm:     iNcm>=0?String(row3[iNcm]||''):'',
-            entrega: iEnt>=0?String(row3[iEnt]||''):'',
-            origem:  iOri>=0?String(row3[iOri]||''):'0 - NACIONAL',
-            unitario:iUni>=0?parseFloat(row3[iUni])||0:0,
-            icms:0.12, pis:0.0065, cofins:0.03,
-            ipi:     iIpi>=0?parseFloat(row3[iIpi])||0:0,
-            st:0,
+            codigo:   iCod>=0?String(row3[iCod]||''):'',
+            sigma:    iSig>=0?String(row3[iSig]||''):'',
+            ncm:      iNcm>=0?String(row3[iNcm]||''):'',
+            entrega:  iEnt>=0?String(row3[iEnt]||''):'',
+            origem:   iOri>=0?String(row3[iOri]||''):'0 - NACIONAL',
+            unitario: uni,
+            icms:     iIcms>=0?parseFloat(row3[iIcms])||0.12:0.12,
+            pis:      iPis>=0?parseFloat(row3[iPis])||0.0065:0.0065,
+            cofins:   iCof>=0?parseFloat(row3[iCof])||0.03:0.03,
+            ipi:      iIpi>=0?parseFloat(row3[iIpi])||0:0,
+            st:       iSt>=0?parseFloat(row3[iSt])||0:0,
           });
         }
-        if(!itens.length){alert('Nenhum item encontrado na planilha.');return;}
+        if(!itens.length){alert('Nenhum item encontrado na planilha.\nVerifique se há linhas com ITEM e DESCRIÇÃO preenchidos.');return;}
+
         var num2 = String(orcs.length+1).padStart(5,'0');
         var novoOrc = Object.assign({},EMPTY_ORC,{
-          id:'orc_'+Date.now(), numero:orcNum||'RB'+num2+'/'+CUR_YEAR,
-          itens, totalBruto:totais(itens).totalBruto, totalIpi:totais(itens).totalIpi,
-          status:'rascunho',
+          id:          'orc_'+Date.now(),
+          numero:      orcNum||'RB'+num2+'/'+CUR_YEAR,
+          // Cliente do cadastro (ou do nome do arquivo)
+          _cliApelido: cliMatch?cliMatch.apelido:'',
+          cliente:     cliMatch?cliMatch.apelido:cliNomeArq,
+          // Endereço e dados do cliente
+          cnpj:        cliMatch?cliMatch.cnpj:'',
+          cidadeUf:    cliMatch?(cliMatch.cidade&&cliMatch.estado?cliMatch.cidade+' / '+cliMatch.estado:''):'',
+          cep:         cliMatch?cliMatch.cep:'',
+          endereco:    cliMatch?cliMatch.endereco:'',
+          // Contato encontrado
+          contato:     ctMatch?ctMatch.nome:(contNomeArq||''),
+          email:       ctMatch?ctMatch.email:'',
+          fone:        ctMatch?ctMatch.tel||ctMatch.cel:'',
+          // Itens e totais
+          itens:       itens,
+          totalBruto:  totais(itens).totalBruto,
+          totalIpi:    totais(itens).totalIpi,
+          status:      'rascunho',
         });
+
         setForm(novoOrc);
         setCliSearch(''); setShowCliDrop(false);
         setModal(true);
-        alert(itens.length+' itens importados. Revise e salve o orçamento.');
+
+        var msg = itens.length+' itens importados';
+        if(cliMatch) msg += '\n✅ Cliente: '+cliMatch.apelido;
+        else if(cliNomeArq) msg += '\n⚠️ Cliente "'+cliNomeArq+'" não encontrado no cadastro — verifique';
+        if(ctMatch) msg += '\n✅ Contato: '+ctMatch.nome;
+        alert(msg+'\n\nRevise e salve o orçamento.');
       }catch(err){alert('Erro ao importar: '+err.message);}
     };
     reader.readAsBinaryString(file);
