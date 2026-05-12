@@ -4272,6 +4272,24 @@ function ViewRadar({ session, isGestor, isConsultor }) {
 
   var countOn = Object.keys(radarOn).filter(function(k){return radarOn[k];}).length;
 
+  // EM BREVE — motor de busca em desenvolvimento
+  return (
+    <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100%',gap:16}}>
+      <div style={{fontSize:52}}>🧠</div>
+      <div style={{fontSize:22,fontWeight:800,color:'var(--text)',letterSpacing:'.04em'}}>RADAR DE MERCADO</div>
+      <div style={{padding:'8px 24px',borderRadius:20,background:'rgba(37,99,235,.15)',border:'1px solid rgba(37,99,235,.3)',color:'#60A5FA',fontWeight:700,fontSize:14,letterSpacing:'.08em'}}>
+        🚧 EM BREVE
+      </div>
+      <div style={{fontSize:12,color:'var(--text3)',textAlign:'center',maxWidth:380,lineHeight:1.8}}>
+        Inteligência de mercado automática por empresa.<br/>
+        Notícias · Score de intenção · Análise estratégica via IA.
+      </div>
+    </div>
+  );
+
+  // eslint-disable-next-line no-unreachable
+  var _unused = countOn;
+
   // Montar lista exibida
   var ativosList = clients.filter(function(c){ return radarOn[c.id]; }).map(function(c){
     var dados   = news[c.id]||{};
@@ -4470,6 +4488,395 @@ function ViewRadar({ session, isGestor, isConsultor }) {
   );
 }
 
+// ─── VIEW: TAREFAS & NOTIFICAÇÕES ────────────────────────────
+function ViewTarefas({ session, isGestor }) {
+  var KEYS_TASKS = 'crm_tasks_v1';
+  var [tasks,    setTasks]   = useState(function(){ return load(KEYS_TASKS, []); });
+  var [modal,    setModal]   = useState(false);
+  var [form,     setForm]    = useState(null);
+  var [filter,   setFilter]  = useState('pendentes');  // pendentes|hoje|concluidas|todas
+  var [notifPerm,setNotifPerm]=useState('default');    // 'granted'|'denied'|'default'
+  var [bell,     setBell]    = useState(false);        // animação campainha
+
+  var fcOpps  = load(KEYS.forecast, []);
+  var clients = load(KEYS.clients,  []);
+
+  var TIPOS = ['Visita presencial','Ligação','Videochamada','E-mail','Proposta','Follow-up','Demonstração','Prospecção','Reunião interna','Outro'];
+  var PRIOS  = [
+    {id:'alta',   label:'🔴 Alta',   color:'#DC2626'},
+    {id:'media',  label:'🟡 Média',  color:'#CA8A04'},
+    {id:'baixa',  label:'🔵 Baixa',  color:'#2563EB'},
+  ];
+  var EMPTY = {
+    id:'', titulo:'', tipo:'Ligação', prioridade:'media',
+    data:'', hora:'', resp:session.code||'', cliente:'', oppId:'',
+    descricao:'', whatsapp:'', concluida:false, notificado:false,
+  };
+
+  function saveTasks(list){ setTasks(list); save(KEYS_TASKS, list); }
+  function openNew(){
+    setForm(Object.assign({},EMPTY,{id:'task_'+Date.now(), data:new Date().toISOString().slice(0,10)}));
+    setModal(true);
+  }
+  function openEdit(t){ setForm(Object.assign({},t)); setModal(true); }
+  function saveForm(){
+    if(!form.titulo.trim()){ alert('Informe o título da tarefa.'); return; }
+    if(!form.data){ alert('Informe a data.'); return; }
+    var exists = tasks.find(function(t){return t.id===form.id;});
+    if(exists) saveTasks(tasks.map(function(t){return t.id===form.id?form:t;}));
+    else       saveTasks([form,...tasks]);
+    setModal(false);
+  }
+  function concluir(id){
+    saveTasks(tasks.map(function(t){return t.id===id?Object.assign({},t,{concluida:true}):t;}));
+  }
+  function deletar(id){ if(confirm('Excluir tarefa?')) saveTasks(tasks.filter(function(t){return t.id!==id;})); }
+
+  // ── NOTIFICAÇÕES ────────────────────────────────────────────
+  // Pedir permissão de notificação do browser
+  function pedirPermissao(){
+    if(!('Notification' in window)){ alert('Seu navegador não suporta notificações.'); return; }
+    Notification.requestPermission().then(function(p){
+      setNotifPerm(p);
+      if(p==='granted') alert('✅ Notificações ativadas! Você será avisado quando uma tarefa estiver próxima.');
+      else alert('❌ Permissão negada. Ative nas configurações do navegador.');
+    });
+  }
+
+  // Verificar status da permissão ao montar
+  useEffect(function(){
+    if('Notification' in window) setNotifPerm(Notification.permission);
+  }, []);
+
+  // ── MOTOR DE VERIFICAÇÃO de tarefas próximas ─────────────────
+  useEffect(function(){
+    function checkTasks(){
+      var now   = new Date();
+      var pends = tasks.filter(function(t){ return !t.concluida&&t.data&&t.hora; });
+      pends.forEach(function(t){
+        var dt    = new Date(t.data+'T'+t.hora+':00');
+        var diffM = (dt-now)/60000; // minutos até a tarefa
+        // Alertar 15 minutos antes (e não ter sido notificado ainda)
+        if(diffM>0 && diffM<=15 && !t.notificado){
+          // Marcar como notificado
+          saveTasks(tasks.map(function(x){ return x.id===t.id?Object.assign({},x,{notificado:true}):x; }));
+          // Campainha visual
+          setBell(true); setTimeout(function(){setBell(false);},3000);
+          // Notificação do browser
+          if(Notification.permission==='granted'){
+            new Notification('⏰ FORGE B2B — '+t.titulo, {
+              body: (t.cliente?t.cliente+' · ':'')+t.tipo+' às '+t.hora,
+              icon: '/icons/icon48.png',
+            });
+          }
+        }
+        // Alertar no horário exato
+        if(diffM<=0 && diffM>-2 && !t.notificadoExato){
+          saveTasks(tasks.map(function(x){ return x.id===t.id?Object.assign({},x,{notificadoExato:true}):x; }));
+          setBell(true); setTimeout(function(){setBell(false);},5000);
+          if(Notification.permission==='granted'){
+            new Notification('🔔 AGORA — '+t.titulo, {
+              body: (t.cliente||'')+(t.tipo?' · '+t.tipo:''),
+              icon: '/icons/icon48.png',
+              requireInteraction:true,
+            });
+          }
+        }
+      });
+    }
+    checkTasks();
+    var interval = setInterval(checkTasks, 60000); // a cada 1 minuto
+    return function(){ clearInterval(interval); };
+  }, [tasks]);
+
+  // ── WhatsApp link ─────────────────────────────────────────────
+  function abrirWhatsApp(task){
+    var num = (task.whatsapp||'').replace(/\D/g,'');
+    if(!num){ alert('Informe o WhatsApp do contato na tarefa.'); return; }
+    var msg = encodeURIComponent(
+      '⏰ *LEMBRETE — FORGE B2B*\n\n'
+      +'*'+task.titulo+'*\n'
+      +(task.cliente?'Cliente: '+task.cliente+'\n':'')
+      +(task.tipo?'Tipo: '+task.tipo+'\n':'')
+      +'Data: '+task.data.split('-').reverse().join('/')
+      +(task.hora?' às '+task.hora:'')
+      +(task.descricao?'\n\n'+task.descricao:'')
+    );
+    var url = 'https://wa.me/'+('55'+num)+'?text='+msg;
+    window.open(url,'_blank');
+  }
+
+  // ── Filtros e dados ───────────────────────────────────────────
+  var hoje = new Date().toISOString().slice(0,10);
+  var filtered = tasks.filter(function(t){
+    if(filter==='pendentes') return !t.concluida;
+    if(filter==='hoje')      return !t.concluida && t.data===hoje;
+    if(filter==='concluidas')return  t.concluida;
+    return true; // todas
+  }).sort(function(a,b){
+    // Ordenar por data+hora asc (pendentes primeiro)
+    var da = (a.data||'9999')+(a.hora||'99:99');
+    var db = (b.data||'9999')+(b.hora||'99:99');
+    return da<db?-1:da>db?1:0;
+  });
+
+  // Contar tarefas de hoje
+  var qtdHoje = tasks.filter(function(t){ return !t.concluida&&t.data===hoje; }).length;
+  var qtdPend = tasks.filter(function(t){ return !t.concluida; }).length;
+  var qtdVenc = tasks.filter(function(t){ return !t.concluida&&t.data&&t.data<hoje; }).length;
+
+  // Oportunidades do cliente selecionado
+  var oppsFiltradas = form ? fcOpps.filter(function(o){
+    return !form.cliente || o.customer===form.cliente;
+  }) : [];
+
+  var inp = {width:'100%'};
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:12,height:'100%'}}>
+
+      {/* ── MÉTRICAS ── */}
+      <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+        {[
+          {l:'Pendentes',  v:qtdPend, c:'var(--text)',  f:'pendentes'},
+          {l:'Hoje',       v:qtdHoje, c:'#CA8A04',      f:'hoje'},
+          {l:'Vencidas',   v:qtdVenc, c:'#DC2626',      f:'pendentes'},
+          {l:'Concluídas', v:tasks.filter(function(t){return t.concluida;}).length, c:'#4ADE80', f:'concluidas'},
+        ].map(function(m){
+          return (
+            <div key={m.l} onClick={function(){setFilter(m.f);}} className="metric"
+              style={{cursor:'pointer',borderBottom:'2px solid '+(filter===m.f?m.c:'transparent'),paddingBottom:4,flex:1,minWidth:80}}>
+              <div className="metric-val" style={{color:m.c,fontSize:20}}>{m.v}</div>
+              <div className="metric-lbl">{m.l}</div>
+            </div>
+          );
+        })}
+        <div style={{flex:2}}/>
+        {/* Campainha + notificação */}
+        <button onClick={pedirPermissao}
+          style={{display:'flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:7,
+            border:'1px solid '+(notifPerm==='granted'?'rgba(74,222,128,.4)':'var(--border)'),
+            background:notifPerm==='granted'?'rgba(74,222,128,.08)':'var(--bg3)',
+            color:notifPerm==='granted'?'#4ADE80':'var(--text3)',cursor:'pointer',fontSize:11,fontWeight:600}}>
+          <span style={{fontSize:16,display:'inline-block',
+            animation:bell?'ring .3s ease infinite alternate':'none',
+            transform:bell?'rotate(15deg)':'none',transition:'transform .15s'}}>
+            🔔
+          </span>
+          {notifPerm==='granted'?'Notificações ON':'Ativar notificações'}
+        </button>
+        <button className="btn btn-primary" onClick={openNew}>+ Nova tarefa</button>
+      </div>
+
+      <style>{`@keyframes ring{0%{transform:rotate(-15deg)}100%{transform:rotate(15deg)}}`}</style>
+
+      {/* ── FILTROS ── */}
+      <div style={{display:'flex',gap:4,background:'var(--bg3)',borderRadius:8,padding:3,border:'1px solid var(--border)',maxWidth:480}}>
+        {[
+          {id:'pendentes', l:'📋 Pendentes'},
+          {id:'hoje',      l:'📅 Hoje'},
+          {id:'concluidas',l:'✅ Concluídas'},
+          {id:'todas',     l:'Todas'},
+        ].map(function(f){
+          return (
+            <button key={f.id} onClick={function(){setFilter(f.id);}}
+              style={{flex:1,padding:'6px 0',fontSize:11,fontWeight:filter===f.id?700:400,
+                borderRadius:6,border:'none',
+                background:filter===f.id?'var(--card)':'transparent',
+                color:filter===f.id?'var(--text)':'var(--text3)',
+                cursor:'pointer',boxShadow:filter===f.id?'0 1px 3px rgba(0,0,0,.2)':'none'}}>
+              {f.l}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── LISTA DE TAREFAS ── */}
+      <div style={{flex:1,overflowY:'auto',display:'flex',flexDirection:'column',gap:8}}>
+        {filtered.length===0 ? (
+          <div className="card" style={{textAlign:'center',padding:'40px 20px',color:'var(--text3)'}}>
+            <div style={{fontSize:36,marginBottom:10}}>📋</div>
+            <div style={{fontWeight:600,marginBottom:4}}>Nenhuma tarefa {filter==='hoje'?'para hoje':filter==='concluidas'?'concluída':'pendente'}</div>
+            <button className="btn btn-primary" style={{marginTop:12}} onClick={openNew}>+ Criar primeira tarefa</button>
+          </div>
+        ) : filtered.map(function(t){
+          var prio = PRIOS.find(function(p){return p.id===t.prioridade;})||PRIOS[1];
+          var dataFmt = t.data?t.data.split('-').reverse().join('/'):'';
+          var vencida = !t.concluida && t.data && t.data<hoje;
+          var eHoje   = t.data===hoje;
+          var dtDt    = t.data&&t.hora ? new Date(t.data+'T'+t.hora+':00') : null;
+          var diffMin = dtDt ? Math.round((dtDt-new Date())/60000) : null;
+          var proximaBadge = diffMin!==null&&diffMin>0&&diffMin<=60
+            ? '⏰ em '+diffMin+'min' : diffMin!==null&&diffMin<=0&&diffMin>-120
+            ? '🔴 AGORA' : null;
+
+          return (
+            <div key={t.id} className="card" style={{
+              borderLeft:'3px solid '+(t.concluida?'var(--border)':vencida?'#DC2626':eHoje?'#CA8A04':prio.color),
+              opacity:t.concluida?.6:1}}>
+              <div style={{display:'flex',gap:10,alignItems:'flex-start'}}>
+                {/* Checkbox */}
+                <input type="checkbox" checked={!!t.concluida} onChange={function(){concluir(t.id);}}
+                  style={{marginTop:3,width:16,height:16,cursor:'pointer',flexShrink:0}}/>
+                <div style={{flex:1,minWidth:0}}>
+                  {/* Título + badges */}
+                  <div style={{display:'flex',gap:6,alignItems:'baseline',flexWrap:'wrap',marginBottom:3}}>
+                    <span style={{fontWeight:700,fontSize:13,textDecoration:t.concluida?'line-through':'none',
+                      color:t.concluida?'var(--text3)':'var(--text)'}}>{t.titulo}</span>
+                    <span style={{fontSize:10,padding:'1px 7px',borderRadius:10,fontWeight:600,
+                      background:prio.color+'18',color:prio.color}}>{prio.label}</span>
+                    <span style={{fontSize:10,padding:'1px 7px',borderRadius:5,
+                      background:'var(--bg3)',color:'var(--text3)'}}>{t.tipo}</span>
+                    {vencida&&<span style={{fontSize:10,padding:'1px 7px',borderRadius:5,background:'rgba(220,38,38,.15)',color:'#FCA5A5',fontWeight:700}}>VENCIDA</span>}
+                    {proximaBadge&&<span style={{fontSize:10,padding:'1px 7px',borderRadius:5,background:'rgba(202,138,4,.15)',color:'#FBBF24',fontWeight:700,animation:'ring 1s ease infinite alternate'}}>{proximaBadge}</span>}
+                  </div>
+                  {/* Meta */}
+                  <div style={{fontSize:11,color:'var(--text3)',display:'flex',gap:10,flexWrap:'wrap'}}>
+                    {dataFmt&&<span>📅 {dataFmt}{t.hora?' às '+t.hora:''}</span>}
+                    {t.resp&&<span>👤 {t.resp}</span>}
+                    {t.cliente&&<span>🏢 {t.cliente}</span>}
+                  </div>
+                  {t.descricao&&<div style={{fontSize:11,color:'var(--text2)',marginTop:4,lineHeight:1.5}}>{t.descricao}</div>}
+                  {/* Oportunidade vinculada */}
+                  {(function(){
+                    var opp = t.oppId ? fcOpps.find(function(o){return o.id===t.oppId;}) : null;
+                    return opp ? (
+                      <div style={{marginTop:4,fontSize:10,padding:'3px 8px',borderRadius:5,
+                        background:'rgba(37,99,235,.08)',border:'1px solid rgba(37,99,235,.15)',
+                        color:'#60A5FA',display:'inline-block'}}>
+                        📊 {opp.customer} · {(opp.description||'').slice(0,40)}
+                      </div>
+                    ) : null;
+                  })()}
+                </div>
+                {/* Ações */}
+                <div style={{display:'flex',gap:4,flexShrink:0}}>
+                  {t.whatsapp&&!t.concluida&&(
+                    <button onClick={function(){abrirWhatsApp(t);}}
+                      title="Enviar lembrete WhatsApp"
+                      style={{background:'rgba(37,211,102,.12)',border:'1px solid rgba(37,211,102,.3)',
+                        borderRadius:6,cursor:'pointer',padding:'5px 8px',fontSize:14}}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="#25D166">
+                        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+                        <path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.553 4.116 1.522 5.847L.057 23.5l5.796-1.521A11.94 11.94 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.938a9.908 9.908 0 01-5.032-1.374l-.361-.214-3.741.981.999-3.648-.235-.374A9.86 9.86 0 012.062 12C2.062 6.792 6.792 2.062 12 2.062S21.938 6.792 21.938 12 17.208 21.938 12 21.938z"/>
+                      </svg>
+                    </button>
+                  )}
+                  {!t.concluida&&(
+                    <button onClick={function(){openEdit(t);}} style={{background:'none',border:'1px solid var(--border)',borderRadius:6,cursor:'pointer',padding:'5px 8px',fontSize:12,color:'var(--text3)'}}>✏️</button>
+                  )}
+                  <button onClick={function(){deletar(t.id);}} style={{background:'none',border:'none',cursor:'pointer',padding:'5px 6px',fontSize:13,color:'var(--text3)',opacity:.4}} onMouseEnter={function(ev){ev.target.style.opacity=1;}} onMouseLeave={function(ev){ev.target.style.opacity=.4;}}>✕</button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── MODAL CRIAR/EDITAR ── */}
+      {modal && form && (
+        <div className="modal-bg">
+          <div className="modal" style={{maxWidth:580}}>
+            <div className="modal-hd">
+              <h2>{form.id&&tasks.find(function(t){return t.id===form.id;})?'✏️ Editar tarefa':'📋 Nova tarefa'}</h2>
+              <button className="modal-close" onClick={function(){setModal(false);}}>✕</button>
+            </div>
+
+            {/* Prioridade — destaque visual */}
+            <div style={{display:'flex',gap:6,marginBottom:14}}>
+              {PRIOS.map(function(p){
+                var sel = form.prioridade===p.id;
+                return (
+                  <button key={p.id} onClick={function(){setForm(Object.assign({},form,{prioridade:p.id}));}}
+                    style={{padding:'6px 14px',borderRadius:20,border:'1px solid '+(sel?p.color:'var(--border)'),
+                      background:sel?p.color+'20':'transparent',color:sel?p.color:'var(--text3)',
+                      cursor:'pointer',fontSize:11,fontWeight:sel?700:400,flex:1}}>
+                    {p.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="field" style={{marginBottom:10}}>
+              <label>Título *</label>
+              <input value={form.titulo||''} onChange={function(e){setForm(Object.assign({},form,{titulo:e.target.value}));}}
+                style={inp} placeholder="Ex: Visitar Honda — apresentar solução de torque" autoFocus/>
+            </div>
+
+            <div className="grid-3" style={{marginBottom:10}}>
+              <div className="field">
+                <label>Tipo</label>
+                <select value={form.tipo||''} onChange={function(e){setForm(Object.assign({},form,{tipo:e.target.value}));}} style={inp}>
+                  {TIPOS.map(function(t){ return <option key={t} value={t}>{t}</option>; })}
+                </select>
+              </div>
+              <div className="field">
+                <label>Data *</label>
+                <input type="date" value={form.data||''} onChange={function(e){setForm(Object.assign({},form,{data:e.target.value}));}} style={inp}/>
+              </div>
+              <div className="field">
+                <label>Horário</label>
+                <input type="time" value={form.hora||''} onChange={function(e){setForm(Object.assign({},form,{hora:e.target.value}));}} style={inp}/>
+              </div>
+            </div>
+
+            <div className="grid-2" style={{marginBottom:10}}>
+              <div className="field">
+                <label>Responsável</label>
+                <input value={form.resp||''} onChange={function(e){setForm(Object.assign({},form,{resp:e.target.value}));}} style={inp} placeholder="EF"/>
+              </div>
+              <div className="field">
+                <label>Cliente</label>
+                <select value={form.cliente||''} onChange={function(e){setForm(Object.assign({},form,{cliente:e.target.value,oppId:''}));}} style={inp}>
+                  <option value="">— Prospecção / sem cliente —</option>
+                  {clients.map(function(c){ return <option key={c.id} value={c.apelido}>{c.apelido}</option>; })}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid-2" style={{marginBottom:10}}>
+              <div className="field">
+                <label>Oportunidade (opcional)</label>
+                <select value={form.oppId||''} onChange={function(e){setForm(Object.assign({},form,{oppId:e.target.value}));}} style={inp}>
+                  <option value="">— Nenhuma / Prospecção —</option>
+                  {oppsFiltradas.map(function(o){
+                    return <option key={o.id} value={o.id}>{o.customer} · {(o.description||'').slice(0,35)}</option>;
+                  })}
+                </select>
+              </div>
+              <div className="field">
+                <label>WhatsApp do contato</label>
+                <input value={form.whatsapp||''} onChange={function(e){setForm(Object.assign({},form,{whatsapp:e.target.value}));}}
+                  style={inp} placeholder="11 99999-9999" type="tel"/>
+              </div>
+            </div>
+
+            <div className="field" style={{marginBottom:14}}>
+              <label>Descrição / Objetivo</label>
+              <textarea value={form.descricao||''} onChange={function(e){setForm(Object.assign({},form,{descricao:e.target.value}));}}
+                style={{width:'100%',height:64,resize:'vertical',lineHeight:1.6}}
+                placeholder="O que precisa ser feito, objetivo da visita, materiais necessários..."/>
+            </div>
+
+            {/* Info notificação */}
+            <div style={{background:'rgba(37,99,235,.06)',border:'1px solid rgba(37,99,235,.12)',
+              borderRadius:6,padding:'7px 10px',marginBottom:12,fontSize:10,color:'var(--text3)'}}>
+              🔔 Se as notificações estiverem ativas, você será alertado <b>15 minutos antes</b> e <b>no horário exato</b> da tarefa.
+              {notifPerm!=='granted'&&<span style={{color:'#FBBF24'}}> — <b>Notificações desativadas.</b></span>}
+              {form.whatsapp&&<span> O botão WhatsApp envia lembrete manualmente pelo wa.me.</span>}
+            </div>
+
+            <div style={{display:'flex',gap:8}}>
+              <button className="btn btn-primary" onClick={saveForm} style={{flex:1}}>💾 Salvar</button>
+              <button className="btn btn-secondary" onClick={function(){setModal(false);}}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── APP PRINCIPAL ────────────────────────────────────────────
 function App() {
   const [session, setSession] = useState(function(){ return load(KEYS.session, null); });
@@ -4533,6 +4940,7 @@ function App() {
     {id:'divider1',    divider:true},
     {id:'orcamento',   icon:'📝', label:'Orçamento'},
     {id:'relatorio',   icon:'📋', label:'Relatórios'},
+    {id:'tarefas',     icon:'✅', label:'Tarefas'},
     {id:'radar',       icon:'🧠', label:'Radar'},
     {id:'divider2',    divider:true},
     {id:'demo',        icon:'🔧', label:'Demonstração'},
@@ -4553,6 +4961,7 @@ function App() {
     if (view==='budget')    return <ViewBudget    session={session} isGestor={isGestor}/>;
     if (view==='orcamento') return <ViewOrcamento session={session} isGestor={isGestor}/>;
     if (view==='relatorio') return <ViewRelatorio session={session} isGestor={isGestor} isConsultor={isConsultor}/>;
+    if (view==='tarefas')   return <ViewTarefas   session={session} isGestor={isGestor}/>;
     if (view==='radar')     return <ViewRadar     session={session} isGestor={isGestor} isConsultor={isConsultor}/>;
     if (view==='demo')      return <ViewDemo      session={session} isGestor={isGestor} isEspecialista={isEspecialista}/>;
     if (view==='estoque')   return <ViewEstoque   session={session}/>;
