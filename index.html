@@ -4975,7 +4975,7 @@ function App() {
       <div className="main">
         {/* TOPBAR com cor do dia */}
         <div className="topbar" style={corDia?{borderBottom:'2px solid '+corDia}:{}}>
-          <div style={{display:'flex',alignItems:'center',gap:6,opacity:.85}}>
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
             {(function(){
               try{
                 var logoB64 = document.querySelector('link[rel="icon"]');
@@ -4983,7 +4983,7 @@ function App() {
               }catch(ex){}
               return null;
             })()}
-            
+            <span style={{fontSize:13,fontWeight:800,letterSpacing:'.06em',color:'var(--text)',whiteSpace:'nowrap'}}>FORGE B2B</span>
           </div>
           <span className="topbar-title">
             {(NAV.find(function(v){return v.id===view;})||{}).label||view}
