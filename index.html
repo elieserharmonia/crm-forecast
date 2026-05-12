@@ -4025,429 +4025,445 @@ function ViewRelatorio({ session, isGestor, isConsultor }) {
 
 // ─── VIEW: RADAR DE MERCADO ──────────────────────────────────
 function ViewRadar({ session, isGestor, isConsultor }) {
-  var KEYS_RADAR    = 'crm_radar_v1';
-  var KEYS_RADAR_ON = 'crm_radar_clients_on'; // clientes com radar ativo
-  var [radares,    setRadares]   = useState(function(){ return load(KEYS_RADAR, []); });
+  // ── Chaves de storage ────────────────────────────────────────────────────────
+  var KEYS_RADAR     = 'crm_radar_v1';
+  var KEYS_RADAR_ON  = 'crm_radar_clients_on';
+  var KEYS_RADAR_NEWS= 'crm_radar_news_v1';   // cache de notícias por cliente
+  var KEYS_RADAR_TS  = 'crm_radar_ts_v1';     // timestamp última atualização
+
+  // ── Estados ──────────────────────────────────────────────────────────────────
   var [radarOn,    setRadarOn]   = useState(function(){ return load(KEYS_RADAR_ON, {}); });
-  var [modal,      setModal]     = useState(false);
-  var [form,       setForm]      = useState(null);
-  var [selCli,     setSelCli]    = useState(null);
+  var [news,       setNews]      = useState(function(){ return load(KEYS_RADAR_NEWS, {}); });
+  var [timestamps, setTimestamps]= useState(function(){ return load(KEYS_RADAR_TS, {}); });
+  var [loading,    setLoading]   = useState(false);   // rodando busca geral
+  var [loadingId,  setLoadingId] = useState(null);    // cliente em progresso
+  var [progress,   setProgress]  = useState('');
   var [search,     setSearch]    = useState('');
-  var [aiLoading,  setAiLoading] = useState(null);  // id do cliente sendo gerado
-  var [aiResult,   setAiResult]  = useState({});    // {cliId: html gerado}
-  var [showAi,     setShowAi]    = useState({});    // {cliId: bool}
+  var [filterScore,setFilterScore]=useState('todos'); // todos|quente|oportunidade|monitorar|frio
+  var [filterKw,   setFilterKw]  = useState('');
 
-  var clients  = load(KEYS.clients,  []);
-  var fcOpps   = load(KEYS.forecast, []);
+  var clients = load(KEYS.clients, []);
 
-  function saveRadares(list){ setRadares(list); save(KEYS_RADAR, list); }
-
+  // ── Limite máximo 20 empresas ────────────────────────────────────────────────
+  var MAX_RADAR = 20;
   function toggleRadarOn(cliId){
-    var next = Object.assign({}, radarOn, {[cliId]: !radarOn[cliId]});
+    var on = !!radarOn[cliId];
+    if(!on){
+      var count = Object.values(radarOn).filter(Boolean).length;
+      if(count >= MAX_RADAR){
+        alert('Limite máximo de '+MAX_RADAR+' empresas no Radar.\nDesative uma empresa antes de adicionar outra.');
+        return;
+      }
+    }
+    var next = Object.assign({}, radarOn, {[cliId]: !on});
     setRadarOn(next); save(KEYS_RADAR_ON, next);
   }
 
-  // ── GERAR INTELIGÊNCIA COM IA ─────────────────────────────────────────────
-  function gerarIntelIA(cli){
-    setAiLoading(cli.id);
-    setShowAi(function(prev){ return Object.assign({},prev,{[cli.id]:true}); });
+  // ── Palavras-chave e scores ──────────────────────────────────────────────────
+  var KEYWORDS = [
+    {word:'nova fábrica',    score:30, label:'Nova fábrica'},
+    {word:'nova planta',     score:30, label:'Nova planta'},
+    {word:'expansão',        score:25, label:'Expansão'},
+    {word:'investimento',    score:20, label:'Investimento'},
+    {word:'CAPEX',           score:20, label:'CAPEX'},
+    {word:'ampliação',       score:22, label:'Ampliação'},
+    {word:'automação',       score:15, label:'Automação'},
+    {word:'indústria 4.0',   score:15, label:'Indústria 4.0'},
+    {word:'contratação',     score:10, label:'Contratação'},
+    {word:'linha de produção',score:18,label:'Linha produção'},
+    {word:'modernização',    score:15, label:'Modernização'},
+    {word:'aquisição',       score:20, label:'Aquisição'},
+    {word:'torque',          score:25, label:'Torque'},
+    {word:'ferramentas',     score:15, label:'Ferramentas'},
+    {word:'manutenção',      score:10, label:'Manutenção'},
+    {word:'qualidade',       score:10, label:'Qualidade'},
+    {word:'recall',          score:12, label:'Recall'},
+    {word:'rastreabilidade', score:18, label:'Rastreabilidade'},
+    {word:'montagem',        score:14, label:'Montagem'},
+    {word:'fornecedor',      score:12, label:'Fornecedor'},
+  ];
 
-    // Contexto do cliente
-    var oppsCliente = fcOpps.filter(function(o){
-      return o.customer && cli.apelido && o.customer.toLowerCase().includes(cli.apelido.toLowerCase().slice(0,6));
+  // Score por notícia — soma dos keywords encontrados (max 100)
+  function scoreNoticia(text){
+    var total = 0;
+    var found = [];
+    var low = text.toLowerCase();
+    KEYWORDS.forEach(function(kw){
+      if(low.includes(kw.word.toLowerCase())){
+        total += kw.score;
+        found.push(kw.label);
+      }
     });
-    var radaresCliente = radares.filter(function(r){ return r.cliente===cli.apelido; });
+    return {score: Math.min(total, 100), kws: found};
+  }
 
-    var ctx = 'Empresa: '+cli.nome+' ('+cli.apelido+')\n';
-    ctx += 'CNPJ: '+(cli.cnpj||'N/A')+'\n';
-    ctx += 'Segmento: '+(cli.segmento||'N/A')+' | Cidade: '+(cli.cidade||'N/A')+' / '+(cli.estado||'N/A')+'\n';
-    ctx += 'Site: '+(cli.site||'N/A')+'\n';
-    if(oppsCliente.length){
-      ctx += '\nOportunidades ativas no CRM:\n';
-      oppsCliente.forEach(function(o){
-        ctx += '- '+o.supplier+': '+o.description+' ('+Math.round(parseFloat(o.confidence||0)*100)+'% / R$'+o.amount+')\n';
+  // Classificação por score total do cliente
+  function classificar(score){
+    if(score >= 81) return {label:'🔴 Prioridade Máxima', color:'#DC2626', id:'quente'};
+    if(score >= 61) return {label:'🟠 Oportunidade',      color:'#EA580C', id:'oportunidade'};
+    if(score >= 31) return {label:'🟡 Monitorar',         color:'#CA8A04', id:'monitorar'};
+    return              {label:'🔵 Frio',               color:'#2563EB', id:'frio'};
+  }
+
+  // Score total do cliente = média dos top-5 scores de notícias
+  function scoreCliente(cliId){
+    var lista = (news[cliId]||[]);
+    if(!lista.length) return 0;
+    var sorted = lista.map(function(n){return n.score||0;}).sort(function(a,b){return b-a;});
+    var top = sorted.slice(0,5);
+    return Math.round(top.reduce(function(s,v){return s+v;},0)/top.length);
+  }
+
+  // ── Motor RSS ────────────────────────────────────────────────────────────────
+  // Proxy CORS: tenta allorigins, fallback corsproxy.io
+  function buildProxyUrl(url, proxyIdx){
+    var proxies = [
+      'https://api.allorigins.win/get?url=',
+      'https://corsproxy.io/?',
+      'https://api.codetabs.com/v1/proxy?quest=',
+    ];
+    var p = proxies[proxyIdx||0];
+    return p + encodeURIComponent(url);
+  }
+
+  function buildRSSUrl(empresa, keyword){
+    var q = encodeURIComponent(empresa + ' ' + keyword);
+    return 'https://news.google.com/rss/search?q='+q+'&hl=pt-BR&gl=BR&ceid=BR:pt-419';
+  }
+
+  // Parsear XML do RSS manualmente (sem lib externa)
+  function parseRSS(xml, empresa, keyword){
+    var items = [];
+    var parser = new DOMParser();
+    var doc = parser.parseFromString(xml, 'text/xml');
+    var entries = doc.querySelectorAll('item');
+    entries.forEach(function(item){
+      var title   = (item.querySelector('title')   ||{}).textContent||'';
+      var link    = (item.querySelector('link')    ||{}).textContent||'';
+      var pubDate = (item.querySelector('pubDate') ||{}).textContent||'';
+      var desc    = (item.querySelector('description')||{}).textContent||'';
+      if(!title || title.length<5) return;
+      // Limpar tags HTML da descrição
+      var div = document.createElement('div');
+      div.innerHTML = desc;
+      var cleanDesc = div.textContent||'';
+      var full = title + ' ' + cleanDesc;
+      var sc = scoreNoticia(full);
+      items.push({
+        id:      btoa(encodeURIComponent(title)).slice(0,20),
+        title:   title,
+        link:    link,
+        date:    pubDate ? new Date(pubDate).toLocaleDateString('pt-BR') : '',
+        rawDate: pubDate ? new Date(pubDate).getTime() : 0,
+        keyword: keyword,
+        empresa: empresa,
+        score:   sc.score,
+        kws:     sc.kws,
+        desc:    cleanDesc.slice(0,200),
       });
-    }
-    if(radaresCliente.length){
-      ctx += '\nInteligências já registradas:\n';
-      radaresCliente.forEach(function(r){
-        ctx += '- ['+r.categoria+']: '+r.titulo+'\n';
-      });
-    }
+    });
+    return items;
+  }
 
-    var prompt = 'Você é um consultor estratégico especializado em manufatura industrial, automação, ergonomia e tecnologia de aperto (torque). Sua missão é pesquisar e analisar inteligência de mercado sobre a empresa cliente abaixo, para apoiar vendas consultivas B2B de equipamentos industriais.\n\n'+ctx+'\n\nFaça uma análise completa e atual da empresa, cobrindo:\n\n1. **PERFIL E MOMENTO ATUAL** — porte, produtos fabricados, mercados, situação financeira recente\n2. **INVESTIMENTOS E EXPANSÃO** — projetos anunciados, ampliações, novas plantas, capex divulgado\n3. **TEMPERATURA DO MERCADO** — como está o setor em que atuam, tendências, crescimento ou retração\n4. **NOVOS PRODUTOS E DESENVOLVIMENTOS** — o que estão desenvolvendo, novos modelos, P&D\n5. **O QUE ESTÃO BUSCANDO COMPRAR** — licitações abertas, editais, demandas de fornecedores, novos parceiros\n6. **AUTOMAÇÃO E TECNOLOGIA** — iniciativas de indústria 4.0, robótica, digitalização, rastreabilidade\n7. **ERGONOMIA E SEGURANÇA** — iniciativas NR12/NR17, programas de saúde ocupacional\n8. **OPORTUNIDADES PARA NOSSO PORTFÓLIO** — onde ferramentas de torque (Norbar, Bosch, Milwaukee, Enerpac, 3ARM, Lübbering, Panasonic pulsativas, balancins TECNA) podem agregar valor\n9. **RISCOS E ALERTAS** — possíveis mudanças de fornecedor, corte de budget, concorrência\n10. **CONTATOS ESTRATÉGICOS** — quais áreas e perfis de contato priorizar (Engenharia, Qualidade, Manutenção, Compras)\n\nResponda em português do Brasil, de forma estruturada, direta e acionável. Use markdown com títulos em negrito. Seja específico com nomes, valores e datas quando disponíveis. Ao final, dê um SCORE DE PRIORIDADE de 1 a 10 e uma recomendação de PRÓXIMO PASSO concreto.';
-
-    fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
-        tools: [{type:'web_search_20250305', name:'web_search'}],
-        messages: [{role:'user', content:prompt}]
+  // Buscar RSS com retry em proxy alternativo
+  function fetchRSS(empresa, keyword, proxyIdx){
+    proxyIdx = proxyIdx||0;
+    if(proxyIdx>2) return Promise.resolve([]);
+    var rssUrl   = buildRSSUrl(empresa, keyword);
+    var proxyUrl = buildProxyUrl(rssUrl, proxyIdx);
+    return fetch(proxyUrl, {signal: AbortSignal.timeout(8000)})
+      .then(function(r){ return r.json(); })
+      .then(function(data){
+        var xml = data.contents || data.data || '';
+        if(!xml) return [];
+        return parseRSS(xml, empresa, keyword);
       })
-    })
-    .then(function(r){ return r.json(); })
-    .then(function(data){
-      var text = (data.content||[]).map(function(b){ return b.type==='text'?b.text:''; }).filter(Boolean).join('\n');
-      if(!text && data.error) text = '❌ Erro: '+data.error.message;
+      .catch(function(){
+        // Tentar próximo proxy
+        return fetchRSS(empresa, keyword, proxyIdx+1);
+      });
+  }
 
-      // Converter markdown para HTML simples
-      var html = text
-        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-        .replace(/^#{1,3}\s+(.+)$/gm, '<div style="font-weight:700;font-size:12px;margin:12px 0 5px;color:#1E3A5F;">$1</div>')
-        .replace(/^[\-\*]\s+(.+)$/gm, '<div style="display:flex;gap:6px;margin-bottom:3px;"><span style="color:#2563EB;flex-shrink:0;">•</span><span>$1</span></div>')
-        .replace(/\n\n/g, '<div style="height:6px;"></div>')
-        .replace(/\n/g, '<br/>');
-
-      setAiResult(function(prev){ return Object.assign({},prev,{[cli.id]:html}); });
-      setAiLoading(null);
-    })
-    .catch(function(err){
-      setAiResult(function(prev){ return Object.assign({},prev,{[cli.id]:'<span style="color:#DC2626;">Erro de conexão: '+err.message+'</span>'}); });
-      setAiLoading(null);
+  // Deduplicar notícias por ID (hash do título)
+  function dedup(lista){
+    var seen = {};
+    return lista.filter(function(n){
+      if(seen[n.id]) return false;
+      seen[n.id] = true;
+      return true;
     });
   }
 
-  var CATEGORIAS = [
-    '🏭 Expansão / Novo projeto',
-    '💰 Investimento previsto',
-    '🤝 Mudança de fornecedor',
-    '⚠️ Risco / Concorrência',
-    '📋 Licitação / Concorrência',
-    '🔧 Manutenção / Retrofit',
-    '🚀 Automação planejada',
-    '👥 Mudança de gestão',
-    '📉 Redução de produção',
-    '🌱 Novo produto / Modelo',
-    '📰 Notícia do mercado',
-    '💡 Oportunidade latente',
-  ];
-
-  var STATUS = [
-    {id:'quente',  label:'🔴 Quente',   color:'#DC2626'},
-    {id:'morno',   label:'🟡 Morno',    color:'#CA8A04'},
-    {id:'frio',    label:'🔵 Frio',     color:'#2563EB'},
-    {id:'neutro',  label:'⚪ Neutro',   color:'#64748B'},
-  ];
-
-  var EMPTY_RADAR = {
-    id:'', cliente:'', _cliId:'', categoria:'', status:'morno',
-    titulo:'', descricao:'', fonte:'', data:'', resp:session.code||'',
-    impacto:'', acao:'', oppId:'', confidencial:false,
-  };
-
-  function openNew(){
-    setForm(Object.assign({},EMPTY_RADAR,{id:'radar_'+Date.now(), data:new Date().toISOString().slice(0,10)}));
-    setModal(true);
-  }
-  function openEdit(r){ setForm(Object.assign({},r)); setModal(true); }
-  function deleteR(id){ if(confirm('Excluir?')) saveRadares(radares.filter(function(r){return r.id!==id;})); }
-
-  function saveForm(){
-    if(!form.titulo.trim()){ alert('Informe o título.'); return; }
-    var exists = radares.find(function(r){return r.id===form.id;});
-    if(exists) saveRadares(radares.map(function(r){return r.id===form.id?form:r;}));
-    else saveRadares([form,...radares]);
-    setModal(false);
+  // Buscar todas as notícias de um cliente
+  function buscarCliente(cli, onProgress){
+    // Queries: nome + top keywords de maior impacto
+    var queries = [
+      'expansão investimento',
+      'nova fábrica planta',
+      'automação indústria',
+      'CAPEX modernização',
+      'ferramentas torque montagem',
+    ];
+    var promises = queries.map(function(kw){
+      return fetchRSS(cli.nome||cli.apelido, kw).catch(function(){ return []; });
+    });
+    return Promise.all(promises).then(function(results){
+      var all = [];
+      results.forEach(function(r){ all = all.concat(r); });
+      var unique = dedup(all);
+      // Ordenar por score desc, depois data desc
+      unique.sort(function(a,b){
+        if(b.score!==a.score) return b.score-a.score;
+        return b.rawDate-a.rawDate;
+      });
+      return unique.slice(0,40); // máximo 40 notícias por cliente
+    });
   }
 
-  var isVisible = isGestor || isConsultor;
+  // ── GERAR RADAR — botão único para todos os clientes ativos ─────────────────
+  function gerarRadarTodos(){
+    var ativos = clients.filter(function(c){ return radarOn[c.id]; });
+    if(!ativos.length){ alert('Ative o Radar para ao menos 1 empresa.'); return; }
+    setLoading(true);
+    setProgress('Iniciando busca para '+ativos.length+' empresa(s)...');
+
+    var newsAtual = Object.assign({}, news);
+    var tsAtual   = Object.assign({}, timestamps);
+    var idx = 0;
+
+    function next(){
+      if(idx >= ativos.length){
+        setNews(newsAtual);     save(KEYS_RADAR_NEWS, newsAtual);
+        setTimestamps(tsAtual); save(KEYS_RADAR_TS,   tsAtual);
+        setLoading(false);
+        setLoadingId(null);
+        setProgress('');
+        return;
+      }
+      var cli = ativos[idx];
+      idx++;
+      setLoadingId(cli.id);
+      setProgress('Buscando: '+cli.apelido+' ('+idx+'/'+ativos.length+')...');
+      buscarCliente(cli).then(function(lista){
+        newsAtual[cli.id] = lista;
+        tsAtual[cli.id]   = new Date().toISOString();
+        next();
+      }).catch(function(){
+        newsAtual[cli.id] = newsAtual[cli.id]||[];
+        next();
+      });
+    }
+    next();
+  }
+
+  // ── Atualização automática (ao montar, se passou 6h) ────────────────────────
+  useEffect(function(){
+    var ativos = clients.filter(function(c){ return radarOn[c.id]; });
+    if(!ativos.length) return;
+    var agora = Date.now();
+    var SEIS_HORAS = 6*60*60*1000;
+    var precisaAtualizar = ativos.some(function(c){
+      var ts = timestamps[c.id];
+      if(!ts) return true;
+      return (agora - new Date(ts).getTime()) > SEIS_HORAS;
+    });
+    if(precisaAtualizar) gerarRadarTodos();
+  }, []);
+
+  // ── Formatação de data relativa ───────────────────────────────────────────────
+  function tsRelativo(iso){
+    if(!iso) return '—';
+    var diff = Date.now() - new Date(iso).getTime();
+    var h    = Math.floor(diff/3600000);
+    if(h<1)  return 'agora';
+    if(h<24) return h+'h atrás';
+    return Math.floor(h/24)+'d atrás';
+  }
+
+  // ── Clientes ativos com dados para exibição ──────────────────────────────────
+  var ativosComDados = clients.filter(function(c){ return radarOn[c.id]; }).map(function(c){
+    var lista  = news[c.id]||[];
+    var sc     = scoreCliente(c.id);
+    var cls    = classificar(sc);
+    var ts     = timestamps[c.id];
+    return {c:c, lista:lista, score:sc, cls:cls, ts:ts};
+  });
 
   // Filtros
-  var filtered = radares.filter(function(r){
-    if(!isVisible && r.confidencial) return false; // vendedor não vê confidencial
-    if(!search.trim()) return true;
-    var q = search.toLowerCase();
-    return (r.titulo&&r.titulo.toLowerCase().includes(q))
-      ||(r.cliente&&r.cliente.toLowerCase().includes(q))
-      ||(r.categoria&&r.categoria.toLowerCase().includes(q))
-      ||(r.descricao&&r.descricao.toLowerCase().includes(q));
-  });
+  var ativosFiltrados = ativosComDados.filter(function(item){
+    if(filterScore!=='todos' && item.cls.id!==filterScore) return false;
+    if(search && !item.c.apelido.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  }).sort(function(a,b){ return b.score-a.score; });
 
-  // Agrupar por cliente para visão de radar
-  var porCliente = {};
-  filtered.forEach(function(r){
-    var key = r.cliente||'Sem cliente';
-    if(!porCliente[key]) porCliente[key] = [];
-    porCliente[key].push(r);
-  });
+  var STATUS_OPTIONS = [
+    {id:'todos',       label:'Todos'},
+    {id:'quente',      label:'🔴 Prioridade'},
+    {id:'oportunidade',label:'🟠 Oportunidade'},
+    {id:'monitorar',   label:'🟡 Monitorar'},
+    {id:'frio',        label:'🔵 Frio'},
+  ];
 
-  var inp = {width:'100%'};
+  var countOn = Object.values(radarOn).filter(Boolean).length;
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:12,height:'100%'}}>
-      {/* Controles */}
+
+      {/* ── BARRA DE CONTROLES ── */}
       <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
         <input value={search} onChange={function(e){setSearch(e.target.value);}}
-          placeholder="🔍 Buscar por cliente, categoria, título..." style={{flex:1,minWidth:200}}/>
-        <span style={{fontSize:11,color:'var(--text3)'}}>{filtered.length} intel(s)</span>
-        <button className="btn btn-primary" onClick={openNew}>+ Nova inteligência</button>
+          placeholder="🔍 Filtrar empresa..." style={{width:180}}/>
+        <select value={filterScore} onChange={function(e){setFilterScore(e.target.value);}}
+          style={{padding:'6px 10px',fontSize:11,borderRadius:7,border:'1px solid var(--border)',background:'var(--bg3)',color:'var(--text)'}}>
+          {STATUS_OPTIONS.map(function(s){
+            return <option key={s.id} value={s.id}>{s.label}</option>;
+          })}
+        </select>
+        <div style={{flex:1}}/>
+        <span style={{fontSize:11,color:'var(--text3)'}}>{countOn}/{MAX_RADAR} no radar</span>
+
+        {/* BOTÃO ÚNICO — gerar para todos */}
+        <button onClick={gerarRadarTodos} disabled={loading||countOn===0}
+          style={{display:'flex',alignItems:'center',gap:7,padding:'8px 18px',borderRadius:8,border:'1px solid rgba(37,99,235,.5)',background:loading?'var(--bg3)':'rgba(37,99,235,.18)',color:loading?'var(--text3)':'#60A5FA',cursor:loading?'wait':'pointer',fontWeight:700,fontSize:12,flexShrink:0,opacity:countOn===0?.5:1}}>
+          {loading
+            ? <span>⏳ {progress||'Buscando...'}</span>
+            : <span>🔍 Gerar Radar — {countOn} empresa{countOn!==1?'s':''}</span>}
+        </button>
       </div>
 
-      {/* Legenda */}
-      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-        {STATUS.map(function(s){
-          var count = filtered.filter(function(r){return r.status===s.id;}).length;
-          return (
-            <div key={s.id} style={{display:'flex',alignItems:'center',gap:5,padding:'3px 10px',borderRadius:20,background:s.color+'18',border:'1px solid '+s.color+'40',fontSize:11}}>
-              <span style={{fontWeight:700,color:s.color}}>{s.label}</span>
-              <span style={{color:'var(--text3)'}}>({count})</span>
-            </div>
-          );
-        })}
-        {isVisible && (
-          <div style={{display:'flex',alignItems:'center',gap:5,padding:'3px 10px',borderRadius:20,background:'rgba(139,92,246,.1)',border:'1px solid rgba(139,92,246,.3)',fontSize:11,color:'#A78BFA'}}>
-            🔒 {filtered.filter(function(r){return r.confidencial;}).length} confidencial(is)
+      {/* ── PAINEL DE ATIVAÇÃO (toggle por cliente) ── */}
+      <div className="card" style={{padding:'12px 14px'}}>
+        <div style={{fontSize:10,fontWeight:700,color:'var(--text2)',marginBottom:8,textTransform:'uppercase',letterSpacing:'.06em'}}>
+          Empresas no Radar <span style={{color:'var(--text3)',fontWeight:400}}>({countOn}/{MAX_RADAR})</span>
+        </div>
+        <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+          {clients.map(function(c){
+            var on = !!radarOn[c.id];
+            var sc = scoreCliente(c.id);
+            var cls = classificar(sc);
+            return (
+              <div key={c.id} onClick={function(){toggleRadarOn(c.id);}}
+                style={{display:'flex',alignItems:'center',gap:6,padding:'5px 10px',borderRadius:20,border:'1px solid '+(on?cls.color+'80':'var(--border)'),background:on?cls.color+'15':'transparent',cursor:'pointer',transition:'all .15s',userSelect:'none'}}>
+                {c.logo&&<img src={c.logo} style={{width:16,height:16,objectFit:'contain',background:'#fff',borderRadius:2}} alt=""/>}
+                <span style={{fontSize:11,fontWeight:on?700:400,color:on?'var(--text)':'var(--text3)'}}>{c.apelido}</span>
+                {on && sc>0 && <span style={{fontSize:10,fontWeight:700,color:cls.color}}>{sc}</span>}
+                <div style={{width:28,height:16,borderRadius:8,background:on?'#16A34A':'#2A3045',position:'relative',flexShrink:0,transition:'background .2s'}}>
+                  <div style={{position:'absolute',top:2,left:on?14:2,width:12,height:12,borderRadius:'50%',background:'#fff',transition:'left .2s'}}/>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── LISTA DE CLIENTES COM RESULTADOS ── */}
+      <div style={{flex:1,overflowY:'auto',display:'flex',flexDirection:'column',gap:10}}>
+        {countOn===0 ? (
+          <div className="card" style={{textAlign:'center',padding:'40px 20px',color:'var(--text3)'}}>
+            <div style={{fontSize:32,marginBottom:10}}>🧠</div>
+            <div style={{fontWeight:600,marginBottom:4}}>Ative empresas no painel acima</div>
+            <div style={{fontSize:11}}>Máximo {MAX_RADAR} empresas simultâneas</div>
           </div>
+        ) : ativosFiltrados.length===0 ? (
+          <div className="card" style={{textAlign:'center',padding:'30px',color:'var(--text3)',fontSize:11}}>
+            Nenhuma empresa corresponde aos filtros.
+          </div>
+        ) : (
+          ativosFiltrados.map(function(item){
+            var c=item.c; var lista=item.lista; var sc=item.score; var cls=item.cls; var ts=item.ts;
+            var isLoad = loadingId===c.id;
+
+            // Filtrar notícias por palavra-chave se houver filtro
+            var listaFilt = filterKw
+              ? lista.filter(function(n){ return n.kws.some(function(k){return k.toLowerCase().includes(filterKw.toLowerCase());}); })
+              : lista;
+
+            return (
+              <div key={c.id} className="card" style={{borderLeft:'3px solid '+cls.color}}>
+                {/* Header cliente */}
+                <div style={{display:'flex',gap:10,alignItems:'center',marginBottom:10,flexWrap:'wrap'}}>
+                  {c.logo&&<img src={c.logo} style={{width:28,height:28,objectFit:'contain',background:'#fff',borderRadius:4,padding:2}} alt=""/>}
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{display:'flex',alignItems:'baseline',gap:8,flexWrap:'wrap'}}>
+                      <span style={{fontWeight:700,fontSize:13}}>{c.apelido}</span>
+                      <span style={{fontSize:11,fontWeight:700,color:cls.color,padding:'1px 8px',borderRadius:10,background:cls.color+'18'}}>{cls.label}</span>
+                    </div>
+                    <div style={{fontSize:10,color:'var(--text3)',marginTop:2}}>
+                      {lista.length} notícia(s) · atualizado {tsRelativo(ts)}
+                      {c.segmento&&' · '+c.segmento}
+                    </div>
+                  </div>
+                  {/* Score gauge */}
+                  <div style={{textAlign:'center',flexShrink:0}}>
+                    <div style={{fontSize:24,fontWeight:800,color:cls.color,lineHeight:1}}>{sc}</div>
+                    <div style={{fontSize:9,color:'var(--text3)'}}>SCORE</div>
+                    <div style={{width:48,height:4,borderRadius:2,background:'var(--bg3)',marginTop:3}}>
+                      <div style={{width:(sc)+'%',height:'100%',borderRadius:2,background:cls.color,transition:'width .5s'}}/>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Loading */}
+                {isLoad && (
+                  <div style={{padding:'12px 0',textAlign:'center',color:'var(--text3)',fontSize:11}}>
+                    <span style={{animation:'none'}}>🔍 Buscando notícias...</span>
+                  </div>
+                )}
+
+                {/* Sem notícias */}
+                {!isLoad && lista.length===0 && (
+                  <div style={{fontSize:11,color:'var(--text3)',textAlign:'center',padding:'8px 0'}}>
+                    Nenhuma notícia ainda — clique em Gerar Radar.
+                  </div>
+                )}
+
+                {/* Filtro de keyword dentro do card */}
+                {lista.length>0 && (
+                  <div style={{marginBottom:8}}>
+                    <input value={filterKw} onChange={function(e){setFilterKw(e.target.value);}}
+                      placeholder="Filtrar por palavra-chave..." style={{width:'100%',padding:'5px 8px',fontSize:10}}/>
+                  </div>
+                )}
+
+                {/* Lista de notícias */}
+                {listaFilt.slice(0,10).map(function(n,ni){
+                  var sc2 = n.score||0;
+                  var cls2 = classificar(sc2);
+                  return (
+                    <div key={n.id+ni} style={{padding:'7px 10px',borderRadius:6,background:'var(--bg3)',border:'1px solid var(--border)',marginBottom:5}}>
+                      <div style={{display:'flex',gap:8,alignItems:'flex-start'}}>
+                        <div style={{flexShrink:0,marginTop:1}}>
+                          <div style={{width:32,textAlign:'center',fontSize:11,fontWeight:700,color:cls2.color,background:cls2.color+'18',borderRadius:4,padding:'1px 0'}}>{sc2}</div>
+                        </div>
+                        <div style={{flex:1,minWidth:0}}>
+                          <a href={n.link} target="_blank" rel="noopener noreferrer"
+                            style={{fontSize:11,fontWeight:600,color:'var(--text)',textDecoration:'none',lineHeight:1.4,display:'block'}}
+                            onMouseEnter={function(ev){ev.target.style.color='#60A5FA';}}
+                            onMouseLeave={function(ev){ev.target.style.color='var(--text)';}}
+                          >{n.title}</a>
+                          {n.desc&&<div style={{fontSize:10,color:'var(--text3)',marginTop:2,lineHeight:1.4}}>{n.desc.slice(0,150)}</div>}
+                          <div style={{display:'flex',gap:8,marginTop:4,flexWrap:'wrap'}}>
+                            {n.date&&<span style={{fontSize:9,color:'var(--text3)'}}>📅 {n.date}</span>}
+                            {n.kws.map(function(kw,ki){
+                              return <span key={ki} style={{fontSize:9,padding:'1px 6px',borderRadius:3,background:'rgba(37,99,235,.12)',color:'#60A5FA'}}>{kw}</span>;
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {listaFilt.length>10 && (
+                  <div style={{fontSize:10,color:'var(--text3)',textAlign:'center',padding:'5px 0'}}>
+                    +{listaFilt.length-10} notícias — refine o filtro para ver mais
+                  </div>
+                )}
+              </div>
+            );
+          })
         )}
       </div>
-
-      {/* Conteúdo */}
-      {clients.length===0 ? (
-        <div className="card" style={{textAlign:'center',padding:'60px 20px',color:'var(--text3)'}}>
-          <div style={{fontSize:40,marginBottom:12}}>🧠</div>
-          <div style={{fontWeight:700,fontSize:14,marginBottom:6}}>RADAR DE MERCADO</div>
-          <div style={{fontSize:12}}>Importe os clientes na aba Clientes primeiro.</div>
-        </div>
-      ) : (
-        <div style={{flex:1,overflowY:'auto'}}>
-          {/* Painel de ativação — todos os clientes com toggle */}
-          <div className="card" style={{padding:'14px 16px',marginBottom:16}}>
-            <div style={{fontSize:11,fontWeight:700,color:'var(--text2)',marginBottom:10,textTransform:'uppercase',letterSpacing:'.06em'}}>
-              🔛 Clientes no Radar
-            </div>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(190px,1fr))',gap:6}}>
-              {clients.map(function(c){
-                var on = !!radarOn[c.id];
-                return (
-                  <div key={c.id} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 10px',borderRadius:7,border:'1px solid '+(on?'rgba(22,163,74,.4)':'var(--border)'),background:on?'rgba(22,163,74,.06)':'transparent',transition:'all .15s'}}>
-                    {c.logo
-                      ? <img src={c.logo} style={{width:20,height:20,objectFit:'contain',background:'#fff',borderRadius:3,padding:1,flexShrink:0}} alt=""/>
-                      : <div style={{width:20,height:20,borderRadius:3,background:'var(--bg3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:9,color:'var(--text3)',flexShrink:0}}>{c.apelido[0]}</div>}
-                    <span style={{flex:1,fontSize:11,fontWeight:600,color:on?'var(--text)':'var(--text3)'}}>{c.apelido}</span>
-                    {/* Toggle switch */}
-                    <div onClick={function(){toggleRadarOn(c.id);}}
-                      style={{width:36,height:20,borderRadius:10,background:on?'#16A34A':'#2A3045',cursor:'pointer',position:'relative',transition:'background .2s',flexShrink:0}}>
-                      <div style={{position:'absolute',top:2,left:on?18:2,width:16,height:16,borderRadius:'50%',background:'#fff',transition:'left .2s'}}/>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Clientes com Radar ON — mostrar sempre, mesmo sem inteligências manuais */}
-          {clients.filter(function(c){ return radarOn[c.id]; }).length===0 ? (
-            <div className="card" style={{textAlign:'center',padding:'30px',color:'var(--text3)'}}>
-              <div style={{fontSize:28,marginBottom:8}}>☝️</div>
-              <div style={{fontSize:12}}>Ative o Radar para os clientes que deseja monitorar</div>
-            </div>
-          ) : (
-            clients.filter(function(c){ return radarOn[c.id]; }).map(function(cliData){
-              var cliName   = cliData.apelido;
-              var items     = filtered.filter(function(r){ return r.cliente===cliName; });
-              var temQuente = items.some(function(r){ return r.status==='quente'; });
-              return (
-                <div key={cliData.id} style={{marginBottom:16}}>
-                  {/* Header do cliente */}
-                  <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:8,padding:'10px 14px',background:'var(--bg3)',borderRadius:8,border:'1px solid var(--border)',borderLeft:'3px solid '+(temQuente?'#DC2626':'#16A34A')}}>
-                    {cliData.logo&&<img src={cliData.logo} style={{width:28,height:28,objectFit:'contain',borderRadius:4,background:'#fff',padding:2}} alt=""/>}
-                    <div style={{flex:1}}>
-                      <div style={{fontWeight:700,fontSize:13}}>{cliName}</div>
-                      <div style={{fontSize:10,color:'var(--text3)'}}>{cliData.segmento||''}{cliData.cidade?' · '+cliData.cidade:''}{items.length>0?' · '+items.length+' intel(s)':''}</div>
-                    </div>
-
-                    {/* Botão Gerar IA */}
-                    <button onClick={function(){ gerarIntelIA(cliData); }}
-                      disabled={aiLoading===cliData.id}
-                      style={{display:'flex',alignItems:'center',gap:6,padding:'6px 14px',borderRadius:7,border:'1px solid rgba(37,99,235,.5)',background:'rgba(37,99,235,.15)',color:'#60A5FA',cursor:aiLoading===cliData.id?'wait':'pointer',fontSize:11,fontWeight:700,flexShrink:0,opacity:aiLoading===cliData.id?0.6:1}}>
-                      {aiLoading===cliData.id ? '⏳ Pesquisando...' : '🧠 Gerar Inteligência IA'}
-                    </button>
-
-                    {/* Toggle para remover do radar */}
-                    <div onClick={function(){ toggleRadarOn(cliData.id); }}
-                      title="Desativar Radar"
-                      style={{width:36,height:20,borderRadius:10,background:'#16A34A',cursor:'pointer',position:'relative',flexShrink:0}}>
-                      <div style={{position:'absolute',top:2,left:18,width:16,height:16,borderRadius:'50%',background:'#fff'}}/>
-                    </div>
-                  </div>
-
-                  {/* Resultado IA */}
-                  {(aiLoading===cliData.id || aiResult[cliData.id]) && (
-                    <div style={{marginBottom:10,border:'2px solid #2563EB',borderRadius:8,overflow:'hidden'}}>
-                      <div style={{background:'#1E3A5F',padding:'8px 14px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                        <div style={{fontSize:11,fontWeight:700,color:'#fff'}}>🧠 Inteligência IA — {cliName}</div>
-                        {!aiLoading && <button onClick={function(){setAiResult(function(p){var n=Object.assign({},p);delete n[cliData.id];return n;});}}
-                          style={{background:'none',border:'none',color:'rgba(255,255,255,.5)',cursor:'pointer',fontSize:14}}>✕</button>}
-                      </div>
-                      {aiLoading===cliData.id ? (
-                        <div style={{padding:'30px 20px',textAlign:'center',background:'var(--bg3)'}}>
-                          <div style={{fontSize:28,marginBottom:8}}>🔍</div>
-                          <div style={{fontSize:12,color:'var(--text2)',marginBottom:4}}>Consultando fontes e analisando mercado...</div>
-                          <div style={{fontSize:11,color:'var(--text3)'}}>Pode levar alguns segundos</div>
-                        </div>
-                      ) : (
-                        <div style={{background:'#fff',padding:'14px 16px',fontSize:11,lineHeight:1.7,color:'#1a1a1a',maxHeight:520,overflowY:'auto'}}
-                          dangerouslySetInnerHTML={{__html:aiResult[cliData.id]}}/>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Inteligências manuais */}
-                  {items.length>0 && (
-                    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(300px,1fr))',gap:8,paddingLeft:8}}>
-                      {items.map(function(r){
-                        var sc = STATUS.find(function(s){return s.id===r.status;})||STATUS[1];
-                        var dataFmt = r.data ? r.data.split('-').reverse().join('/') : '';
-                        return (
-                          <div key={r.id} className="card" style={{borderTop:'2px solid '+sc.color,position:'relative'}}>
-                            {r.confidencial && (
-                              <div style={{position:'absolute',top:6,right:8,fontSize:9,padding:'1px 6px',borderRadius:4,background:'rgba(139,92,246,.15)',color:'#A78BFA',fontWeight:700}}>🔒</div>
-                            )}
-                            <div style={{fontSize:11,fontWeight:700,marginBottom:3,lineHeight:1.3,paddingRight:30}}>{r.titulo}</div>
-                            <div style={{fontSize:10,color:sc.color,fontWeight:600,marginBottom:5}}>{sc.label}</div>
-                            <div style={{fontSize:10,padding:'2px 7px',borderRadius:5,background:'var(--bg3)',color:'var(--text2)',marginBottom:6,display:'inline-block'}}>{r.categoria}</div>
-                            {r.descricao && <div style={{fontSize:11,color:'var(--text2)',lineHeight:1.6,marginBottom:6}}>{r.descricao}</div>}
-                            {r.impacto && (
-                              <div style={{fontSize:10,padding:'4px 8px',borderRadius:5,background:'rgba(37,99,235,.08)',border:'1px solid rgba(37,99,235,.15)',color:'#60A5FA',marginBottom:4}}>
-                                <b>Impacto:</b> {r.impacto}
-                              </div>
-                            )}
-                            {r.acao && (
-                              <div style={{fontSize:10,padding:'4px 8px',borderRadius:5,background:'rgba(22,163,74,.08)',border:'1px solid rgba(22,163,74,.15)',color:'#4ADE80',marginBottom:4}}>
-                                <b>Ação:</b> {r.acao}
-                              </div>
-                            )}
-                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:6}}>
-                              <div style={{fontSize:9,color:'var(--text3)'}}>
-                                {dataFmt&&<span>📅 {dataFmt}</span>}
-                                {r.resp&&<span style={{marginLeft:8}}>👤 {r.resp}</span>}
-                              </div>
-                              <div style={{display:'flex',gap:4}}>
-                                <button onClick={function(){openEdit(r);}} style={{background:'none',border:'none',color:'var(--text3)',cursor:'pointer',fontSize:12}} title="Editar">✏️</button>
-                                <button onClick={function(){deleteR(r.id);}} style={{background:'none',border:'none',color:'var(--text3)',cursor:'pointer',fontSize:12,opacity:.4}} onMouseEnter={function(ev){ev.target.style.opacity=1;}} onMouseLeave={function(ev){ev.target.style.opacity=.4;}}>✕</button>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })
-          )}
-        </div>
-      )}
-
-      {/* MODAL */}
-      {modal && form && (
-        <div className="modal-bg">
-          <div className="modal" style={{maxWidth:680}}>
-            <div className="modal-hd">
-              <h2>🧠 Inteligência de Mercado</h2>
-              <button className="modal-close" onClick={function(){setModal(false);}}>✕</button>
-            </div>
-
-            {/* Status */}
-            <div style={{display:'flex',gap:6,marginBottom:14}}>
-              {STATUS.map(function(s){
-                var sel = form.status===s.id;
-                return (
-                  <button key={s.id} onClick={function(){setForm(Object.assign({},form,{status:s.id}));}}
-                    style={{padding:'5px 12px',borderRadius:20,border:'1px solid '+(sel?s.color:'var(--border)'),background:sel?s.color+'20':'transparent',color:sel?s.color:'var(--text3)',cursor:'pointer',fontSize:11,fontWeight:sel?700:400}}>
-                    {s.label}
-                  </button>
-                );
-              })}
-              {isVisible && (
-                <label style={{display:'flex',gap:6,alignItems:'center',marginLeft:'auto',fontSize:11,cursor:'pointer',color:'#A78BFA'}}>
-                  <input type="checkbox" checked={!!form.confidencial} onChange={function(e){setForm(Object.assign({},form,{confidencial:e.target.checked}));}}/>
-                  🔒 Confidencial
-                </label>
-              )}
-            </div>
-
-            <div className="grid-2" style={{marginBottom:10}}>
-              {/* Cliente */}
-              <div className="field">
-                <label>Cliente</label>
-                <select value={form._cliId||''} onChange={function(e){
-                  var c = clients.find(function(x){return x.id===e.target.value;});
-                  setForm(Object.assign({},form,{_cliId:e.target.value, cliente:c?c.apelido:''}));
-                }} style={inp}>
-                  <option value="">— Selecione ou deixe em branco —</option>
-                  {clients.map(function(c){ return <option key={c.id} value={c.id}>{c.apelido}</option>; })}
-                </select>
-              </div>
-              {/* Categoria */}
-              <div className="field">
-                <label>Categoria</label>
-                <select value={form.categoria||''} onChange={function(e){setForm(Object.assign({},form,{categoria:e.target.value}));}} style={inp}>
-                  <option value="">— Selecione —</option>
-                  {CATEGORIAS.map(function(c){ return <option key={c} value={c}>{c}</option>; })}
-                </select>
-              </div>
-            </div>
-
-            <div className="field" style={{marginBottom:10}}>
-              <label>Título *</label>
-              <input value={form.titulo||''} onChange={function(e){setForm(Object.assign({},form,{titulo:e.target.value}));}} style={inp}
-                placeholder="Ex: JACTO planeja automatizar linha de pulverizadores em 2026" autoFocus/>
-            </div>
-
-            <div className="field" style={{marginBottom:10}}>
-              <label>Descrição / Detalhes</label>
-              <textarea value={form.descricao||''} onChange={function(e){setForm(Object.assign({},form,{descricao:e.target.value}));}}
-                style={{width:'100%',height:72,resize:'vertical',lineHeight:1.6}}
-                placeholder="Contexto, detalhes, o que foi dito, por quem..."/>
-            </div>
-
-            <div className="grid-2" style={{marginBottom:10}}>
-              <div className="field">
-                <label>Impacto esperado</label>
-                <input value={form.impacto||''} onChange={function(e){setForm(Object.assign({},form,{impacto:e.target.value}));}} style={inp}
-                  placeholder="Ex: Oportunidade de R$ 800k em balancins"/>
-              </div>
-              <div className="field">
-                <label>Ação recomendada</label>
-                <input value={form.acao||''} onChange={function(e){setForm(Object.assign({},form,{acao:e.target.value}));}} style={inp}
-                  placeholder="Ex: Agendar visita com Engenharia até jun/26"/>
-              </div>
-            </div>
-
-            <div className="grid-4" style={{marginBottom:14}}>
-              <div className="field">
-                <label>Data</label>
-                <input type="date" value={form.data||''} onChange={function(e){setForm(Object.assign({},form,{data:e.target.value}));}} style={inp}/>
-              </div>
-              <div className="field">
-                <label>Responsável</label>
-                <input value={form.resp||''} onChange={function(e){setForm(Object.assign({},form,{resp:e.target.value}));}} style={inp} placeholder="EF"/>
-              </div>
-              <div className="field">
-                <label>Fonte</label>
-                <input value={form.fonte||''} onChange={function(e){setForm(Object.assign({},form,{fonte:e.target.value}));}} style={inp} placeholder="Visita / LinkedIn / Contato"/>
-              </div>
-              <div className="field">
-                <label>Vincular Forecast</label>
-                <select value={form.oppId||''} onChange={function(e){setForm(Object.assign({},form,{oppId:e.target.value}));}} style={inp}>
-                  <option value="">— Nenhuma —</option>
-                  {fcOpps.filter(function(o){return !form.cliente||o.customer===form.cliente;}).map(function(o){
-                    return <option key={o.id} value={o.id}>{o.customer} · {(o.description||'').slice(0,35)}</option>;
-                  })}
-                </select>
-              </div>
-            </div>
-
-            <div style={{display:'flex',gap:8}}>
-              <button className="btn btn-primary" onClick={saveForm} style={{flex:1}}>💾 Salvar</button>
-              <button className="btn btn-secondary" onClick={function(){setModal(false);}}>Cancelar</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
