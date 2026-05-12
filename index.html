@@ -2536,12 +2536,48 @@ function ViewEstoque({ session }) {
   }
 
   const q = search.trim().toLowerCase();
-  const filtered = q.length<2 ? estoque.slice(0,200) : estoque.filter(function(it){
-    var d=(it.descricao||'').toLowerCase();
-    var c=(it.codigo||'').toLowerCase();
-    var s=(it.sigma||'').toLowerCase();
-    return d.includes(q)||c.includes(q)||s.includes(q);
-  }).slice(0,500);
+
+  // Normalização: remove acentos, ç→c, ã→a, etc.
+  function norm(str){
+    return String(str||'').toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+      .replace(/ç/g,'c').replace(/[^a-z0-9\s]/g,' ');
+  }
+
+  // Busca fuzzy: divide a query em tokens, cada token pode ser
+  // — substring (inclui)
+  // — 1 caractere diferente (tolerância a erro de digitação)
+  function matchToken(token, text){
+    if(text.includes(token)) return true;  // match exato
+    if(token.length<=2) return false;       // tokens curtos: só exato
+    // Tolerância: 1 char diferente usando janela deslizante
+    var tlen = token.length;
+    for(var i=0; i<=text.length-tlen; i++){
+      var sub = text.slice(i, i+tlen);
+      var diffs = 0;
+      for(var j=0; j<tlen; j++){
+        if(sub[j]!==token[j]) diffs++;
+        if(diffs>1) break;
+      }
+      if(diffs<=1) return true;
+    }
+    return false;
+  }
+
+  function fuzzyMatch(query, item){
+    var tokens = norm(query).split(/\s+/).filter(function(t){ return t.length>0; });
+    if(!tokens.length) return false;
+    var d = norm(item.descricao);
+    var c = norm(item.codigo);
+    var s = norm(item.sigma);
+    var full = d+' '+c+' '+s;
+    // TODOS os tokens devem bater (em qualquer ordem, em qualquer campo)
+    return tokens.every(function(token){ return matchToken(token, full); });
+  }
+
+  const filtered = q.length<2
+    ? estoque.slice(0,200)
+    : estoque.filter(function(it){ return fuzzyMatch(q, it); }).slice(0,500);
 
   const selList = estoque.filter(function(it){ return selected[it.sigma]; });
 
@@ -4025,31 +4061,31 @@ function ViewRelatorio({ session, isGestor, isConsultor }) {
 
 // ─── VIEW: RADAR DE MERCADO ──────────────────────────────────
 function ViewRadar({ session, isGestor, isConsultor }) {
-  // ── Chaves de storage ────────────────────────────────────────────────────────
-  var KEYS_RADAR     = 'crm_radar_v1';
-  var KEYS_RADAR_ON  = 'crm_radar_clients_on';
-  var KEYS_RADAR_NEWS= 'crm_radar_news_v1';   // cache de notícias por cliente
-  var KEYS_RADAR_TS  = 'crm_radar_ts_v1';     // timestamp última atualização
+  // ── Storage keys ─────────────────────────────────────────────────────────────
+  var KEYS_RADAR_ON   = 'crm_radar_clients_on';
+  var KEYS_RADAR_NEWS = 'crm_radar_news_v1';
+  var KEYS_RADAR_TS   = 'crm_radar_ts_v1';
 
-  // ── Estados ──────────────────────────────────────────────────────────────────
-  var [radarOn,    setRadarOn]   = useState(function(){ return load(KEYS_RADAR_ON, {}); });
-  var [news,       setNews]      = useState(function(){ return load(KEYS_RADAR_NEWS, {}); });
-  var [timestamps, setTimestamps]= useState(function(){ return load(KEYS_RADAR_TS, {}); });
-  var [loading,    setLoading]   = useState(false);   // rodando busca geral
-  var [loadingId,  setLoadingId] = useState(null);    // cliente em progresso
-  var [progress,   setProgress]  = useState('');
-  var [search,     setSearch]    = useState('');
-  var [filterScore,setFilterScore]=useState('todos'); // todos|quente|oportunidade|monitorar|frio
-  var [filterKw,   setFilterKw]  = useState('');
+  // ── Estados ───────────────────────────────────────────────────────────────────
+  var [radarOn,    setRadarOn]    = useState(function(){ return load(KEYS_RADAR_ON, {}); });
+  var [news,       setNews]       = useState(function(){ return load(KEYS_RADAR_NEWS, {}); });
+  var [timestamps, setTimestamps] = useState(function(){ return load(KEYS_RADAR_TS, {}); });
+  var [loading,    setLoading]    = useState(false);
+  var [loadingId,  setLoadingId]  = useState(null);
+  var [progress,   setProgress]   = useState('');
+  var [search,     setSearch]     = useState('');
+  var [filterScore,setFilterScore]= useState('todos');
+  var [expandedId, setExpandedId] = useState(null);
 
-  var clients = load(KEYS.clients, []);
-
-  // ── Limite máximo 20 empresas ────────────────────────────────────────────────
+  var clients  = load(KEYS.clients,  []);
+  var fcOpps   = load(KEYS.forecast, []);
   var MAX_RADAR = 20;
+
+  // ── Toggle Radar ON/OFF ───────────────────────────────────────────────────────
   function toggleRadarOn(cliId){
     var on = !!radarOn[cliId];
     if(!on){
-      var count = Object.values(radarOn).filter(Boolean).length;
+      var count = Object.keys(radarOn).filter(function(k){ return radarOn[k]; }).length;
       if(count >= MAX_RADAR){
         alert('Limite máximo de '+MAX_RADAR+' empresas no Radar.\nDesative uma empresa antes de adicionar outra.');
         return;
@@ -4059,173 +4095,118 @@ function ViewRadar({ session, isGestor, isConsultor }) {
     setRadarOn(next); save(KEYS_RADAR_ON, next);
   }
 
-  // ── Palavras-chave e scores ──────────────────────────────────────────────────
+  // ── Score keywords ────────────────────────────────────────────────────────────
   var KEYWORDS = [
-    {word:'nova fábrica',    score:30, label:'Nova fábrica'},
-    {word:'nova planta',     score:30, label:'Nova planta'},
-    {word:'expansão',        score:25, label:'Expansão'},
-    {word:'investimento',    score:20, label:'Investimento'},
-    {word:'CAPEX',           score:20, label:'CAPEX'},
-    {word:'ampliação',       score:22, label:'Ampliação'},
-    {word:'automação',       score:15, label:'Automação'},
-    {word:'indústria 4.0',   score:15, label:'Indústria 4.0'},
-    {word:'contratação',     score:10, label:'Contratação'},
-    {word:'linha de produção',score:18,label:'Linha produção'},
-    {word:'modernização',    score:15, label:'Modernização'},
-    {word:'aquisição',       score:20, label:'Aquisição'},
-    {word:'torque',          score:25, label:'Torque'},
-    {word:'ferramentas',     score:15, label:'Ferramentas'},
-    {word:'manutenção',      score:10, label:'Manutenção'},
-    {word:'qualidade',       score:10, label:'Qualidade'},
-    {word:'recall',          score:12, label:'Recall'},
-    {word:'rastreabilidade', score:18, label:'Rastreabilidade'},
-    {word:'montagem',        score:14, label:'Montagem'},
-    {word:'fornecedor',      score:12, label:'Fornecedor'},
+    {word:'nova fábrica',     score:30},{word:'nova planta',     score:30},
+    {word:'expansão',         score:25},{word:'investimento',    score:20},
+    {word:'CAPEX',            score:20},{word:'ampliação',       score:22},
+    {word:'automação',        score:15},{word:'indústria 4.0',   score:15},
+    {word:'contratação',      score:10},{word:'linha de produção',score:18},
+    {word:'modernização',     score:15},{word:'aquisição',       score:20},
+    {word:'torque',           score:25},{word:'ferramentas',     score:15},
+    {word:'manutenção',       score:10},{word:'qualidade',       score:10},
+    {word:'recall',           score:12},{word:'rastreabilidade', score:18},
+    {word:'montagem',         score:14},{word:'fornecedor',      score:12},
   ];
 
-  // Score por notícia — soma dos keywords encontrados (max 100)
   function scoreNoticia(text){
-    var total = 0;
-    var found = [];
-    var low = text.toLowerCase();
+    var total = 0; var found = [];
+    var low = (text||'').toLowerCase();
     KEYWORDS.forEach(function(kw){
-      if(low.includes(kw.word.toLowerCase())){
-        total += kw.score;
-        found.push(kw.label);
-      }
+      if(low.indexOf(kw.word.toLowerCase())>=0){ total+=kw.score; found.push(kw.word); }
     });
-    return {score: Math.min(total, 100), kws: found};
+    return {score:Math.min(total,100), kws:found};
   }
 
-  // Classificação por score total do cliente
   function classificar(score){
-    if(score >= 81) return {label:'🔴 Prioridade Máxima', color:'#DC2626', id:'quente'};
-    if(score >= 61) return {label:'🟠 Oportunidade',      color:'#EA580C', id:'oportunidade'};
-    if(score >= 31) return {label:'🟡 Monitorar',         color:'#CA8A04', id:'monitorar'};
-    return              {label:'🔵 Frio',               color:'#2563EB', id:'frio'};
+    if(score>=81) return {label:'🔴 Prioridade Máxima',color:'#DC2626',id:'quente'};
+    if(score>=61) return {label:'🟠 Oportunidade',     color:'#EA580C',id:'oportunidade'};
+    if(score>=31) return {label:'🟡 Monitorar',        color:'#CA8A04',id:'monitorar'};
+    return             {label:'🔵 Frio',              color:'#2563EB',id:'frio'};
   }
 
-  // Score total do cliente = média dos top-5 scores de notícias
   function scoreCliente(cliId){
-    var lista = (news[cliId]||[]);
+    var lista = news[cliId]||[];
     if(!lista.length) return 0;
-    var sorted = lista.map(function(n){return n.score||0;}).sort(function(a,b){return b-a;});
-    var top = sorted.slice(0,5);
+    var top = lista.map(function(n){return n.score||0;}).sort(function(a,b){return b-a;}).slice(0,5);
     return Math.round(top.reduce(function(s,v){return s+v;},0)/top.length);
   }
 
-  // ── Motor RSS ────────────────────────────────────────────────────────────────
-  // Proxy CORS: tenta allorigins, fallback corsproxy.io
-  function buildProxyUrl(url, proxyIdx){
-    var proxies = [
-      'https://api.allorigins.win/get?url=',
-      'https://corsproxy.io/?',
-      'https://api.codetabs.com/v1/proxy?quest=',
-    ];
-    var p = proxies[proxyIdx||0];
-    return p + encodeURIComponent(url);
-  }
-
-  function buildRSSUrl(empresa, keyword){
-    var q = encodeURIComponent(empresa + ' ' + keyword);
-    return 'https://news.google.com/rss/search?q='+q+'&hl=pt-BR&gl=BR&ceid=BR:pt-419';
-  }
-
-  // Parsear XML do RSS manualmente (sem lib externa)
-  function parseRSS(xml, empresa, keyword){
-    var items = [];
-    var parser = new DOMParser();
-    var doc = parser.parseFromString(xml, 'text/xml');
-    var entries = doc.querySelectorAll('item');
-    entries.forEach(function(item){
-      var title   = (item.querySelector('title')   ||{}).textContent||'';
-      var link    = (item.querySelector('link')    ||{}).textContent||'';
-      var pubDate = (item.querySelector('pubDate') ||{}).textContent||'';
-      var desc    = (item.querySelector('description')||{}).textContent||'';
-      if(!title || title.length<5) return;
-      // Limpar tags HTML da descrição
-      var div = document.createElement('div');
-      div.innerHTML = desc;
-      var cleanDesc = div.textContent||'';
-      var full = title + ' ' + cleanDesc;
-      var sc = scoreNoticia(full);
-      items.push({
-        id:      btoa(encodeURIComponent(title)).slice(0,20),
-        title:   title,
-        link:    link,
-        date:    pubDate ? new Date(pubDate).toLocaleDateString('pt-BR') : '',
-        rawDate: pubDate ? new Date(pubDate).getTime() : 0,
-        keyword: keyword,
-        empresa: empresa,
-        score:   sc.score,
-        kws:     sc.kws,
-        desc:    cleanDesc.slice(0,200),
-      });
+  // ── MOTOR PRINCIPAL: Anthropic API + web_search ───────────────────────────────
+  // O Claude.ai injeta autenticação automaticamente — funciona sem API key explícita.
+  // Pedimos JSON estruturado com notícias reais buscadas na web.
+  function buscarClienteIA(cli){
+    var opps = fcOpps.filter(function(o){
+      return o.customer && o.customer.toLowerCase().indexOf(cli.apelido.toLowerCase().slice(0,6))>=0;
     });
-    return items;
-  }
 
-  // Buscar RSS com retry em proxy alternativo
-  function fetchRSS(empresa, keyword, proxyIdx){
-    proxyIdx = proxyIdx||0;
-    if(proxyIdx>2) return Promise.resolve([]);
-    var rssUrl   = buildRSSUrl(empresa, keyword);
-    var proxyUrl = buildProxyUrl(rssUrl, proxyIdx);
-    return fetch(proxyUrl, {signal: AbortSignal.timeout(8000)})
-      .then(function(r){ return r.json(); })
-      .then(function(data){
-        var xml = data.contents || data.data || '';
-        if(!xml) return [];
-        return parseRSS(xml, empresa, keyword);
+    var prompt = 'Você é um sistema de inteligência comercial industrial. Pesquise notícias REAIS e RECENTES sobre a empresa "'+(cli.nome||cli.apelido)+'" ('+cli.apelido+'), '+
+      (cli.segmento?'setor: '+cli.segmento+', ':'')+(cli.cidade?'cidade: '+cli.cidade:'')+'.\n\n'+
+      'Foque em: expansão, investimentos, nova fábrica/planta, automação, CAPEX, novas linhas de produção, contratações, modernização, qualidade, manutenção industrial, torque, ferramentas, fornecedores.\n\n'+
+      'Retorne SOMENTE um JSON válido neste formato exato (sem markdown, sem texto antes ou depois):\n'+
+      '{"noticias":[{"titulo":"título da notícia","resumo":"resumo em 1-2 frases","data":"DD/MM/AAAA","fonte":"nome do veículo","link":"URL completa","keywords":["palavra1","palavra2"]}],"analise":"análise estratégica em 2-3 frases sobre o momento da empresa","temperatura":"quente|morno|frio"}\n\n'+
+      'Traga no mínimo 5 e no máximo 15 notícias reais e verificáveis. Se não encontrar nada relevante para a empresa, retorne {"noticias":[],"analise":"Sem notícias relevantes encontradas.","temperatura":"frio"}.';
+
+    return fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:2000,
+        tools:[{type:'web_search_20250305',name:'web_search'}],
+        messages:[{role:'user',content:prompt}]
       })
-      .catch(function(){
-        // Tentar próximo proxy
-        return fetchRSS(empresa, keyword, proxyIdx+1);
+    })
+    .then(function(r){
+      if(!r.ok) return r.text().then(function(t){ throw new Error('HTTP '+r.status+': '+t.slice(0,100)); });
+      return r.json();
+    })
+    .then(function(data){
+      // Concatenar todos os blocos de texto da resposta
+      var fullText = (data.content||[])
+        .filter(function(b){return b.type==='text';})
+        .map(function(b){return b.text;})
+        .join('');
+
+      // Extrair JSON da resposta (pode vir dentro de markdown)
+      var jsonStr = fullText;
+      var match = fullText.match(/\{[\s\S]*"noticias"[\s\S]*\}/);
+      if(match) jsonStr = match[0];
+
+      var parsed;
+      try{ parsed = JSON.parse(jsonStr); }
+      catch(e){ parsed = {noticias:[], analise:'Erro ao parsear resposta.', temperatura:'frio'}; }
+
+      // Calcular score de cada notícia
+      var noticias = (parsed.noticias||[]).map(function(n){
+        var sc = scoreNoticia((n.titulo||'')+' '+(n.resumo||'')+(n.keywords||[]).join(' '));
+        // Adicionar keywords do score ao que a IA já identificou
+        var allKws = (n.keywords||[]).concat(sc.kws);
+        var uniqueKws = allKws.filter(function(k,i){ return allKws.indexOf(k)===i; });
+        return Object.assign({}, n, {
+          id:     btoa(unescape(encodeURIComponent((n.titulo||'').slice(0,40)))).slice(0,20),
+          score:  sc.score,
+          kws:    uniqueKws.slice(0,6),
+        });
       });
-  }
 
-  // Deduplicar notícias por ID (hash do título)
-  function dedup(lista){
-    var seen = {};
-    return lista.filter(function(n){
-      if(seen[n.id]) return false;
-      seen[n.id] = true;
-      return true;
+      // Ordenar por score desc
+      noticias.sort(function(a,b){return b.score-a.score;});
+
+      return {
+        noticias:    noticias,
+        analise:     parsed.analise||'',
+        temperatura: parsed.temperatura||'frio',
+      };
     });
   }
 
-  // Buscar todas as notícias de um cliente
-  function buscarCliente(cli, onProgress){
-    // Queries: nome + top keywords de maior impacto
-    var queries = [
-      'expansão investimento',
-      'nova fábrica planta',
-      'automação indústria',
-      'CAPEX modernização',
-      'ferramentas torque montagem',
-    ];
-    var promises = queries.map(function(kw){
-      return fetchRSS(cli.nome||cli.apelido, kw).catch(function(){ return []; });
-    });
-    return Promise.all(promises).then(function(results){
-      var all = [];
-      results.forEach(function(r){ all = all.concat(r); });
-      var unique = dedup(all);
-      // Ordenar por score desc, depois data desc
-      unique.sort(function(a,b){
-        if(b.score!==a.score) return b.score-a.score;
-        return b.rawDate-a.rawDate;
-      });
-      return unique.slice(0,40); // máximo 40 notícias por cliente
-    });
-  }
-
-  // ── GERAR RADAR — botão único para todos os clientes ativos ─────────────────
+  // ── GERAR PARA TODOS (botão único) ────────────────────────────────────────────
   function gerarRadarTodos(){
     var ativos = clients.filter(function(c){ return radarOn[c.id]; });
     if(!ativos.length){ alert('Ative o Radar para ao menos 1 empresa.'); return; }
     setLoading(true);
-    setProgress('Iniciando busca para '+ativos.length+' empresa(s)...');
+    setProgress('Iniciando para '+ativos.length+' empresa(s)...');
 
     var newsAtual = Object.assign({}, news);
     var tsAtual   = Object.assign({}, timestamps);
@@ -4235,66 +4216,74 @@ function ViewRadar({ session, isGestor, isConsultor }) {
       if(idx >= ativos.length){
         setNews(newsAtual);     save(KEYS_RADAR_NEWS, newsAtual);
         setTimestamps(tsAtual); save(KEYS_RADAR_TS,   tsAtual);
-        setLoading(false);
-        setLoadingId(null);
-        setProgress('');
+        setLoading(false); setLoadingId(null); setProgress('');
         return;
       }
-      var cli = ativos[idx];
-      idx++;
+      var cli = ativos[idx]; idx++;
       setLoadingId(cli.id);
-      setProgress('Buscando: '+cli.apelido+' ('+idx+'/'+ativos.length+')...');
-      buscarCliente(cli).then(function(lista){
-        newsAtual[cli.id] = lista;
-        tsAtual[cli.id]   = new Date().toISOString();
+      setProgress('Pesquisando '+cli.apelido+'... ('+idx+'/'+ativos.length+')');
+
+      buscarClienteIA(cli).then(function(resultado){
+        // Só salvar se trouxe notícias ou se não tinha nada antes
+        if(resultado.noticias.length > 0 || !newsAtual[cli.id]){
+          newsAtual[cli.id] = {
+            noticias:    resultado.noticias,
+            analise:     resultado.analise,
+            temperatura: resultado.temperatura,
+          };
+        }
+        tsAtual[cli.id] = new Date().toISOString();
+        // Atualizar estado parcialmente para mostrar resultados em tempo real
+        var snap = Object.assign({}, newsAtual);
+        setNews(snap); save(KEYS_RADAR_NEWS, snap);
         next();
-      }).catch(function(){
-        newsAtual[cli.id] = newsAtual[cli.id]||[];
+      }).catch(function(err){
+        console.error('[Radar] Erro em '+cli.apelido+':', err.message);
+        // Não sobrescrever cache existente em caso de erro
+        tsAtual[cli.id] = tsAtual[cli.id] || new Date().toISOString();
         next();
       });
     }
     next();
   }
 
-  // ── Atualização automática (ao montar, se passou 6h) ────────────────────────
+  // ── Auto-atualização ao montar (6h de cache) ──────────────────────────────────
   useEffect(function(){
     var ativos = clients.filter(function(c){ return radarOn[c.id]; });
-    if(!ativos.length) return;
+    if(!ativos.length || loading) return;
     var agora = Date.now();
-    var SEIS_HORAS = 6*60*60*1000;
-    var precisaAtualizar = ativos.some(function(c){
+    var SEIS_H = 6*60*60*1000;
+    var precisa = ativos.some(function(c){
       var ts = timestamps[c.id];
-      if(!ts) return true;
-      return (agora - new Date(ts).getTime()) > SEIS_HORAS;
+      return !ts || (agora - new Date(ts).getTime()) > SEIS_H;
     });
-    if(precisaAtualizar) gerarRadarTodos();
+    if(precisa) gerarRadarTodos();
   }, []);
 
-  // ── Formatação de data relativa ───────────────────────────────────────────────
+  // ── Helpers ────────────────────────────────────────────────────────────────────
   function tsRelativo(iso){
     if(!iso) return '—';
     var diff = Date.now() - new Date(iso).getTime();
-    var h    = Math.floor(diff/3600000);
-    if(h<1)  return 'agora';
+    var h = Math.floor(diff/3600000);
+    if(h<1)  return 'agora mesmo';
     if(h<24) return h+'h atrás';
     return Math.floor(h/24)+'d atrás';
   }
 
-  // ── Clientes ativos com dados para exibição ──────────────────────────────────
-  var ativosComDados = clients.filter(function(c){ return radarOn[c.id]; }).map(function(c){
-    var lista  = news[c.id]||[];
-    var sc     = scoreCliente(c.id);
-    var cls    = classificar(sc);
-    var ts     = timestamps[c.id];
-    return {c:c, lista:lista, score:sc, cls:cls, ts:ts};
-  });
+  var countOn = Object.keys(radarOn).filter(function(k){return radarOn[k];}).length;
 
-  // Filtros
-  var ativosFiltrados = ativosComDados.filter(function(item){
+  // Montar lista exibida
+  var ativosList = clients.filter(function(c){ return radarOn[c.id]; }).map(function(c){
+    var dados   = news[c.id]||{};
+    var lista   = dados.noticias||[];
+    var sc      = scoreCliente(c.id);
+    var cls     = classificar(sc);
+    return {c:c, lista:lista, analise:dados.analise||'', score:sc, cls:cls, ts:timestamps[c.id]};
+  }).filter(function(item){
     if(filterScore!=='todos' && item.cls.id!==filterScore) return false;
-    if(search && !item.c.apelido.toLowerCase().includes(search.toLowerCase())) return false;
+    if(search && item.c.apelido.toLowerCase().indexOf(search.toLowerCase())<0) return false;
     return true;
-  }).sort(function(a,b){ return b.score-a.score; });
+  }).sort(function(a,b){return b.score-a.score;});
 
   var STATUS_OPTIONS = [
     {id:'todos',       label:'Todos'},
@@ -4304,51 +4293,58 @@ function ViewRadar({ session, isGestor, isConsultor }) {
     {id:'frio',        label:'🔵 Frio'},
   ];
 
-  var countOn = Object.values(radarOn).filter(Boolean).length;
-
   return (
     <div style={{display:'flex',flexDirection:'column',gap:12,height:'100%'}}>
 
       {/* ── BARRA DE CONTROLES ── */}
       <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
         <input value={search} onChange={function(e){setSearch(e.target.value);}}
-          placeholder="🔍 Filtrar empresa..." style={{width:180}}/>
+          placeholder="🔍 Filtrar empresa..." style={{width:160}}/>
         <select value={filterScore} onChange={function(e){setFilterScore(e.target.value);}}
           style={{padding:'6px 10px',fontSize:11,borderRadius:7,border:'1px solid var(--border)',background:'var(--bg3)',color:'var(--text)'}}>
-          {STATUS_OPTIONS.map(function(s){
-            return <option key={s.id} value={s.id}>{s.label}</option>;
-          })}
+          {STATUS_OPTIONS.map(function(s){ return <option key={s.id} value={s.id}>{s.label}</option>; })}
         </select>
         <div style={{flex:1}}/>
-        <span style={{fontSize:11,color:'var(--text3)'}}>{countOn}/{MAX_RADAR} no radar</span>
+        <span style={{fontSize:11,color:'var(--text3)'}}>{countOn}/{MAX_RADAR} ativas</span>
 
-        {/* BOTÃO ÚNICO — gerar para todos */}
+        {/* ── BOTÃO ÚNICO ── */}
         <button onClick={gerarRadarTodos} disabled={loading||countOn===0}
-          style={{display:'flex',alignItems:'center',gap:7,padding:'8px 18px',borderRadius:8,border:'1px solid rgba(37,99,235,.5)',background:loading?'var(--bg3)':'rgba(37,99,235,.18)',color:loading?'var(--text3)':'#60A5FA',cursor:loading?'wait':'pointer',fontWeight:700,fontSize:12,flexShrink:0,opacity:countOn===0?.5:1}}>
+          style={{display:'flex',alignItems:'center',gap:7,padding:'8px 18px',borderRadius:8,
+            border:'1px solid rgba(37,99,235,.5)',
+            background:loading?'var(--bg3)':'rgba(37,99,235,.18)',
+            color:loading?'var(--text3)':'#60A5FA',
+            cursor:loading?'wait':'pointer',fontWeight:700,fontSize:12,
+            opacity:countOn===0?.5:1,flexShrink:0}}>
           {loading
-            ? <span>⏳ {progress||'Buscando...'}</span>
+            ? <span>⏳ {progress}</span>
             : <span>🔍 Gerar Radar — {countOn} empresa{countOn!==1?'s':''}</span>}
         </button>
       </div>
 
-      {/* ── PAINEL DE ATIVAÇÃO (toggle por cliente) ── */}
+      {/* ── TOGGLES ── */}
       <div className="card" style={{padding:'12px 14px'}}>
-        <div style={{fontSize:10,fontWeight:700,color:'var(--text2)',marginBottom:8,textTransform:'uppercase',letterSpacing:'.06em'}}>
-          Empresas no Radar <span style={{color:'var(--text3)',fontWeight:400}}>({countOn}/{MAX_RADAR})</span>
+        <div style={{fontSize:10,fontWeight:700,color:'var(--text2)',marginBottom:8,
+          textTransform:'uppercase',letterSpacing:'.06em'}}>
+          Empresas monitoradas <span style={{color:'var(--text3)',fontWeight:400}}>({countOn}/{MAX_RADAR})</span>
         </div>
         <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
           {clients.map(function(c){
-            var on = !!radarOn[c.id];
-            var sc = scoreCliente(c.id);
+            var on  = !!radarOn[c.id];
+            var sc  = scoreCliente(c.id);
             var cls = classificar(sc);
             return (
               <div key={c.id} onClick={function(){toggleRadarOn(c.id);}}
-                style={{display:'flex',alignItems:'center',gap:6,padding:'5px 10px',borderRadius:20,border:'1px solid '+(on?cls.color+'80':'var(--border)'),background:on?cls.color+'15':'transparent',cursor:'pointer',transition:'all .15s',userSelect:'none'}}>
+                style={{display:'flex',alignItems:'center',gap:6,padding:'5px 10px',borderRadius:20,
+                  border:'1px solid '+(on?cls.color+'80':'var(--border)'),
+                  background:on?cls.color+'15':'transparent',
+                  cursor:'pointer',transition:'all .15s',userSelect:'none'}}>
                 {c.logo&&<img src={c.logo} style={{width:16,height:16,objectFit:'contain',background:'#fff',borderRadius:2}} alt=""/>}
                 <span style={{fontSize:11,fontWeight:on?700:400,color:on?'var(--text)':'var(--text3)'}}>{c.apelido}</span>
-                {on && sc>0 && <span style={{fontSize:10,fontWeight:700,color:cls.color}}>{sc}</span>}
-                <div style={{width:28,height:16,borderRadius:8,background:on?'#16A34A':'#2A3045',position:'relative',flexShrink:0,transition:'background .2s'}}>
-                  <div style={{position:'absolute',top:2,left:on?14:2,width:12,height:12,borderRadius:'50%',background:'#fff',transition:'left .2s'}}/>
+                {on&&sc>0&&<span style={{fontSize:10,fontWeight:700,color:cls.color}}>{sc}</span>}
+                <div style={{width:28,height:16,borderRadius:8,background:on?'#16A34A':'#2A3045',
+                  position:'relative',flexShrink:0,transition:'background .2s'}}>
+                  <div style={{position:'absolute',top:2,left:on?14:2,width:12,height:12,
+                    borderRadius:'50%',background:'#fff',transition:'left .2s'}}/>
                 </div>
               </div>
             );
@@ -4356,113 +4352,119 @@ function ViewRadar({ session, isGestor, isConsultor }) {
         </div>
       </div>
 
-      {/* ── LISTA DE CLIENTES COM RESULTADOS ── */}
+      {/* ── RESULTADOS ── */}
       <div style={{flex:1,overflowY:'auto',display:'flex',flexDirection:'column',gap:10}}>
         {countOn===0 ? (
           <div className="card" style={{textAlign:'center',padding:'40px 20px',color:'var(--text3)'}}>
-            <div style={{fontSize:32,marginBottom:10}}>🧠</div>
+            <div style={{fontSize:36,marginBottom:10}}>🧠</div>
             <div style={{fontWeight:600,marginBottom:4}}>Ative empresas no painel acima</div>
             <div style={{fontSize:11}}>Máximo {MAX_RADAR} empresas simultâneas</div>
           </div>
-        ) : ativosFiltrados.length===0 ? (
-          <div className="card" style={{textAlign:'center',padding:'30px',color:'var(--text3)',fontSize:11}}>
-            Nenhuma empresa corresponde aos filtros.
-          </div>
-        ) : (
-          ativosFiltrados.map(function(item){
-            var c=item.c; var lista=item.lista; var sc=item.score; var cls=item.cls; var ts=item.ts;
-            var isLoad = loadingId===c.id;
+        ) : ativosList.map(function(item){
+          var c=item.c; var lista=item.lista; var sc=item.score; var cls=item.cls;
+          var isLoad  = loadingId===c.id;
+          var expanded= expandedId===c.id;
+          var listaShow = expanded?lista:lista.slice(0,3);
 
-            // Filtrar notícias por palavra-chave se houver filtro
-            var listaFilt = filterKw
-              ? lista.filter(function(n){ return n.kws.some(function(k){return k.toLowerCase().includes(filterKw.toLowerCase());}); })
-              : lista;
-
-            return (
-              <div key={c.id} className="card" style={{borderLeft:'3px solid '+cls.color}}>
-                {/* Header cliente */}
-                <div style={{display:'flex',gap:10,alignItems:'center',marginBottom:10,flexWrap:'wrap'}}>
-                  {c.logo&&<img src={c.logo} style={{width:28,height:28,objectFit:'contain',background:'#fff',borderRadius:4,padding:2}} alt=""/>}
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{display:'flex',alignItems:'baseline',gap:8,flexWrap:'wrap'}}>
-                      <span style={{fontWeight:700,fontSize:13}}>{c.apelido}</span>
-                      <span style={{fontSize:11,fontWeight:700,color:cls.color,padding:'1px 8px',borderRadius:10,background:cls.color+'18'}}>{cls.label}</span>
-                    </div>
-                    <div style={{fontSize:10,color:'var(--text3)',marginTop:2}}>
-                      {lista.length} notícia(s) · atualizado {tsRelativo(ts)}
-                      {c.segmento&&' · '+c.segmento}
-                    </div>
+          return (
+            <div key={c.id} className="card" style={{borderLeft:'3px solid '+cls.color}}>
+              {/* Header */}
+              <div style={{display:'flex',gap:10,alignItems:'center',marginBottom:item.analise||lista.length?10:0,flexWrap:'wrap'}}>
+                {c.logo&&<img src={c.logo} style={{width:28,height:28,objectFit:'contain',
+                  background:'#fff',borderRadius:4,padding:2}} alt=""/>}
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:'flex',alignItems:'baseline',gap:8,flexWrap:'wrap'}}>
+                    <span style={{fontWeight:700,fontSize:13}}>{c.apelido}</span>
+                    <span style={{fontSize:11,fontWeight:700,color:cls.color,
+                      padding:'1px 8px',borderRadius:10,background:cls.color+'18'}}>{cls.label}</span>
+                    {isLoad&&<span style={{fontSize:10,color:'#60A5FA'}}>⏳ Buscando...</span>}
                   </div>
-                  {/* Score gauge */}
-                  <div style={{textAlign:'center',flexShrink:0}}>
-                    <div style={{fontSize:24,fontWeight:800,color:cls.color,lineHeight:1}}>{sc}</div>
-                    <div style={{fontSize:9,color:'var(--text3)'}}>SCORE</div>
-                    <div style={{width:48,height:4,borderRadius:2,background:'var(--bg3)',marginTop:3}}>
-                      <div style={{width:(sc)+'%',height:'100%',borderRadius:2,background:cls.color,transition:'width .5s'}}/>
-                    </div>
+                  <div style={{fontSize:10,color:'var(--text3)',marginTop:2}}>
+                    {lista.length} notícia{lista.length!==1?'s':''} · atualizado {tsRelativo(item.ts)}
+                    {c.segmento&&' · '+c.segmento}
                   </div>
                 </div>
-
-                {/* Loading */}
-                {isLoad && (
-                  <div style={{padding:'12px 0',textAlign:'center',color:'var(--text3)',fontSize:11}}>
-                    <span style={{animation:'none'}}>🔍 Buscando notícias...</span>
+                {/* Score */}
+                <div style={{textAlign:'center',flexShrink:0}}>
+                  <div style={{fontSize:26,fontWeight:800,color:cls.color,lineHeight:1}}>{sc}</div>
+                  <div style={{fontSize:8,color:'var(--text3)',letterSpacing:'.05em'}}>SCORE</div>
+                  <div style={{width:48,height:4,borderRadius:2,background:'var(--bg3)',marginTop:3}}>
+                    <div style={{width:sc+'%',height:'100%',borderRadius:2,background:cls.color,transition:'width .5s'}}/>
                   </div>
-                )}
+                </div>
+              </div>
 
-                {/* Sem notícias */}
-                {!isLoad && lista.length===0 && (
-                  <div style={{fontSize:11,color:'var(--text3)',textAlign:'center',padding:'8px 0'}}>
-                    Nenhuma notícia ainda — clique em Gerar Radar.
-                  </div>
-                )}
+              {/* Análise IA */}
+              {item.analise && (
+                <div style={{fontSize:11,padding:'7px 10px',borderRadius:6,
+                  background:'rgba(37,99,235,.07)',border:'1px solid rgba(37,99,235,.15)',
+                  color:'var(--text2)',lineHeight:1.6,marginBottom:8}}>
+                  <span style={{fontWeight:700,color:'#60A5FA',fontSize:10}}>🧠 Análise IA: </span>
+                  {item.analise}
+                </div>
+              )}
 
-                {/* Filtro de keyword dentro do card */}
-                {lista.length>0 && (
-                  <div style={{marginBottom:8}}>
-                    <input value={filterKw} onChange={function(e){setFilterKw(e.target.value);}}
-                      placeholder="Filtrar por palavra-chave..." style={{width:'100%',padding:'5px 8px',fontSize:10}}/>
-                  </div>
-                )}
+              {/* Sem notícias */}
+              {!isLoad&&lista.length===0&&(
+                <div style={{fontSize:11,color:'var(--text3)',textAlign:'center',padding:'8px 0'}}>
+                  Nenhuma notícia ainda — clique em Gerar Radar.
+                </div>
+              )}
 
-                {/* Lista de notícias */}
-                {listaFilt.slice(0,10).map(function(n,ni){
-                  var sc2 = n.score||0;
-                  var cls2 = classificar(sc2);
-                  return (
-                    <div key={n.id+ni} style={{padding:'7px 10px',borderRadius:6,background:'var(--bg3)',border:'1px solid var(--border)',marginBottom:5}}>
-                      <div style={{display:'flex',gap:8,alignItems:'flex-start'}}>
-                        <div style={{flexShrink:0,marginTop:1}}>
-                          <div style={{width:32,textAlign:'center',fontSize:11,fontWeight:700,color:cls2.color,background:cls2.color+'18',borderRadius:4,padding:'1px 0'}}>{sc2}</div>
-                        </div>
-                        <div style={{flex:1,minWidth:0}}>
+              {/* Lista de notícias */}
+              {listaShow.map(function(n,ni){
+                var cls2 = classificar(n.score||0);
+                return (
+                  <div key={n.id||ni} style={{padding:'8px 10px',borderRadius:6,
+                    background:'var(--bg3)',border:'1px solid var(--border)',marginBottom:6}}>
+                    <div style={{display:'flex',gap:8,alignItems:'flex-start'}}>
+                      {/* Score badge */}
+                      <div style={{flexShrink:0,width:34,textAlign:'center',fontSize:11,fontWeight:700,
+                        color:cls2.color,background:cls2.color+'18',borderRadius:5,padding:'2px 0',marginTop:2}}>
+                        {n.score||0}
+                      </div>
+                      <div style={{flex:1,minWidth:0}}>
+                        {/* Título com link */}
+                        {n.link ? (
                           <a href={n.link} target="_blank" rel="noopener noreferrer"
-                            style={{fontSize:11,fontWeight:600,color:'var(--text)',textDecoration:'none',lineHeight:1.4,display:'block'}}
+                            style={{fontSize:12,fontWeight:600,color:'var(--text)',textDecoration:'none',
+                              lineHeight:1.4,display:'block'}}
                             onMouseEnter={function(ev){ev.target.style.color='#60A5FA';}}
                             onMouseLeave={function(ev){ev.target.style.color='var(--text)';}}
-                          >{n.title}</a>
-                          {n.desc&&<div style={{fontSize:10,color:'var(--text3)',marginTop:2,lineHeight:1.4}}>{n.desc.slice(0,150)}</div>}
-                          <div style={{display:'flex',gap:8,marginTop:4,flexWrap:'wrap'}}>
-                            {n.date&&<span style={{fontSize:9,color:'var(--text3)'}}>📅 {n.date}</span>}
-                            {n.kws.map(function(kw,ki){
-                              return <span key={ki} style={{fontSize:9,padding:'1px 6px',borderRadius:3,background:'rgba(37,99,235,.12)',color:'#60A5FA'}}>{kw}</span>;
-                            })}
+                          >{n.titulo||n.title||'—'}</a>
+                        ) : (
+                          <div style={{fontSize:12,fontWeight:600,color:'var(--text)',lineHeight:1.4}}>
+                            {n.titulo||n.title||'—'}
                           </div>
+                        )}
+                        {/* Resumo */}
+                        {n.resumo&&<div style={{fontSize:10,color:'var(--text3)',marginTop:3,lineHeight:1.5}}>{n.resumo.slice(0,180)}</div>}
+                        {/* Meta */}
+                        <div style={{display:'flex',gap:8,marginTop:5,flexWrap:'wrap',alignItems:'center'}}>
+                          {n.data&&<span style={{fontSize:9,color:'var(--text3)'}}>📅 {n.data}</span>}
+                          {n.fonte&&<span style={{fontSize:9,color:'var(--text3)'}}>📰 {n.fonte}</span>}
+                          {(n.kws||[]).slice(0,4).map(function(kw,ki){
+                            return <span key={ki} style={{fontSize:9,padding:'1px 6px',borderRadius:3,
+                              background:'rgba(37,99,235,.12)',color:'#60A5FA'}}>{kw}</span>;
+                          })}
                         </div>
                       </div>
                     </div>
-                  );
-                })}
-
-                {listaFilt.length>10 && (
-                  <div style={{fontSize:10,color:'var(--text3)',textAlign:'center',padding:'5px 0'}}>
-                    +{listaFilt.length-10} notícias — refine o filtro para ver mais
                   </div>
-                )}
-              </div>
-            );
-          })
-        )}
+                );
+              })}
+
+              {/* Ver mais / menos */}
+              {lista.length>3&&(
+                <button onClick={function(){setExpandedId(expanded?null:c.id);}}
+                  style={{width:'100%',padding:'5px 0',background:'none',border:'none',
+                    color:'#60A5FA',cursor:'pointer',fontSize:11,fontWeight:600,marginTop:2}}>
+                  {expanded?'▲ Ver menos':'▼ Ver todas as '+lista.length+' notícias'}
+                </button>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
