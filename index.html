@@ -724,7 +724,7 @@ function ViewForecast({ session, isGestor, isConsultor }) {
 function PerfilOportunidade(props) {
   const {opp, opps, session, onClose, onSave, onDelete, onEdit, setRowColor, toggleMonth, MONTHS_VIS, confColor, fmtConf, fmtAmt} = props;
   const [tab, setTab] = useState('dados');
-  const [hForm, setHForm] = useState({date:'', time:'', resp:session.code||'', processo:'', resumo:'', proximo:''});
+  const [hForm, setHForm] = useState({date:'', time:'', resp:session.code||'', processo:'', resumo:'', w_oque:'', w_porque:'', w_quem:'', w_onde:'', w_quando:'', w_como:'', w_quanto:''});
   const [addingH, setAddingH] = useState(false);
 
   // Sincronizar opp atual com opps (para refletir toggleMonth)
@@ -738,11 +738,20 @@ function PerfilOportunidade(props) {
 
   function saveHistEntry() {
     if (!hForm.resumo.trim()) { alert('Preencha o resumo.'); return; }
-    const entry = Object.assign({}, hForm, {id:'h_'+Date.now(), criadoEm:new Date().toISOString()});
+    var w5 = [
+      hForm.w_oque   ? 'O quê: '+hForm.w_oque   : '',
+      hForm.w_porque ? 'Por quê: '+hForm.w_porque : '',
+      hForm.w_quem   ? 'Quem: '+hForm.w_quem     : '',
+      hForm.w_onde   ? 'Onde: '+hForm.w_onde     : '',
+      hForm.w_quando ? 'Quando: '+hForm.w_quando  : '',
+      hForm.w_como   ? 'Como: '+hForm.w_como      : '',
+      hForm.w_quanto ? 'Quanto: '+hForm.w_quanto  : '',
+    ].filter(Boolean).join(' | ');
+    const entry = Object.assign({}, hForm, {id:'h_'+Date.now(), criadoEm:new Date().toISOString(), proximo:w5});
     const newHist = [entry, ...hist];
     const updated = Object.assign({}, current, {history:newHist});
     onSave(updated);
-    setHForm({date:'', time:'', resp:session.code||'', processo:'', resumo:'', proximo:''});
+    setHForm({date:'', time:'', resp:session.code||'', processo:'', resumo:'', w_oque:'', w_porque:'', w_quem:'', w_onde:'', w_quando:'', w_como:'', w_quanto:''});
     setAddingH(false);
   }
 
@@ -856,7 +865,7 @@ function PerfilOportunidade(props) {
             {!addingH && (
               <button className="btn btn-blue" style={{width:'100%',marginBottom:12,justifyContent:'center'}}
                 onClick={function(){
-                  setHForm({date:new Date().toLocaleDateString('pt-BR'), time:'', resp:session.code||'', processo:'', resumo:'', proximo:''});
+                  setHForm({date:new Date().toISOString().slice(0,10), time:'', resp:session.code||'', processo:'', resumo:'', w_oque:'', w_porque:'', w_quem:'', w_onde:'', w_quando:'', w_como:'', w_quanto:''});
                   setAddingH(true);
                 }}>
                 + Registrar visita
@@ -864,17 +873,20 @@ function PerfilOportunidade(props) {
             )}
             {addingH && (
               <div style={{background:'var(--bg3)',borderRadius:8,padding:12,marginBottom:12,border:'1px solid var(--border)'}}>
-                <div style={{display:'grid',gridTemplateColumns:'100px 70px 70px 1fr',gap:8,marginBottom:8}}>
+                <div style={{marginBottom:8}}>
+                  <label style={{display:'block',fontSize:9,color:'var(--text3)',marginBottom:3,textTransform:'uppercase',letterSpacing:'.05em'}}>Data</label>
+                  <input type="date" value={hForm.date||''} onChange={function(e){ setHForm(Object.assign({},hForm,{date:e.target.value})); }} style={{width:'100%',padding:'5px 8px',fontSize:11}}/>
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:'80px 80px 1fr',gap:8,marginBottom:8}}>
                   {[
-                    {k:'date',     l:'Data',          ph:'08.04.26'},
-                    {k:'time',     l:'Horário',       ph:'09:30'},
-                    {k:'resp',     l:'Resp.',         ph:'EF'},
-                    {k:'processo', l:'Processo visitado', ph:'Montagem / Qualidade...'},
+                    {k:'time',     l:'Horário',       ph:'09:30', type:'text'},
+                    {k:'resp',     l:'Resp.',         ph:'EF',    type:'text'},
+                    {k:'processo', l:'Processo visitado', ph:'Montagem / Qualidade...', type:'text'},
                   ].map(function(f){
                     return (
                       <div key={f.k}>
                         <label style={{display:'block',fontSize:9,color:'var(--text3)',marginBottom:3,textTransform:'uppercase',letterSpacing:'.05em'}}>{f.l}</label>
-                        <input value={hForm[f.k]||''} onChange={function(e){ setHForm(Object.assign({},hForm,{[f.k]:e.target.value})); }} placeholder={f.ph} style={{width:'100%',padding:'5px 8px',fontSize:11}}/>
+                        <input type={f.type||'text'} value={hForm[f.k]||''} onChange={function(e){ setHForm(Object.assign({},hForm,{[f.k]:e.target.value})); }} placeholder={f.ph} style={{width:'100%',padding:'5px 8px',fontSize:11}}/>
                       </div>
                     );
                   })}
@@ -886,16 +898,33 @@ function PerfilOportunidade(props) {
                     placeholder="O que foi discutido, decisões, próximos passos..."/>
                 </div>
                 <div style={{marginBottom:8}}>
-                  <label style={{display:'block',fontSize:9,color:'var(--text3)',marginBottom:3,textTransform:'uppercase',letterSpacing:'.05em'}}>
-                    Próximo passo
-                    <span style={{marginLeft:6,fontSize:9,color:'var(--text3)',fontWeight:400,textTransform:'none',letterSpacing:0}}>— baseado em 5W2H</span>
-                  </label>
-                  <div style={{background:'rgba(37,99,235,0.06)',border:'1px solid rgba(37,99,235,0.15)',borderRadius:6,padding:'8px 10px',marginBottom:5,fontSize:9,color:'rgba(148,163,184,0.7)',lineHeight:1.6}}>
-                    <span style={{fontWeight:600,color:'#60A5FA'}}>O quê</span> · <span style={{fontWeight:600,color:'#60A5FA'}}>Por quê</span> · <span style={{fontWeight:600,color:'#60A5FA'}}>Quem</span> · <span style={{fontWeight:600,color:'#60A5FA'}}>Onde</span> · <span style={{fontWeight:600,color:'#60A5FA'}}>Quando</span> · <span style={{fontWeight:600,color:'#60A5FA'}}>Como</span> · <span style={{fontWeight:600,color:'#60A5FA'}}>Quanto</span>
+                  <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+                    <label style={{display:'block',fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.05em',margin:0}}>Próximo Passo</label>
+                    <span style={{fontSize:9,padding:'1px 8px',borderRadius:10,background:'rgba(37,99,235,0.15)',color:'#60A5FA',fontWeight:600}}>5W2H</span>
                   </div>
-                  <textarea value={hForm.proximo||''} onChange={function(e){ setHForm(Object.assign({},hForm,{proximo:e.target.value})); }}
-                    style={{width:'100%',height:72,resize:'vertical',lineHeight:1.6,fontSize:12}}
-                    placeholder={'O quê: Enviar proposta técnica para torquímetro digital\nPor quê: Cliente pediu alternativa ao modelo atual\nQuem: Elieser Fernandes / Eng. Rafael\nOnde: Planta Caterpillar — Engenharia\nQuando: até 15/05/2026\nComo: E-mail + demonstração presencial\nQuanto: R$ 45.000 (orçamento inicial)'}/>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
+                    {[
+                      {k:'w_oque',   l:'O quê',   ph:'Enviar proposta / Agendar demo...'},
+                      {k:'w_porque', l:'Por quê',  ph:'Cliente solicitou / Risco de perda...'},
+                      {k:'w_quem',   l:'Quem',    ph:'Elieser / Eng. Rafael...'},
+                      {k:'w_onde',   l:'Onde',    ph:'Planta Honda / E-mail / Teams...'},
+                      {k:'w_quando', l:'Quando',  ph:'15/05/2026'},
+                      {k:'w_como',   l:'Como',    ph:'Visita presencial / E-mail / Ligação...'},
+                    ].map(function(f){
+                      return (
+                        <div key={f.k}>
+                          <label style={{display:'block',fontSize:9,color:'#60A5FA',marginBottom:2,fontWeight:600}}>{f.l}</label>
+                          <input value={hForm[f.k]||''} onChange={function(e){setHForm(Object.assign({},hForm,{[f.k]:e.target.value}));}}
+                            placeholder={f.ph} style={{width:'100%',padding:'4px 7px',fontSize:11,borderColor:hForm[f.k]?'rgba(37,99,235,0.5)':'var(--border)'}}/>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{marginTop:6}}>
+                    <label style={{display:'block',fontSize:9,color:'#60A5FA',marginBottom:2,fontWeight:600}}>Quanto</label>
+                    <input value={hForm.w_quanto||''} onChange={function(e){setHForm(Object.assign({},hForm,{w_quanto:e.target.value}));}}
+                      placeholder="R$ 45.000 / 3 semanas de teste..." style={{width:'100%',padding:'4px 7px',fontSize:11}}/>
+                  </div>
                 </div>
                 <div style={{display:'flex',gap:6}}>
                   <button className="btn btn-primary" onClick={saveHistEntry}>Salvar</button>
@@ -1089,7 +1118,22 @@ function ViewClientes({ session }) {
             {/* MODO EDIÇÃO */}
             {editMode && editClient ? (
               <div>
-                <div style={{fontSize:10,fontWeight:700,color:'var(--text2)',marginBottom:8,textTransform:'uppercase',letterSpacing:'.06em'}}>Dados da empresa</div>
+                <div style={{display:'flex',gap:14,alignItems:'flex-start',marginBottom:10}}>
+                  <div style={{flexShrink:0,textAlign:'center'}}>
+                    {editClient.logo
+                      ? <img src={editClient.logo} style={{width:60,height:60,objectFit:'contain',borderRadius:6,border:'1px solid var(--border)',background:'#fff',padding:2}} alt="logo"/>
+                      : <div style={{width:60,height:60,borderRadius:6,border:'1px dashed var(--border)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,color:'var(--text3)',textAlign:'center',lineHeight:1.2}}>sem<br/>logo</div>}
+                    <label style={{display:'block',fontSize:9,color:'#60A5FA',cursor:'pointer',marginTop:4}}>
+                      📁 Logo
+                      <input type="file" accept="image/*" style={{display:'none'}} onChange={function(e){
+                        var file=e.target.files[0]; if(!file) return;
+                        var r=new FileReader(); r.onload=function(ev){setEditClient(Object.assign({},editClient,{logo:ev.target.result}));};
+                        r.readAsDataURL(file); e.target.value='';
+                      }}/>
+                    </label>
+                  </div>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:10,fontWeight:700,color:'var(--text2)',marginBottom:8,textTransform:'uppercase',letterSpacing:'.06em'}}>Dados da empresa</div>
                 <div className="grid-2" style={{marginBottom:8}}>
                   {[
                     {k:'apelido',l:'Apelido / Nome curto'},{k:'nome',l:'Nome completo'},
@@ -1112,6 +1156,8 @@ function ViewClientes({ session }) {
                   <label>Endereço</label>
                   <input value={editClient.endereco||''} onChange={function(e){setEditClient(Object.assign({},editClient,{endereco:e.target.value}));}} style={{width:'100%'}}/>
                 </div>
+                  </div>
+                </div>
 
                 {/* Contatos editáveis */}
                 <div style={{fontSize:10,fontWeight:700,color:'var(--text2)',marginBottom:8,textTransform:'uppercase',letterSpacing:'.06em'}}>
@@ -1123,18 +1169,38 @@ function ViewClientes({ session }) {
                     <div key={i} style={{background:'var(--bg3)',borderRadius:6,padding:'8px 10px',marginBottom:6,border:'1px solid '+(isEditing?'var(--blue)':'var(--border)')}}>
                       {isEditing ? (
                         <div>
-                          <div className="grid-3" style={{marginBottom:6}}>
-                            {[{k:'nome',l:'Nome'},{k:'dpto',l:'Departamento'},{k:'tel',l:'Telefone'},{k:'cel',l:'Celular'},{k:'email',l:'E-mail'}].map(function(f){
-                              return (
-                                <div key={f.k} className="field" style={{marginBottom:4}}>
-                                  <label>{f.l}</label>
-                                  <input value={ct[f.k]||''} onChange={function(e){
-                                    var nc = (editClient.contatos||[]).map(function(x,xi){ return xi===i?Object.assign({},x,{[f.k]:e.target.value}):x; });
+                          <div style={{display:'flex',gap:10,alignItems:'flex-start',marginBottom:8}}>
+                            <div style={{flexShrink:0,textAlign:'center'}}>
+                              {ct.foto
+                                ? <img src={ct.foto} style={{width:44,height:44,borderRadius:'50%',objectFit:'cover',border:'2px solid var(--blue)'}} alt=""/>
+                                : <div style={{width:44,height:44,borderRadius:'50%',background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,fontWeight:700,color:'#FFD0D0'}}>{ct.nome?ct.nome[0].toUpperCase():'?'}</div>}
+                              <label style={{display:'block',fontSize:9,color:'#60A5FA',cursor:'pointer',marginTop:3}}>
+                                📷 Foto
+                                <input type="file" accept="image/*" style={{display:'none'}} onChange={function(e){
+                                  var file=e.target.files[0]; if(!file) return;
+                                  var r=new FileReader();
+                                  r.onload=function(ev){
+                                    var nc=(editClient.contatos||[]).map(function(x,xi){return xi===i?Object.assign({},x,{foto:ev.target.result}):x;});
                                     setEditClient(Object.assign({},editClient,{contatos:nc}));
-                                  }} style={{width:'100%',padding:'4px 8px',fontSize:11}}/>
-                                </div>
-                              );
-                            })}
+                                  }; r.readAsDataURL(file); e.target.value='';
+                                }}/>
+                              </label>
+                            </div>
+                            <div style={{flex:1}}>
+                              <div className="grid-3" style={{marginBottom:6}}>
+                                {[{k:'nome',l:'Nome'},{k:'dpto',l:'Departamento'},{k:'tel',l:'Telefone'},{k:'cel',l:'Celular'},{k:'email',l:'E-mail'},{k:'linkedin',l:'LinkedIn'}].map(function(f){
+                                  return (
+                                    <div key={f.k} className="field" style={{marginBottom:4}}>
+                                      <label>{f.l}</label>
+                                      <input value={ct[f.k]||''} onChange={function(e){
+                                        var nc = (editClient.contatos||[]).map(function(x,xi){ return xi===i?Object.assign({},x,{[f.k]:e.target.value}):x; });
+                                        setEditClient(Object.assign({},editClient,{contatos:nc}));
+                                      }} style={{width:'100%',padding:'4px 8px',fontSize:11}}/>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
                           </div>
                           <div style={{display:'flex',gap:6}}>
                             <button className="btn btn-primary" style={{padding:'4px 10px',fontSize:11}} onClick={function(){setEditCtcIdx(null);}}>✓ Ok</button>
@@ -1146,13 +1212,19 @@ function ViewClientes({ session }) {
                           </div>
                         </div>
                       ) : (
-                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                          <div>
-                            <span style={{fontWeight:600,fontSize:12}}>{ct.nome}</span>
-                            <span style={{fontSize:10,color:'var(--text3)',marginLeft:8}}>{ct.dpto}</span>
-                            <span style={{fontSize:10,color:'var(--text3)',marginLeft:8}}>{ct.cel||ct.tel}</span>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8}}>
+                          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                            {ct.foto
+                              ? <img src={ct.foto} style={{width:30,height:30,borderRadius:'50%',objectFit:'cover',border:'1px solid var(--border)',flexShrink:0}} alt=""/>
+                              : <div style={{width:30,height:30,borderRadius:'50%',background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,color:'#FFD0D0',flexShrink:0}}>{ct.nome?ct.nome[0].toUpperCase():'?'}</div>}
+                            <div>
+                              <span style={{fontWeight:600,fontSize:12}}>{ct.nome}</span>
+                              <span style={{fontSize:10,color:'var(--text3)',marginLeft:8}}>{ct.dpto}</span>
+                              <span style={{fontSize:10,color:'var(--text3)',marginLeft:8}}>{ct.cel||ct.tel}</span>
+                              {ct.linkedin && <a href={ct.linkedin.startsWith('http')?ct.linkedin:'https://'+ct.linkedin} target="_blank" rel="noopener noreferrer" style={{fontSize:9,marginLeft:8,color:'#38BDF8',textDecoration:'none',padding:'1px 5px',border:'1px solid #38BDF8',borderRadius:3}}>in</a>}
+                            </div>
                           </div>
-                          <button onClick={function(){setEditCtcIdx(i);}} style={{background:'none',border:'1px solid var(--border)',borderRadius:5,color:'var(--text3)',cursor:'pointer',padding:'3px 8px',fontSize:10}}>✏️ Editar</button>
+                          <button onClick={function(){setEditCtcIdx(i);}} style={{background:'none',border:'1px solid var(--border)',borderRadius:5,color:'var(--text3)',cursor:'pointer',padding:'3px 8px',fontSize:10,flexShrink:0}}>✏️ Editar</button>
                         </div>
                       )}
                     </div>
@@ -1176,6 +1248,14 @@ function ViewClientes({ session }) {
               </div>
             ) : (
               <div>
+                {/* Logo + links do cliente */}
+                <div style={{display:'flex',gap:12,alignItems:'center',marginBottom:12}}>
+                  {sel.logo && <img src={sel.logo} style={{width:52,height:52,objectFit:'contain',borderRadius:6,border:'1px solid var(--border)',background:'#fff',padding:3}} alt="logo"/>}
+                  <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                    {sel.site && <a href={sel.site.startsWith('http')?sel.site:'https://'+sel.site} target="_blank" rel="noopener noreferrer" style={{fontSize:11,padding:'3px 10px',borderRadius:5,background:'rgba(37,99,235,.15)',color:'#60A5FA',textDecoration:'none'}}>🌐 Site</a>}
+                    {sel.linkedin && <a href={sel.linkedin.startsWith('http')?sel.linkedin:'https://'+sel.linkedin} target="_blank" rel="noopener noreferrer" style={{fontSize:11,padding:'3px 10px',borderRadius:5,background:'rgba(14,118,168,.15)',color:'#38BDF8',textDecoration:'none'}}>in LinkedIn</a>}
+                  </div>
+                </div>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:14}}>
                   {[
                     {l:'CNPJ',     v:sel.cnpj},
@@ -1202,7 +1282,7 @@ function ViewClientes({ session }) {
                   <table className="tbl" style={{marginBottom:8}}>
                     <thead>
                       <tr>
-                        <th>NOME</th><th>DEPARTAMENTO</th><th>TEL.</th><th>CEL.</th><th>E-MAIL</th>
+                        <th>NOME</th><th>DEPARTAMENTO</th><th>TEL.</th><th>CEL.</th><th>E-MAIL</th><th>LINKEDIN</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1211,7 +1291,14 @@ function ViewClientes({ session }) {
                         const waUrl = 'https://wa.me/55'+waNum;
                         return (
                           <tr key={i}>
-                            <td style={{fontWeight:600}}>{ct.nome}</td>
+                            <td>
+                              <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                                {ct.foto
+                                  ? <img src={ct.foto} style={{width:26,height:26,borderRadius:'50%',objectFit:'cover',border:'1px solid var(--border)',flexShrink:0}} alt=""/>
+                                  : <div style={{width:26,height:26,borderRadius:'50%',background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:700,color:'#FFD0D0',flexShrink:0}}>{ct.nome?ct.nome[0].toUpperCase():'?'}</div>}
+                                <span style={{fontWeight:600}}>{ct.nome}</span>
+                              </div>
+                            </td>
                             <td style={{color:'var(--text3)',fontSize:10}}>{ct.dpto}</td>
                             <td style={{color:'var(--text3)',fontSize:10}}>{ct.tel}</td>
                             <td style={{color:'var(--text3)',fontSize:10}}>{ct.cel}</td>
@@ -1229,6 +1316,9 @@ function ViewClientes({ session }) {
                                   </a>
                                 )}
                               </div>
+                            </td>
+                            <td style={{fontSize:10}}>
+                              {ct.linkedin && <a href={ct.linkedin.startsWith('http')?ct.linkedin:'https://'+ct.linkedin} target="_blank" rel="noopener noreferrer" style={{color:'#38BDF8',textDecoration:'none',fontWeight:600}}>in</a>}
                             </td>
                           </tr>
                         );
@@ -2090,7 +2180,7 @@ ${d.resultados&&d.resultados.some(function(r){return r.inicio;})? '<div class="s
   <div class="sig-line">Assinatura Cliente</div>
   <div class="sig-line">Assinatura Vendedor</div>
 </div>
-<div class="footer">SINUELO SERVICE LTDA — Rua Antonio Kaminski, 190 - Orleans — Curitiba - PR — CEP 81200-402<br>crm@sinuelo.com | www.sinuelo.com | 041-33355005 / 041-33352324</div>
+<div class="footer">FORGE B2B — <br>forge@forgeb2b.com.br | www.forgeb2b.com.br</div>
 </body></html>`;
     const win = window.open('','_blank','width=900,height=700');
     win.document.write(html);
@@ -2960,7 +3050,7 @@ function ViewOrcamento({ session, isGestor }) {
     html += '<table><thead><tr><th>IT</th><th>POSTO</th><th>SUBP.</th><th>TORQUE</th><th>QDE</th><th>DESCRIÇÃO</th><th>CÓDIGO</th><th>SIGMA</th><th>NCM</th><th>ENTREGA</th><th>ORIGEM</th><th>V.UNIT</th><th>TOTAL</th><th>ICMS</th><th>PIS</th><th>COFINS</th><th>IPI</th><th>V.IPI</th><th>ST</th><th>LÍQ.S/ICMS</th><th>COM IPI</th><th>COM IPI+ST</th><th>TOT.IPI</th><th>TOT.ST</th></tr></thead><tbody>'+rows+'</tbody></table>';
     html += '<div class="totais"><b>Total bruto:</b> R$'+t.totalBruto.toFixed(2)+' &nbsp;&nbsp; <b>Total com IPI:</b> R$'+t.totalIpi.toFixed(2)+' &nbsp;&nbsp; <b>Total com IPI/ST:</b> R$'+t.totalSt.toFixed(2)+'</div>';
     if(o.obs) html += '<p style="margin-top:8px;font-size:8pt"><b>Observações:</b> '+o.obs+'</p>';
-    html += '<div class="footer">SINUELO SERVICE LTDA — Rua Antonio Kaminski, 190 - Orleans — Curitiba PR — crm@sinuelo.com | www.sinuelo.com</div></body></html>';
+    html += '<div class="footer">FORGE B2B — forge@forgeb2b.com.br</div></body></html>';
     var w = window.open('','_blank','width=1100,height=700');
     w.document.write(html); w.document.close(); w.focus();
     setTimeout(function(){w.print();},400);
@@ -3498,11 +3588,7 @@ function ViewRelatorio({ session, isGestor, isConsultor }) {
   var budget   = load(KEYS.budget,    {});
 
   var TIPOS = [
-    {id:'oportunidade', label:'📊 Oportunidade',    desc:'Perfil completo de uma oportunidade com histórico e próximos passos'},
-    {id:'cliente',      label:'👥 Cliente',          desc:'Todas as oportunidades e contatos de um cliente'},
-    {id:'pipeline',     label:'📈 Pipeline',         desc:'Visão geral das oportunidades por vendedor e status'},
-    {id:'orcamento',    label:'📝 Orçamento',        desc:'Relatório de orçamentos por período ou cliente'},
-    {id:'visitas',      label:'📅 Histórico visitas',desc:'Todas as visitas registradas com próximos passos 5W2H'},
+    {id:'oportunidade', label:'📊 Oportunidade', desc:'Perfil completo com Forecast, histórico de visitas e próximos passos 5W2H'},
   ];
   var [tipo,    setTipo]    = useState('oportunidade');
   var [selIds,  setSelIds]  = useState([]);
@@ -3939,11 +4025,11 @@ function App() {
             {(function(){
               try{
                 var logoB64 = document.querySelector('link[rel="icon"]');
-                if(logoB64) return <img src={logoB64.href} style={{width:28,height:28,objectFit:'contain',borderRadius:4}} alt="logo"/>;
+                if(logoB64) return <img src={logoB64.href} style={{width:28,height:28,objectFit:'contain',borderRadius:5,background:'var(--bg2)',padding:2}} alt="logo"/>;
               }catch(ex){}
               return null;
             })()}
-            <span style={{fontSize:11,fontWeight:800,letterSpacing:'.08em',color:'var(--text2)'}}>SINUELO</span>
+            
           </div>
           <span className="topbar-title">
             {(NAV.find(function(v){return v.id===view;})||{}).label||view}
