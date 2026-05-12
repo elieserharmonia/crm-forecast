@@ -3508,6 +3508,7 @@ function ViewRelatorio({ session, isGestor, isConsultor }) {
   var [selIds,  setSelIds]  = useState([]);
   var [periodo, setPeriodo] = useState('todos');
   var [relText, setRelText] = useState('');
+  var [relHtml, setRelHtml] = useState('');
   var [loading, setLoading] = useState(false);
 
   // Visibilidade por role
@@ -3518,7 +3519,7 @@ function ViewRelatorio({ session, isGestor, isConsultor }) {
 
   // ── GERADORES ──────────────────────────────────────────────
   function gerarRelatorio(){
-    setLoading(true); setRelText('');
+    setLoading(true); setRelText(''); setRelHtml('');
     var lines = [];
     var sep1 = '═'.repeat(65);
     var sep2 = '─'.repeat(65);
@@ -3526,39 +3527,96 @@ function ViewRelatorio({ session, isGestor, isConsultor }) {
     if(tipo==='oportunidade'){
       var selecionadas = fcOpps.filter(function(o){return selIds.includes(o.id);});
       if(!selecionadas.length){ alert('Selecione ao menos uma oportunidade.'); setLoading(false); return; }
+
+      // Paleta de cores do Forecast
+      var FC_BG   = '#0F1C3A';  // fundo das células do forecast
+      var FC_HDR  = '#1A2D55';  // fundo do cabeçalho das células
+      var FC_BDR  = '#2A4070';  // borda
+      var FC_TEXT = '#A8C4F0';  // texto cabeçalho
+      var FC_VAL  = '#E8F0FF';  // texto valor
+
+      function cell(title, value, w){
+        return '<td style="border:1px solid '+FC_BDR+';padding:0;vertical-align:top;'+(w?'width:'+w+';':'')+'"><div style="background:'+FC_HDR+';color:'+FC_TEXT+';font-size:9px;font-weight:700;padding:3px 7px;letter-spacing:.05em;text-transform:uppercase;">'+title+'</div><div style="background:'+FC_BG+';color:'+FC_VAL+';font-size:11px;padding:5px 7px;min-height:22px;">'+value+'</div></td>';
+      }
+
+      function bulletList(text){
+        if(!text) return '<em style="color:#666">—</em>';
+        var items = text.split('\n').map(function(l){return l.trim();}).filter(function(l){return l.length>0;});
+        return '<ul style="margin:0;padding-left:16px;list-style:disc;">'+items.map(function(l){return '<li style="margin-bottom:3px;">'+l.replace(/^[•\-\*]\s*/,'')+'</li>';}).join('')+'</ul>';
+      }
+
+      var html = '<div style="font-family:Segoe UI,Arial,sans-serif;font-size:12px;color:#1a1a1a;">';
+
       selecionadas.forEach(function(opp,oi){
-        if(oi>0) lines.push('',''+sep1,'');
-        lines.push('FORGE B2B — RELATÓRIO DE OPORTUNIDADE');
-        lines.push(sep2);
-        lines.push('Cliente: '+opp.customer+'   |   Supplier: '+(opp.supplier||'—'));
-        lines.push('Oportunidade: '+(opp.description||'—'));
-        lines.push(sep2);
-        lines.push('FORECAST:');
-        lines.push('  Tipo: '+(opp.neg||'D')+'  |  Resp: '+(opp.resp||'—')+'  |  UF: '+(opp.uf||'—'));
-        lines.push('  Valor: '+fmtAmt(opp.amount)+'  |  Confidence: '+fmtConf(opp.confidence));
+        if(oi>0) html += '<div style="height:24px;border-top:3px solid #2563EB;margin:20px 0;"></div>';
         var meses = Object.keys(opp.months||{}).filter(function(m){return (opp.months||{})[m];}).join(', ')||'—';
-        lines.push('  Meses: '+meses+'  |  Contatos: '+(opp.contatos||'—'));
+        var confC = parseFloat(opp.confidence||0)>=1?'#16A34A':parseFloat(opp.confidence||0)>=0.5?'#2563EB':'#CA8A04';
+        var hist  = opp.history||[];
+
+        // Cabeçalho
+        html += '<div style="background:#1E2D4A;border:1px solid #2A4070;border-radius:6px 6px 0 0;padding:10px 14px;margin-bottom:0;">';
+        html += '<div style="font-size:16px;font-weight:800;color:#E8F0FF;">'+opp.customer+'</div>';
+        html += '<div style="font-size:12px;color:#A8C4F0;margin-top:2px;">'+(opp.description||'—')+'</div>';
+        html += '</div>';
+
+        // Linha do Forecast (células)
+        html += '<div style="background:'+FC_BG+';border:1px solid '+FC_BDR+';border-top:none;border-radius:0 0 0 0;">';
+        html += '<div style="padding:4px 8px;background:#142040;font-size:9px;font-weight:700;color:'+FC_TEXT+';letter-spacing:.08em;text-transform:uppercase;border-bottom:1px solid '+FC_BDR+';">FORECAST</div>';
+        html += '<table style="width:100%;border-collapse:collapse;"><tr>';
+        html += cell('TIPO',opp.neg||'D','60px');
+        html += cell('RESP.',opp.resp||'—','70px');
+        html += cell('SUPPLIER',opp.supplier||'—','120px');
+        html += cell('UF',opp.uf||'—','50px');
+        html += cell('AMOUNT',fmtAmt(opp.amount),'90px');
+        html += cell('CONFIDENCE','<span style="color:'+confC+';font-weight:700;">'+fmtConf(opp.confidence)+'</span>','90px');
+        html += cell('MESES',meses,'');
+        html += cell('CONTATOS',opp.contatos||'—','');
+        html += '</tr></table>';
+        html += '</div>';
+
         // Follow-up
         if(opp.followup){
-          lines.push(''); lines.push('FOLLOW-UP:');
-          lines.push(opp.followup);
+          html += '<div style="margin-top:10px;">';
+          html += '<div style="font-weight:700;font-size:11px;color:#334155;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;">FOLLOW-UP</div>';
+          html += '<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:4px;padding:8px 10px;font-size:11px;color:#334155;line-height:1.6;">'+bulletList(opp.followup)+'</div>';
+          html += '</div>';
         }
+
         // Histórico de visitas
-        var hist = opp.history||[];
         if(hist.length){
-          lines.push(''); lines.push('HISTÓRICO DE VISITAS ('+hist.length+'):');
-          hist.forEach(function(h){
-            lines.push(sep2.slice(0,40));
-            lines.push('['+(h.date||'—')+'] '+(h.time?h.time+' ':'')+(h.resp?'['+h.resp+'] ':'')+(h.processo||''));
-            lines.push(h.resumo||'');
+          html += '<div style="margin-top:12px;">';
+          html += '<div style="font-weight:700;font-size:11px;color:#334155;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">HISTÓRICO DE VISITAS ('+hist.length+')</div>';
+          hist.forEach(function(h,hi){
+            html += '<div style="margin-bottom:10px;border:1px solid #E2E8F0;border-radius:6px;overflow:hidden;">';
+            // Header da visita
+            html += '<div style="background:#F1F5F9;padding:6px 10px;display:flex;gap:10px;align-items:center;border-bottom:1px solid #E2E8F0;">';
+            if(h.date) html += '<span style="font-weight:700;font-size:11px;">'+h.date+'</span>';
+            if(h.time) html += '<span style="font-size:10px;color:#64748B;">🕐 '+h.time+'</span>';
+            if(h.resp) html += '<span style="font-size:10px;padding:1px 8px;border-radius:10px;background:#FEE2E2;color:#991B1B;font-weight:600;">'+h.resp+'</span>';
+            if(h.processo) html += '<span style="font-size:10px;color:#2563EB;font-style:italic;">'+h.processo+'</span>';
+            html += '</div>';
+            // Resumo em bullets
+            html += '<div style="padding:8px 10px;font-size:11px;color:#334155;">'+bulletList(h.resumo)+'</div>';
+            // Próximo passo
             if(h.proximo){
-              lines.push('');
-              lines.push('PRÓXIMO PASSO (5W2H):');
-              lines.push(h.proximo);
+              html += '<div style="background:#EFF6FF;border-top:1px solid #BFDBFE;padding:8px 10px;">';
+              html += '<div style="font-size:9px;font-weight:700;color:#1D4ED8;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;">📋 PRÓXIMO PASSO (5W2H)</div>';
+              html += '<div style="font-size:11px;color:#1E3A5F;line-height:1.6;">'+bulletList(h.proximo)+'</div>';
+              html += '</div>';
             }
+            html += '</div>';
           });
+          html += '</div>';
         }
+
+        html += '<div style="height:8px;"></div>';
       });
+
+      html += '</div>';
+      setRelHtml(html);
+      setRelText(''); // limpar text mode
+      setLoading(false);
+      return;
     }
 
     else if(tipo==='cliente'){
@@ -3680,9 +3738,13 @@ function ViewRelatorio({ session, isGestor, isConsultor }) {
   }
 
   function imprimirRelatorio(){
-    if(!relText) return;
-    var w = window.open('','_blank','width=800,height:700');
-    w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Relatório</title><style>body{font-family:monospace;font-size:9pt;margin:10mm;white-space:pre-wrap;}@media print{body{margin:5mm;}}</style></head><body>'+relText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</body></html>');
+    if(!relHtml && !relText) return;
+    var w = window.open('','_blank','width=900,height=700');
+    if(relHtml){
+      w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Relatório FORGE B2B</title><style>body{font-family:Segoe UI,Arial,sans-serif;font-size:11pt;margin:12mm;}@media print{body{margin:6mm;}}ul{margin:2px 0;padding-left:18px;}li{margin-bottom:2px;}</style></head><body>'+relHtml+'</body></html>');
+    } else {
+      w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Relatório</title><style>body{font-family:monospace;font-size:9pt;margin:10mm;white-space:pre-wrap;}@media print{body{margin:5mm;}}</style></head><body>'+relText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</body></html>');
+    }
     w.document.close(); w.focus();
     setTimeout(function(){w.print();},300);
   }
@@ -3700,7 +3762,7 @@ function ViewRelatorio({ session, isGestor, isConsultor }) {
           <div style={{fontSize:10,fontWeight:700,color:'var(--text2)',marginBottom:8,textTransform:'uppercase',letterSpacing:'.06em'}}>Tipo</div>
           {TIPOS.map(function(t){
             return (
-              <button key={t.id} onClick={function(){setTipo(t.id);setSelIds([]);setRelText('');}}
+              <button key={t.id} onClick={function(){setTipo(t.id);setSelIds([]);setRelText('');setRelHtml('');}}
                 style={{width:'100%',textAlign:'left',padding:'8px 10px',marginBottom:4,borderRadius:7,border:'1px solid '+(tipo===t.id?'var(--blue)':'var(--border)'),background:tipo===t.id?'rgba(37,99,235,.15)':'transparent',color:tipo===t.id?'#60A5FA':'var(--text)',cursor:'pointer',fontSize:11,fontWeight:tipo===t.id?600:400}}>
                 {t.label}
                 {tipo===t.id&&<div style={{fontSize:9,color:'var(--text3)',marginTop:2,fontWeight:400}}>{t.desc}</div>}
@@ -3750,17 +3812,22 @@ function ViewRelatorio({ session, isGestor, isConsultor }) {
 
       {/* Painel direito — resultado */}
       <div style={{flex:1,display:'flex',flexDirection:'column',gap:8,minWidth:0}}>
-        {relText ? (
+        {(relHtml||relText) ? (
           <div style={{display:'flex',flexDirection:'column',gap:8,height:'100%'}}>
             <div style={{display:'flex',gap:8,flexShrink:0}}>
               <button className="btn btn-secondary" onClick={imprimirRelatorio}>🖨 Imprimir</button>
-              <button className="btn btn-green" onClick={exportarRelatorio}>💾 Exportar .txt</button>
-              <button className="btn btn-secondary" onClick={function(){navigator.clipboard&&navigator.clipboard.writeText(relText);}} title="Copiar texto">📋 Copiar</button>
-              <button className="btn btn-secondary" style={{marginLeft:'auto'}} onClick={function(){setRelText('');}}>✕ Limpar</button>
+              {relText && <button className="btn btn-green" onClick={exportarRelatorio}>💾 Exportar .txt</button>}
+              {relText && <button className="btn btn-secondary" onClick={function(){navigator.clipboard&&navigator.clipboard.writeText(relText);}} title="Copiar texto">📋 Copiar</button>}
+              <button className="btn btn-secondary" style={{marginLeft:'auto'}} onClick={function(){setRelText('');setRelHtml('');}}>✕ Limpar</button>
             </div>
-            <pre style={{flex:1,overflowY:'auto',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:8,padding:'14px 16px',fontSize:11,lineHeight:1.7,fontFamily:'monospace',whiteSpace:'pre-wrap',wordBreak:'break-word',margin:0}}>
-              {relText}
-            </pre>
+            {relHtml ? (
+              <div style={{flex:1,overflowY:'auto',background:'#fff',border:'1px solid var(--border)',borderRadius:8,padding:'16px 18px'}}
+                dangerouslySetInnerHTML={{__html:relHtml}}/>
+            ) : (
+              <pre style={{flex:1,overflowY:'auto',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:8,padding:'14px 16px',fontSize:11,lineHeight:1.7,fontFamily:'monospace',whiteSpace:'pre-wrap',wordBreak:'break-word',margin:0}}>
+                {relText}
+              </pre>
+            )}
           </div>
         ) : (
           <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:12,color:'var(--text3)'}}>
