@@ -3739,14 +3739,19 @@ function ViewRelatorio({ session, isGestor, isConsultor }) {
           html += '</div>';
         }
 
-        // Histórico de visitas
+        // Histórico de visitas — todos juntos, próximo passo ao final
         if(hist.length){
           html += '<div style="margin-top:12px;">';
-          html += '<div style="font-weight:700;font-size:11px;color:#334155;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">HISTÓRICO DE VISITAS ('+hist.length+')</div>';
+          html += '<div style="font-weight:700;font-size:11px;color:#334155;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em;padding-bottom:4px;border-bottom:2px solid #E2E8F0;">HISTÓRICO DE VISITAS ('+hist.length+')</div>';
+
+          // Coletar todos os próximos passos — só o mais recente vai ao final
+          var ultimoProximo = '';
+
           hist.forEach(function(h,hi){
             html += '<div style="margin-bottom:10px;border:1px solid #E2E8F0;border-radius:6px;overflow:hidden;">';
             // Header da visita
             html += '<div style="background:#F1F5F9;padding:6px 10px;display:flex;gap:10px;align-items:center;border-bottom:1px solid #E2E8F0;">';
+            html += '<span style="background:#1E3A5F;color:#fff;font-size:9px;font-weight:700;padding:1px 7px;border-radius:10px;">'+(hi+1)+'</span>';
             if(h.date) html += '<span style="font-weight:700;font-size:11px;">'+h.date+'</span>';
             if(h.time) html += '<span style="font-size:10px;color:#64748B;">🕐 '+h.time+'</span>';
             if(h.resp) html += '<span style="font-size:10px;padding:1px 8px;border-radius:10px;background:#FEE2E2;color:#991B1B;font-weight:600;">'+h.resp+'</span>';
@@ -3754,16 +3759,36 @@ function ViewRelatorio({ session, isGestor, isConsultor }) {
             html += '</div>';
             // Resumo em bullets
             html += '<div style="padding:8px 10px;font-size:11px;color:#334155;">'+bulletList(h.resumo)+'</div>';
-            // Próximo passo
-            if(h.proximo){
-              html += '<div style="background:#EFF6FF;border-top:1px solid #BFDBFE;padding:8px 10px;">';
-              html += '<div style="font-size:9px;font-weight:700;color:#1D4ED8;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;">📋 PRÓXIMO PASSO (5W2H)</div>';
-              html += '<div style="font-size:11px;color:#1E3A5F;line-height:1.6;">'+bulletList(h.proximo)+'</div>';
-              html += '</div>';
-            }
             html += '</div>';
+
+            // Guardar o próximo passo mais recente (índice 0 = mais recente)
+            if(hi===0 && h.proximo) ultimoProximo = h.proximo;
           });
+
           html += '</div>';
+
+          // Próximo passo — SEMPRE ao final do relatório
+          if(ultimoProximo){
+            html += '<div style="margin-top:16px;border:2px solid #2563EB;border-radius:8px;overflow:hidden;">';
+            html += '<div style="background:#1E3A5F;padding:8px 12px;">';
+            html += '<div style="font-size:10px;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:.08em;">📋 PRÓXIMO PASSO (5W2H)</div>';
+            html += '</div>';
+            html += '<div style="padding:10px 14px;background:#EFF6FF;">';
+            // Formatar pipe-separated como itens visuais
+            var w5items = ultimoProximo.split(' | ');
+            w5items.forEach(function(item){
+              if(!item.trim()) return;
+              var parts = item.split(': ');
+              var label = parts[0]||'';
+              var value = parts.slice(1).join(': ')||'';
+              html += '<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:5px;">';
+              html += '<span style="background:#2563EB;color:#fff;font-size:8px;font-weight:700;padding:2px 6px;border-radius:3px;flex-shrink:0;margin-top:1px;">'+label+'</span>';
+              html += '<span style="font-size:11px;color:#1E3A5F;line-height:1.5;">'+value+'</span>';
+              html += '</div>';
+            });
+            html += '</div>';
+            html += '</div>';
+          }
         }
 
         html += '<div style="height:8px;"></div>';
@@ -3998,6 +4023,310 @@ function ViewRelatorio({ session, isGestor, isConsultor }) {
   );
 }
 
+// ─── VIEW: RADAR DE MERCADO ──────────────────────────────────
+function ViewRadar({ session, isGestor, isConsultor }) {
+  var KEYS_RADAR = 'crm_radar_v1';
+  var [radares,    setRadares]  = useState(function(){ return load(KEYS_RADAR, []); });
+  var [modal,      setModal]    = useState(false);
+  var [form,       setForm]     = useState(null);
+  var [selCli,     setSelCli]   = useState(null);
+  var [search,     setSearch]   = useState('');
+
+  var clients  = load(KEYS.clients,  []);
+  var fcOpps   = load(KEYS.forecast, []);
+
+  function saveRadares(list){ setRadares(list); save(KEYS_RADAR, list); }
+
+  var CATEGORIAS = [
+    '🏭 Expansão / Novo projeto',
+    '💰 Investimento previsto',
+    '🤝 Mudança de fornecedor',
+    '⚠️ Risco / Concorrência',
+    '📋 Licitação / Concorrência',
+    '🔧 Manutenção / Retrofit',
+    '🚀 Automação planejada',
+    '👥 Mudança de gestão',
+    '📉 Redução de produção',
+    '🌱 Novo produto / Modelo',
+    '📰 Notícia do mercado',
+    '💡 Oportunidade latente',
+  ];
+
+  var STATUS = [
+    {id:'quente',  label:'🔴 Quente',   color:'#DC2626'},
+    {id:'morno',   label:'🟡 Morno',    color:'#CA8A04'},
+    {id:'frio',    label:'🔵 Frio',     color:'#2563EB'},
+    {id:'neutro',  label:'⚪ Neutro',   color:'#64748B'},
+  ];
+
+  var EMPTY_RADAR = {
+    id:'', cliente:'', _cliId:'', categoria:'', status:'morno',
+    titulo:'', descricao:'', fonte:'', data:'', resp:session.code||'',
+    impacto:'', acao:'', oppId:'', confidencial:false,
+  };
+
+  function openNew(){
+    setForm(Object.assign({},EMPTY_RADAR,{id:'radar_'+Date.now(), data:new Date().toISOString().slice(0,10)}));
+    setModal(true);
+  }
+  function openEdit(r){ setForm(Object.assign({},r)); setModal(true); }
+  function deleteR(id){ if(confirm('Excluir?')) saveRadares(radares.filter(function(r){return r.id!==id;})); }
+
+  function saveForm(){
+    if(!form.titulo.trim()){ alert('Informe o título.'); return; }
+    var exists = radares.find(function(r){return r.id===form.id;});
+    if(exists) saveRadares(radares.map(function(r){return r.id===form.id?form:r;}));
+    else saveRadares([form,...radares]);
+    setModal(false);
+  }
+
+  var isVisible = isGestor || isConsultor;
+
+  // Filtros
+  var filtered = radares.filter(function(r){
+    if(!isVisible && r.confidencial) return false; // vendedor não vê confidencial
+    if(!search.trim()) return true;
+    var q = search.toLowerCase();
+    return (r.titulo&&r.titulo.toLowerCase().includes(q))
+      ||(r.cliente&&r.cliente.toLowerCase().includes(q))
+      ||(r.categoria&&r.categoria.toLowerCase().includes(q))
+      ||(r.descricao&&r.descricao.toLowerCase().includes(q));
+  });
+
+  // Agrupar por cliente para visão de radar
+  var porCliente = {};
+  filtered.forEach(function(r){
+    var key = r.cliente||'Sem cliente';
+    if(!porCliente[key]) porCliente[key] = [];
+    porCliente[key].push(r);
+  });
+
+  var inp = {width:'100%'};
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:12,height:'100%'}}>
+      {/* Controles */}
+      <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+        <input value={search} onChange={function(e){setSearch(e.target.value);}}
+          placeholder="🔍 Buscar por cliente, categoria, título..." style={{flex:1,minWidth:200}}/>
+        <span style={{fontSize:11,color:'var(--text3)'}}>{filtered.length} intel(s)</span>
+        <button className="btn btn-primary" onClick={openNew}>+ Nova inteligência</button>
+      </div>
+
+      {/* Legenda */}
+      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+        {STATUS.map(function(s){
+          var count = filtered.filter(function(r){return r.status===s.id;}).length;
+          return (
+            <div key={s.id} style={{display:'flex',alignItems:'center',gap:5,padding:'3px 10px',borderRadius:20,background:s.color+'18',border:'1px solid '+s.color+'40',fontSize:11}}>
+              <span style={{fontWeight:700,color:s.color}}>{s.label}</span>
+              <span style={{color:'var(--text3)'}}>({count})</span>
+            </div>
+          );
+        })}
+        {isVisible && (
+          <div style={{display:'flex',alignItems:'center',gap:5,padding:'3px 10px',borderRadius:20,background:'rgba(139,92,246,.1)',border:'1px solid rgba(139,92,246,.3)',fontSize:11,color:'#A78BFA'}}>
+            🔒 {filtered.filter(function(r){return r.confidencial;}).length} confidencial(is)
+          </div>
+        )}
+      </div>
+
+      {/* Conteúdo */}
+      {radares.length===0 ? (
+        <div className="card" style={{textAlign:'center',padding:'60px 20px',color:'var(--text3)'}}>
+          <div style={{fontSize:40,marginBottom:12}}>🧠</div>
+          <div style={{fontWeight:700,fontSize:14,marginBottom:6}}>RADAR DE MERCADO</div>
+          <div style={{fontSize:12,marginBottom:4}}>Inteligência competitiva e informações estratégicas sobre clientes</div>
+          <div style={{fontSize:11,color:'var(--text3)',marginTop:8}}>
+            Expansão · Investimentos · Mudança de fornecedor · Licitações · Automação planejada
+          </div>
+          <button className="btn btn-primary" style={{marginTop:20}} onClick={openNew}>+ Registrar primeira inteligência</button>
+        </div>
+      ) : (
+        <div style={{flex:1,overflowY:'auto'}}>
+          {Object.keys(porCliente).sort().map(function(cliName){
+            var items = porCliente[cliName];
+            var cliData = clients.find(function(c){return c.apelido===cliName;});
+            var temQuente = items.some(function(r){return r.status==='quente';});
+            return (
+              <div key={cliName} style={{marginBottom:16}}>
+                {/* Header do cliente */}
+                <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:8,padding:'8px 12px',background:'var(--bg3)',borderRadius:8,border:'1px solid var(--border)',borderLeft:'3px solid '+(temQuente?'#DC2626':'#2563EB')}}>
+                  {cliData&&cliData.logo&&<img src={cliData.logo} style={{width:26,height:26,objectFit:'contain',borderRadius:4,background:'#fff',padding:1}} alt=""/>}
+                  <div style={{flex:1}}>
+                    <div style={{fontWeight:700,fontSize:13}}>{cliName}</div>
+                    {cliData&&<div style={{fontSize:10,color:'var(--text3)'}}>{cliData.segmento}{cliData.cidade?' · '+cliData.cidade:''}</div>}
+                  </div>
+                  <span style={{fontSize:11,color:'var(--text3)'}}>{items.length} intel(s)</span>
+                  <button className="btn btn-secondary" style={{padding:'4px 10px',fontSize:11}} onClick={function(){setSelCli(selCli===cliName?null:cliName);}}>
+                    {selCli===cliName?'▲ Fechar':'▼ Ver'}
+                  </button>
+                </div>
+
+                {/* Radares do cliente */}
+                {(selCli===cliName||!selCli) && (
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(300px,1fr))',gap:8,paddingLeft:8}}>
+                    {items.map(function(r){
+                      var sc = STATUS.find(function(s){return s.id===r.status;})||STATUS[1];
+                      var dataFmt = r.data ? r.data.split('-').reverse().join('/') : '';
+                      return (
+                        <div key={r.id} className="card" style={{borderTop:'2px solid '+sc.color,position:'relative'}}>
+                          {r.confidencial && (
+                            <div style={{position:'absolute',top:6,right:8,fontSize:9,padding:'1px 6px',borderRadius:4,background:'rgba(139,92,246,.15)',color:'#A78BFA',fontWeight:700}}>🔒 Confidencial</div>
+                          )}
+                          <div style={{display:'flex',gap:6,alignItems:'flex-start',marginBottom:6}}>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{fontSize:11,fontWeight:700,marginBottom:3,lineHeight:1.3}}>{r.titulo}</div>
+                              <div style={{fontSize:10,color:sc.color,fontWeight:600}}>{sc.label}</div>
+                            </div>
+                          </div>
+                          <div style={{fontSize:10,padding:'3px 8px',borderRadius:5,background:'var(--bg3)',color:'var(--text2)',marginBottom:6,display:'inline-block'}}>{r.categoria}</div>
+                          {r.descricao && (
+                            <div style={{fontSize:11,color:'var(--text2)',lineHeight:1.6,marginBottom:6}}>{r.descricao}</div>
+                          )}
+                          {r.impacto && (
+                            <div style={{fontSize:10,padding:'5px 8px',borderRadius:5,background:'rgba(37,99,235,.08)',border:'1px solid rgba(37,99,235,.15)',color:'#60A5FA',marginBottom:6}}>
+                              <span style={{fontWeight:700}}>Impacto: </span>{r.impacto}
+                            </div>
+                          )}
+                          {r.acao && (
+                            <div style={{fontSize:10,padding:'5px 8px',borderRadius:5,background:'rgba(22,163,74,.08)',border:'1px solid rgba(22,163,74,.15)',color:'#4ADE80',marginBottom:6}}>
+                              <span style={{fontWeight:700}}>Ação: </span>{r.acao}
+                            </div>
+                          )}
+                          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:4}}>
+                            <div style={{fontSize:9,color:'var(--text3)'}}>
+                              {dataFmt&&<span>📅 {dataFmt}</span>}
+                              {r.resp&&<span style={{marginLeft:8}}>👤 {r.resp}</span>}
+                              {r.fonte&&<span style={{marginLeft:8}}>📰 {r.fonte}</span>}
+                            </div>
+                            <div style={{display:'flex',gap:4}}>
+                              <button onClick={function(){openEdit(r);}} style={{background:'none',border:'none',color:'var(--text3)',cursor:'pointer',fontSize:12,padding:'2px 5px'}} title="Editar">✏️</button>
+                              <button onClick={function(){deleteR(r.id);}} style={{background:'none',border:'none',color:'var(--text3)',cursor:'pointer',fontSize:12,padding:'2px 5px',opacity:.4}} onMouseEnter={function(ev){ev.target.style.opacity=1;}} onMouseLeave={function(ev){ev.target.style.opacity=.4;}} title="Excluir">✕</button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* MODAL */}
+      {modal && form && (
+        <div className="modal-bg">
+          <div className="modal" style={{maxWidth:680}}>
+            <div className="modal-hd">
+              <h2>🧠 Inteligência de Mercado</h2>
+              <button className="modal-close" onClick={function(){setModal(false);}}>✕</button>
+            </div>
+
+            {/* Status */}
+            <div style={{display:'flex',gap:6,marginBottom:14}}>
+              {STATUS.map(function(s){
+                var sel = form.status===s.id;
+                return (
+                  <button key={s.id} onClick={function(){setForm(Object.assign({},form,{status:s.id}));}}
+                    style={{padding:'5px 12px',borderRadius:20,border:'1px solid '+(sel?s.color:'var(--border)'),background:sel?s.color+'20':'transparent',color:sel?s.color:'var(--text3)',cursor:'pointer',fontSize:11,fontWeight:sel?700:400}}>
+                    {s.label}
+                  </button>
+                );
+              })}
+              {isVisible && (
+                <label style={{display:'flex',gap:6,alignItems:'center',marginLeft:'auto',fontSize:11,cursor:'pointer',color:'#A78BFA'}}>
+                  <input type="checkbox" checked={!!form.confidencial} onChange={function(e){setForm(Object.assign({},form,{confidencial:e.target.checked}));}}/>
+                  🔒 Confidencial
+                </label>
+              )}
+            </div>
+
+            <div className="grid-2" style={{marginBottom:10}}>
+              {/* Cliente */}
+              <div className="field">
+                <label>Cliente</label>
+                <select value={form._cliId||''} onChange={function(e){
+                  var c = clients.find(function(x){return x.id===e.target.value;});
+                  setForm(Object.assign({},form,{_cliId:e.target.value, cliente:c?c.apelido:''}));
+                }} style={inp}>
+                  <option value="">— Selecione ou deixe em branco —</option>
+                  {clients.map(function(c){ return <option key={c.id} value={c.id}>{c.apelido}</option>; })}
+                </select>
+              </div>
+              {/* Categoria */}
+              <div className="field">
+                <label>Categoria</label>
+                <select value={form.categoria||''} onChange={function(e){setForm(Object.assign({},form,{categoria:e.target.value}));}} style={inp}>
+                  <option value="">— Selecione —</option>
+                  {CATEGORIAS.map(function(c){ return <option key={c} value={c}>{c}</option>; })}
+                </select>
+              </div>
+            </div>
+
+            <div className="field" style={{marginBottom:10}}>
+              <label>Título *</label>
+              <input value={form.titulo||''} onChange={function(e){setForm(Object.assign({},form,{titulo:e.target.value}));}} style={inp}
+                placeholder="Ex: JACTO planeja automatizar linha de pulverizadores em 2026" autoFocus/>
+            </div>
+
+            <div className="field" style={{marginBottom:10}}>
+              <label>Descrição / Detalhes</label>
+              <textarea value={form.descricao||''} onChange={function(e){setForm(Object.assign({},form,{descricao:e.target.value}));}}
+                style={{width:'100%',height:72,resize:'vertical',lineHeight:1.6}}
+                placeholder="Contexto, detalhes, o que foi dito, por quem..."/>
+            </div>
+
+            <div className="grid-2" style={{marginBottom:10}}>
+              <div className="field">
+                <label>Impacto esperado</label>
+                <input value={form.impacto||''} onChange={function(e){setForm(Object.assign({},form,{impacto:e.target.value}));}} style={inp}
+                  placeholder="Ex: Oportunidade de R$ 800k em balancins"/>
+              </div>
+              <div className="field">
+                <label>Ação recomendada</label>
+                <input value={form.acao||''} onChange={function(e){setForm(Object.assign({},form,{acao:e.target.value}));}} style={inp}
+                  placeholder="Ex: Agendar visita com Engenharia até jun/26"/>
+              </div>
+            </div>
+
+            <div className="grid-4" style={{marginBottom:14}}>
+              <div className="field">
+                <label>Data</label>
+                <input type="date" value={form.data||''} onChange={function(e){setForm(Object.assign({},form,{data:e.target.value}));}} style={inp}/>
+              </div>
+              <div className="field">
+                <label>Responsável</label>
+                <input value={form.resp||''} onChange={function(e){setForm(Object.assign({},form,{resp:e.target.value}));}} style={inp} placeholder="EF"/>
+              </div>
+              <div className="field">
+                <label>Fonte</label>
+                <input value={form.fonte||''} onChange={function(e){setForm(Object.assign({},form,{fonte:e.target.value}));}} style={inp} placeholder="Visita / LinkedIn / Contato"/>
+              </div>
+              <div className="field">
+                <label>Vincular Forecast</label>
+                <select value={form.oppId||''} onChange={function(e){setForm(Object.assign({},form,{oppId:e.target.value}));}} style={inp}>
+                  <option value="">— Nenhuma —</option>
+                  {fcOpps.filter(function(o){return !form.cliente||o.customer===form.cliente;}).map(function(o){
+                    return <option key={o.id} value={o.id}>{o.customer} · {(o.description||'').slice(0,35)}</option>;
+                  })}
+                </select>
+              </div>
+            </div>
+
+            <div style={{display:'flex',gap:8}}>
+              <button className="btn btn-primary" onClick={saveForm} style={{flex:1}}>💾 Salvar</button>
+              <button className="btn btn-secondary" onClick={function(){setModal(false);}}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── APP PRINCIPAL ────────────────────────────────────────────
 function App() {
   const [session, setSession] = useState(function(){ return load(KEYS.session, null); });
@@ -4061,6 +4390,7 @@ function App() {
     {id:'divider1',    divider:true},
     {id:'orcamento',   icon:'📝', label:'Orçamento'},
     {id:'relatorio',   icon:'📋', label:'Relatórios'},
+    {id:'radar',       icon:'🧠', label:'Radar'},
     {id:'divider2',    divider:true},
     {id:'demo',        icon:'🔧', label:'Demonstração'},
     {id:'estoque',     icon:'📦', label:'Estoque'},
@@ -4080,6 +4410,7 @@ function App() {
     if (view==='budget')    return <ViewBudget    session={session} isGestor={isGestor}/>;
     if (view==='orcamento') return <ViewOrcamento session={session} isGestor={isGestor}/>;
     if (view==='relatorio') return <ViewRelatorio session={session} isGestor={isGestor} isConsultor={isConsultor}/>;
+    if (view==='radar')     return <ViewRadar     session={session} isGestor={isGestor} isConsultor={isConsultor}/>;
     if (view==='demo')      return <ViewDemo      session={session} isGestor={isGestor} isEspecialista={isEspecialista}/>;
     if (view==='estoque')   return <ViewEstoque   session={session}/>;
     if (view==='projetos')  return <ViewProjetos  session={session} isGestor={isGestor} isEspecialista={isEspecialista}/>;
