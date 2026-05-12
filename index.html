@@ -2490,8 +2490,22 @@ function ViewEstoque({ session }) {
   const [search,    setSearch]    = useState('');
   const [selected,  setSelected]  = useState({});
   const [loading,   setLoading]   = useState(false);
+  const [sortCol,   setSortCol]   = useState('');       // 'sd'|'descricao'|'codigo'|'sigma'
+  const [sortDir,   setSortDir]   = useState('asc');    // 'asc'|'desc'
+  const [filterQtd, setFilterQtd] = useState('todos');  // 'todos'|'disponivel'|'zerado'
 
   function saveEst(list){ setEstoque(list); save(KEYS.estoque, list); }
+
+  function toggleSort(col){
+    if(sortCol===col) setSortDir(function(d){ return d==='asc'?'desc':'asc'; });
+    else { setSortCol(col); setSortDir('asc'); }
+  }
+
+  function SortIcon(props){
+    var col = props.col;
+    if(sortCol!==col) return <span style={{opacity:.25,fontSize:9,marginLeft:3}}>⇅</span>;
+    return <span style={{fontSize:9,marginLeft:3,color:'#60A5FA'}}>{sortDir==='asc'?'▲':'▼'}</span>;
+  }
 
   function importXLSX(e){
     const file = e.target.files[0]; if(!file) return;
@@ -2544,13 +2558,9 @@ function ViewEstoque({ session }) {
       .replace(/ç/g,'c').replace(/[^a-z0-9\s]/g,' ');
   }
 
-  // Busca fuzzy: divide a query em tokens, cada token pode ser
-  // — substring (inclui)
-  // — 1 caractere diferente (tolerância a erro de digitação)
   function matchToken(token, text){
-    if(text.includes(token)) return true;  // match exato
-    if(token.length<=2) return false;       // tokens curtos: só exato
-    // Tolerância: 1 char diferente usando janela deslizante
+    if(text.includes(token)) return true;
+    if(token.length<=2) return false;
     var tlen = token.length;
     for(var i=0; i<=text.length-tlen; i++){
       var sub = text.slice(i, i+tlen);
@@ -2567,17 +2577,35 @@ function ViewEstoque({ session }) {
   function fuzzyMatch(query, item){
     var tokens = norm(query).split(/\s+/).filter(function(t){ return t.length>0; });
     if(!tokens.length) return false;
-    var d = norm(item.descricao);
-    var c = norm(item.codigo);
-    var s = norm(item.sigma);
-    var full = d+' '+c+' '+s;
-    // TODOS os tokens devem bater (em qualquer ordem, em qualquer campo)
+    var full = norm(item.descricao)+' '+norm(item.codigo)+' '+norm(item.sigma);
     return tokens.every(function(token){ return matchToken(token, full); });
   }
 
-  const filtered = q.length<2
-    ? estoque.slice(0,200)
-    : estoque.filter(function(it){ return fuzzyMatch(q, it); }).slice(0,500);
+  // Aplicar filtro de quantidade
+  var base = estoque.filter(function(it){
+    if(filterQtd==='disponivel') return it.sd>0;
+    if(filterQtd==='zerado')     return it.sd<=0;
+    return true;
+  });
+
+  // Aplicar busca
+  var afterSearch = q.length<2
+    ? base.slice(0,500)
+    : base.filter(function(it){ return fuzzyMatch(q, it); }).slice(0,500);
+
+  // Aplicar ordenação
+  var filtered = afterSearch.slice().sort(function(a,b){
+    if(!sortCol) return 0;
+    var av, bv;
+    if(sortCol==='sd')       { av=a.sd||0;        bv=b.sd||0;        return sortDir==='asc'?av-bv:bv-av; }
+    if(sortCol==='descricao'){ av=a.descricao||''; bv=b.descricao||''; }
+    if(sortCol==='codigo')   { av=a.codigo||'';    bv=b.codigo||'';    }
+    if(sortCol==='sigma')    { av=a.sigma||'';     bv=b.sigma||'';     }
+    av=String(av||'').toLowerCase(); bv=String(bv||'').toLowerCase();
+    if(av<bv) return sortDir==='asc'?-1:1;
+    if(av>bv) return sortDir==='asc'?1:-1;
+    return 0;
+  });
 
   const selList = estoque.filter(function(it){ return selected[it.sigma]; });
 
@@ -2602,12 +2630,26 @@ function ViewEstoque({ session }) {
         <input value={search} onChange={function(e){setSearch(e.target.value);}}
           placeholder="Buscar por palavra-chave, código do fornecedor ou SIGMA..."
           style={{flex:1,minWidth:220}}/>
+        {/* Filtro de disponibilidade */}
+        <div style={{display:'flex',gap:2,background:'var(--bg3)',borderRadius:7,padding:2,border:'1px solid var(--border)'}}>
+          {[['todos','Todos'],['disponivel','Disponível'],['zerado','Zerado']].map(function(f){
+            var sel = filterQtd===f[0];
+            return (
+              <button key={f[0]} onClick={function(){setFilterQtd(f[0]);}}
+                style={{padding:'4px 10px',fontSize:10,fontWeight:sel?700:400,borderRadius:5,border:'none',
+                  background:sel?'var(--card)':'transparent',
+                  color:sel?'var(--text)':'var(--text3)',cursor:'pointer',whiteSpace:'nowrap'}}>
+                {f[1]}
+              </button>
+            );
+          })}
+        </div>
         {selList.length>0 && (
-          <button className="btn btn-green" onClick={exportSel}>📊 Exportar {selList.length} selecionado(s)</button>
+          <button className="btn btn-green" onClick={exportSel}>📊 Exportar {selList.length}</button>
         )}
-        {selList.length>0 && <button className="btn btn-secondary" onClick={clearSel}>Limpar seleção</button>}
+        {selList.length>0 && <button className="btn btn-secondary" onClick={clearSel}>Limpar</button>}
         <label className="btn btn-blue" style={{cursor:'pointer'}}>
-          {loading?'Importando...':'📥 Importar planilha'}
+          {loading?'Importando...':'📥 Importar'}
           <input type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={importXLSX}/>
         </label>
       </div>
@@ -2615,9 +2657,10 @@ function ViewEstoque({ session }) {
       {/* Info */}
       <div style={{display:'flex',gap:10,alignItems:'center',fontSize:11,color:'var(--text3)'}}>
         <span>{estoque.length.toLocaleString()} itens no estoque</span>
-        {q.length>=2 && <span>· {filtered.length} resultado(s)</span>}
-        {q.length<2 && estoque.length>200 && <span>· exibindo 200 — digite para filtrar</span>}
+        {(q.length>=2||filterQtd!=='todos') && <span>· {filtered.length} resultado(s)</span>}
+        {q.length<2&&filterQtd==='todos'&&estoque.length>500 && <span>· exibindo 500 — busque para filtrar</span>}
         {selList.length>0 && <span style={{color:'#4ADE80'}}>· {selList.length} selecionado(s)</span>}
+        {sortCol && <span style={{color:'#60A5FA'}}>· ordenado por {sortCol==='sd'?'Quantidade':sortCol==='descricao'?'Descrição':sortCol==='codigo'?'Código':'SIGMA'} {sortDir==='asc'?'▲':'▼'}</span>}
       </div>
 
       {estoque.length===0 ? (
@@ -2637,10 +2680,19 @@ function ViewEstoque({ session }) {
                     else clearSel();
                   }} checked={filtered.length>0&&filtered.every(function(it){return selected[it.sigma];})}/>
                 </th>
-                <th style={{width:70,textAlign:'center'}}>QUANTIDADE</th>
-                <th>DESCRIÇÃO</th>
-                <th style={{width:140}}>CÓDIGO DO FORNECEDOR</th>
-                <th style={{width:120}}>SIGMA</th>
+                <th style={{width:90,textAlign:'center',cursor:'pointer',userSelect:'none',whiteSpace:'nowrap'}}
+                  onClick={function(){toggleSort('sd');}}>
+                  QUANTIDADE <SortIcon col="sd"/>
+                </th>
+                <th style={{cursor:'pointer',userSelect:'none'}} onClick={function(){toggleSort('descricao');}}>
+                  DESCRIÇÃO <SortIcon col="descricao"/>
+                </th>
+                <th style={{width:150,cursor:'pointer',userSelect:'none',whiteSpace:'nowrap'}} onClick={function(){toggleSort('codigo');}}>
+                  CÓDIGO FORNECEDOR <SortIcon col="codigo"/>
+                </th>
+                <th style={{width:120,cursor:'pointer',userSelect:'none'}} onClick={function(){toggleSort('sigma');}}>
+                  SIGMA <SortIcon col="sigma"/>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -3030,6 +3082,8 @@ function ViewOrcamento({ session, isGestor }) {
     supplier:'', descricao:'', oppId:'',
     itens:[{item:1,posto:'',subposto:'',torque:'',qtd:1,descricao:'',codigo:'',sigma:'',ncm:'',entrega:'',origem:'0 - NACIONAL',unitario:0,icms:0.12,pis:0.0065,cofins:0.03,ipi:0,st:0}],
     status:'rascunho', data:'', validade:'', obs:'',
+    pagamento:'30 DDL', prazoEntrega:'', baseCambial:'', localEntrega:'CIF',
+    garantia:'12 meses', termosGarantia:'', cidadeUf:'', email:'',
   };
 
   function openNew(){
@@ -3074,22 +3128,64 @@ function ViewOrcamento({ session, isGestor }) {
     setModal(false);
   }
 
-  function exportPDF(o){
+  function gerarHTMLProposta(o){
     var t = totais(o.itens||[]);
     var rows = (o.itens||[]).map(function(it,i){
       var c = calcItem(it);
-      return '<tr><td>'+(i+1)+'</td><td>'+(it.posto||'')+'</td><td>'+(it.subposto||'')+'</td><td>'+(it.torque||'')+'</td><td>'+(it.qtd||'')+'</td><td>'+(it.descricao||'')+'</td><td>'+(it.codigo||'')+'</td><td>'+(it.sigma||'')+'</td><td>'+(it.ncm||'')+'</td><td>'+(it.entrega||'')+'</td><td>'+(it.origem||'')+'</td><td>R$'+parseFloat(it.unitario).toFixed(2)+'</td><td>R$'+c.total+'</td><td>'+(Math.round((parseFloat(it.icms)||0)*100))+'%</td><td>'+(Math.round((parseFloat(it.pis)||0)*100*10)/10)+'%</td><td>'+(Math.round((parseFloat(it.cofins)||0)*100))+'%</td><td>'+(it.ipi||0)+'</td><td></td><td>'+(it.st||0)+'</td><td>R$'+c.semIcms+'</td><td>R$'+c.comIpi+'</td><td>R$'+c.comSt+'</td><td>R$'+c.totalIpi+'</td><td>R$'+c.totalSt+'</td></tr>';
+      return '<tr><td style="text-align:center">'+(i+1)+'</td><td style="text-align:center">'+(it.qtd||1)+'</td><td style="font-size:8pt;line-height:1.5">'+(it.descricao||'')+(it.torque?'<br/><span style="color:#555">Torque: '+it.torque+' Nm</span>':'')+(it.posto?'<br/><span style="color:#555">Posto: '+it.posto+(it.subposto?' / '+it.subposto:'')+'</span>':'')+'</td><td style="text-align:center;font-family:monospace">'+(it.codigo||it.sigma||'')+'</td><td style="text-align:center;color:#888">—</td></tr>';
     }).join('');
-    var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'+o.numero+'</title><style>body{font-family:Arial,sans-serif;font-size:8pt;margin:8mm;}h2{font-size:12pt;text-align:center;margin-bottom:6px;}table{width:100%;border-collapse:collapse;font-size:7pt;}td,th{border:1px solid #999;padding:2px 4px;}th{background:#ddd;font-weight:bold;}.hdr{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:10px;}.field{border:1px solid #ccc;padding:4px;}.l{font-size:6.5pt;color:#555;}.totais{margin-top:8px;text-align:right;font-size:9pt;}.footer{margin-top:14px;font-size:7pt;border-top:1px solid #ccc;text-align:center;padding-top:4px;}@media print{body{margin:4mm;}}</style></head><body>';
-    html += '<h2>PLANILHA ORÇAMENTÁRIA — '+o.numero+'</h2>';
-    html += '<div class="hdr"><div class="field"><div class="l">CLIENTE</div>'+o.cliente+'</div><div class="field"><div class="l">CONTATO</div>'+o.contato+'</div><div class="field"><div class="l">FORNECEDOR</div>'+o.supplier+'</div><div class="field"><div class="l">DATA / VALIDADE</div>'+o.data+' / '+o.validade+'</div></div>';
-    html += '<table><thead><tr><th>IT</th><th>POSTO</th><th>SUBP.</th><th>TORQUE</th><th>QDE</th><th>DESCRIÇÃO</th><th>CÓDIGO</th><th>SIGMA</th><th>NCM</th><th>ENTREGA</th><th>ORIGEM</th><th>V.UNIT</th><th>TOTAL</th><th>ICMS</th><th>PIS</th><th>COFINS</th><th>IPI</th><th>V.IPI</th><th>ST</th><th>LÍQ.S/ICMS</th><th>COM IPI</th><th>COM IPI+ST</th><th>TOT.IPI</th><th>TOT.ST</th></tr></thead><tbody>'+rows+'</tbody></table>';
-    html += '<div class="totais"><b>Total bruto:</b> R$'+t.totalBruto.toFixed(2)+' &nbsp;&nbsp; <b>Total com IPI:</b> R$'+t.totalIpi.toFixed(2)+' &nbsp;&nbsp; <b>Total com IPI/ST:</b> R$'+t.totalSt.toFixed(2)+'</div>';
-    if(o.obs) html += '<p style="margin-top:8px;font-size:8pt"><b>Observações:</b> '+o.obs+'</p>';
-    html += '<div class="footer">FORGE B2B — forge@forgeb2b.com.br</div></body></html>';
-    var w = window.open('','_blank','width=1100,height=700');
+    var meses = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+    var dataFmt = o.data ? (function(){ var p=o.data.split('-'); return p[2]+' de '+meses[parseInt(p[1])-1]+' de '+p[0]; })() : '';
+    var totalFmt = 'R$ '+((o.totalBruto||t.totalBruto||0)).toFixed(2).replace('.',',').replace(/\B(?=(\d{3})+(?!\d))/g,'.');
+    var profVend = load('crm_profile_'+(load(KEYS.session,{}).id||''),{});
+    var vendNome = profVend.nome || (load(KEYS.session,{}).name||'');
+    var vendFone = profVend.telefone || '';
+    var vendEmail= profVend.email || (load(KEYS.session,{}).email||'');
+    var icmsPct  = Math.round((parseFloat((o.itens&&o.itens[0]&&o.itens[0].icms)||0.12)*100));
+    var ipiPct   = Math.round((parseFloat((o.itens&&o.itens[0]&&o.itens[0].ipi)||0)*100));
+    var stPct    = Math.round((parseFloat((o.itens&&o.itens[0]&&o.itens[0].st)||0)*100));
+    var css = '*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,Helvetica,sans-serif;font-size:9pt;color:#222;}@page{margin:15mm 12mm;size:A4;}@media print{.noprint{display:none!important;}}.page{max-width:210mm;margin:0 auto;padding:10mm 12mm;}.header{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:10px;border-bottom:2px solid #E8E8E8;margin-bottom:14px;}.logo-box{font-size:18pt;font-weight:900;letter-spacing:.08em;color:#1A1A2E;}.logo-sub{font-size:7pt;color:#888;letter-spacing:.15em;margin-top:2px;}.supplier-badge{padding:4px 12px;border-radius:4px;background:#F5F5F5;border:1px solid #DDD;font-size:8pt;font-weight:700;color:#444;}.cliente-block{background:#F8F9FA;border-left:3px solid #1A1A2E;padding:10px 14px;margin-bottom:14px;}.cliente-nome{font-size:13pt;font-weight:700;color:#1A1A2E;margin-bottom:4px;}.ref-line{font-size:8pt;color:#555;margin-bottom:2px;}.ref-num{font-weight:700;font-size:10pt;}table{width:100%;border-collapse:collapse;margin-bottom:12px;}th{background:#1A1A2E;color:#fff;padding:6px 8px;font-size:8pt;text-align:left;border:1px solid #1A1A2E;}td{padding:6px 8px;border:1px solid #D0D0D0;vertical-align:top;font-size:8.5pt;}tr:nth-child(even) td{background:#FAFAFA;}.cc-table{width:100%;border-collapse:collapse;margin-bottom:16px;}.cc-table td{padding:5px 8px;border:1px solid #D0D0D0;font-size:8.5pt;}.cc-table td:first-child{font-weight:700;background:#F0F0F0;width:30%;}.cc-header{background:#1A1A2E;color:#fff;font-weight:700;padding:6px 10px;font-size:9pt;margin-bottom:0;}.sig-block{display:flex;justify-content:space-between;margin-top:20px;padding-top:16px;border-top:1px solid #DDD;}.sig{text-align:center;width:45%;}.sig-line{border-top:1px solid #333;padding-top:4px;font-size:8pt;margin-top:30px;}.footer-bar{margin-top:16px;padding-top:8px;border-top:1px solid #CCC;font-size:7pt;color:#888;display:flex;justify-content:space-between;align-items:center;}';
+    var hdr = '<div class="header"><div><div class="logo-box">⚡ FORGE B2B</div><div class="logo-sub">TORQUE + CONTROLE · SOLUÇÕES INDUSTRIAIS</div></div>'+(o.supplier?'<div class="supplier-badge">'+o.supplier+'</div>':'')+'</div>';
+    var cli = '<div class="cliente-block"><div class="cliente-nome">'+(o.cliente||'—')+'</div>'+(o.cidadeUf?'<div class="ref-line">'+o.cidadeUf+'</div>':'')+(o.contato?'<div class="ref-line">Att: '+o.contato+(o.email?' &nbsp;|&nbsp; E-mail: '+o.email:'')+'</div>':'')+'<div style="display:flex;gap:30px;margin-top:6px;"><div><div class="ref-line">Referência</div><div class="ref-num">'+o.numero+'</div></div>'+(o.descricao?'<div><div class="ref-line">Projeto</div><div class="ref-num">'+o.descricao+'</div></div>':'')+'<div><div class="ref-line">Data</div><div class="ref-num">'+dataFmt+'</div></div></div></div>';
+    var tbl = '<table><thead><tr><th style="width:40px">ITEM</th><th style="width:45px">QDE</th><th>DESCRIÇÃO</th><th style="width:100px">CÓDIGO</th><th style="width:70px">IMAGEM</th></tr></thead><tbody>'+rows+'</tbody></table>';
+    var cc  = '<div class="cc-header">CONDIÇÕES COMERCIAIS</div><table class="cc-table"><tr><td>VALOR TOTAL:</td><td><strong>'+totalFmt+'</strong></td></tr>'+(o.pagamento?'<tr><td>PAGAMENTO:</td><td>'+o.pagamento+'</td></tr>':'')+(o.prazoEntrega?'<tr><td>PRAZO DE ENTREGA:</td><td>'+o.prazoEntrega+'</td></tr>':'')+(o.baseCambial?'<tr><td>BASE CAMBIAL:</td><td>'+o.baseCambial+'</td></tr>':'')+'<tr><td>IMPOSTOS:</td><td>ICMS: '+icmsPct+'% &nbsp;|&nbsp; IPI: '+ipiPct+'% &nbsp;|&nbsp; ST: '+stPct+'%</td></tr>'+(o.localEntrega?'<tr><td>LOCAL DE ENTREGA:</td><td>'+o.localEntrega+'</td></tr>':'')+(o.garantia?'<tr><td>PRAZO DE GARANTIA:</td><td>'+o.garantia+'</td></tr>':'')+'<tr><td>TERMOS DE GARANTIA:</td><td>'+(o.termosGarantia||'A garantia cobrirá exclusivamente defeitos de fabricação, de material e de montagem na fábrica, não incluindo defeitos causados por operação e manutenção inadequadas, desgastes normais ou acidentes.')+'</td></tr><tr><td>VALIDADE DA PROPOSTA:</td><td>'+(o.validade||'15')+' dias</td></tr>'+(o.obs?'<tr><td>OBSERVAÇÕES:</td><td>'+o.obs+'</td></tr>':'')+'</table>';
+    var sig = '<div class="sig-block"><div style="font-size:8pt;color:#555">Atenciosamente,</div><div class="sig"><div class="sig-line"><strong>'+vendNome+'</strong>'+(vendFone?'<br/>☎ '+vendFone:'')+(vendEmail?'<br/>✉ '+vendEmail:'')+'</div></div></div>';
+    var ftr = '<div class="footer-bar"><span>SINUELO SERVICE LTDA &nbsp;|&nbsp; Rua Antônio Kaminski, 190 – Curitiba/PR – CEP 81200-402</span><span>+55 41 3335-5005 &nbsp;|&nbsp; crm@sinuelo.com</span></div>';
+    return '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'+o.numero+'</title><style>'+css+'</style></head><body><div class="page">'+hdr+cli+tbl+cc+sig+ftr+'</div></body></html>';
+  }
+
+  function exportPDF(o){
+    var html = gerarHTMLProposta(o);
+    var w = window.open('','_blank','width=900,height=700');
     w.document.write(html); w.document.close(); w.focus();
-    setTimeout(function(){w.print();},400);
+    setTimeout(function(){w.print();},500);
+  }
+
+  function enviarEmailOutlook(o){
+    // Assunto: ORÇAMENTO - CLIENTE / CONTATO / PROJETO - FORNECEDOR
+    var partes = [o.cliente||'CLIENTE'];
+    if(o.contato) partes.push(o.contato.split(' ')[0]);
+    if(o.descricao) partes.push(o.descricao.toUpperCase());
+    var assunto = 'ORÇAMENTO - '+partes.join(' / ')+(o.supplier?' - '+o.supplier:'');
+
+    var total = 'R$ '+(o.totalBruto||0).toFixed(2).replace('.',',').replace(/\B(?=(\d{3})+(?!\d))/g,'.');
+    var corpo = 'Prezado(a) '+(o.contato||'Cliente')+','
+      +'\n\nConforme nossa tratativa, segue proposta comercial referente a '+(o.descricao||o.numero)+'.'
+      +'\n\nNº Orçamento: '+o.numero
+      +'\nCliente: '+(o.cliente||'—')
+      +(o.supplier?'\nFornecedor: '+o.supplier:'')
+      +'\nValor total: '+total
+      +(o.prazoEntrega?'\nPrazo de entrega: '+o.prazoEntrega:'')
+      +(o.pagamento?'\nCondições de pagamento: '+o.pagamento:'')
+      +'\n\nAo imprimir/salvar o PDF, anexe-o a este e-mail antes de enviar.'
+      +'\n\nAtenciosamente,\nFORGE B2B — Sinuelo Service Ltda'
+      +'\nwww.sinuelo.com | crm@sinuelo.com | +55 41 3335-5005';
+
+    var mailto = 'mailto:'+(o.email||'')
+      +'?subject='+encodeURIComponent(assunto)
+      +'&body='+encodeURIComponent(corpo);
+
+    window.open(mailto,'_blank');
   }
 
   function importXLSX(e){
@@ -3290,6 +3386,7 @@ function ViewOrcamento({ session, isGestor }) {
                 <div style={{display:'flex',gap:6,flexShrink:0}}>
                   <button className="btn btn-secondary" style={{padding:'5px 10px',fontSize:11}} onClick={function(){openEdit(o);}}>✏️</button>
                   <button className="btn btn-green" style={{padding:'5px 10px',fontSize:11}} onClick={function(){exportPDF(o);}}>📄 PDF</button>
+                  <button className="btn btn-blue" style={{padding:'5px 10px',fontSize:11}} onClick={function(){enviarEmailOutlook(o);}} title="Enviar via Outlook">📧 E-mail</button>
                   <button onClick={function(){deleteOrc(o.id);}} style={{background:'none',border:'none',color:'var(--text3)',cursor:'pointer',fontSize:13,opacity:.4}} onMouseEnter={function(ev){ev.target.style.opacity=1;}} onMouseLeave={function(ev){ev.target.style.opacity=.4;}}>✕</button>
                 </div>
               </div>
@@ -3357,17 +3454,22 @@ function ViewOrcamento({ session, isGestor }) {
                 </select>
               </div>
             </div>
+            <div className="field" style={{marginBottom:10}}>
+              <label>Descrição geral / Projeto</label>
+              <input value={form.descricao||''} onChange={function(e){setForm(Object.assign({},form,{descricao:e.target.value}));}} style={inp}/>
+            </div>
+
+            {/* Condições comerciais */}
+            <div style={{fontSize:10,fontWeight:700,color:'var(--text2)',marginBottom:6,textTransform:'uppercase',letterSpacing:'.06em'}}>Condições comerciais</div>
+            <div className="grid-4" style={{marginBottom:10}}>
+              <div className="field"><label>Pagamento</label><input value={form.pagamento||''} onChange={function(e){setForm(Object.assign({},form,{pagamento:e.target.value}));}} style={inp} placeholder="30 DDL"/></div>
+              <div className="field"><label>Prazo entrega</label><input value={form.prazoEntrega||''} onChange={function(e){setForm(Object.assign({},form,{prazoEntrega:e.target.value}));}} style={inp} placeholder="120 dias"/></div>
+              <div className="field"><label>Local entrega</label><input value={form.localEntrega||''} onChange={function(e){setForm(Object.assign({},form,{localEntrega:e.target.value}));}} style={inp} placeholder="CIF"/></div>
+              <div className="field"><label>Garantia</label><input value={form.garantia||''} onChange={function(e){setForm(Object.assign({},form,{garantia:e.target.value}));}} style={inp} placeholder="12 meses"/></div>
+            </div>
             <div className="grid-2" style={{marginBottom:10}}>
-              <div className="field">
-                <label>Vincular ao Forecast</label>
-                <select value={form.oppId||''} onChange={function(e){setForm(Object.assign({},form,{oppId:e.target.value}));}} style={inp}>
-                  <option value="">— Nenhuma —</option>
-                  {fcOpps.filter(function(o){return !form._cliApelido||o.customer===form._cliApelido;}).map(function(o){
-                    return <option key={o.id} value={o.id}>{o.customer} · {(o.description||'').slice(0,50)}</option>;
-                  })}
-                </select>
-              </div>
-              <div className="field"><label>Descrição geral</label><input value={form.descricao||''} onChange={function(e){setForm(Object.assign({},form,{descricao:e.target.value}));}} style={inp}/></div>
+              <div className="field"><label>Base cambial</label><input value={form.baseCambial||''} onChange={function(e){setForm(Object.assign({},form,{baseCambial:e.target.value}));}} style={inp} placeholder="€ 1,00 = R$ 5,70"/></div>
+              <div className="field"><label>E-mail do contato</label><input type="email" value={form.email||''} onChange={function(e){setForm(Object.assign({},form,{email:e.target.value}));}} style={inp} placeholder="contato@empresa.com"/></div>
             </div>
 
             {/* Itens */}
@@ -3441,6 +3543,7 @@ function ViewOrcamento({ session, isGestor }) {
             <div style={{display:'flex',gap:8}}>
               <button className="btn btn-primary" onClick={saveForm} style={{flex:1}}>💾 Salvar</button>
               <button className="btn btn-green" onClick={function(){saveForm();exportPDF(form);}} style={{flex:1}}>💾 Salvar + 📄 PDF</button>
+              <button className="btn btn-blue" onClick={function(){saveForm();setTimeout(function(){enviarEmailOutlook(form);},200);}} style={{flex:1}}>📧 Enviar e-mail</button>
               <button className="btn btn-secondary" onClick={function(){setModal(false);}}>Cancelar</button>
             </div>
           </div>
@@ -4877,6 +4980,355 @@ function ViewTarefas({ session, isGestor }) {
   );
 }
 
+// ─── VIEW: PÓS-VENDA ─────────────────────────────────────────
+function ViewPosVenda({ session, isGestor }) {
+  var KEYS_PV = 'crm_posvenda_v1';
+  var [pvs,     setPvs]    = useState(function(){ return load(KEYS_PV, []); });
+  var [modal,   setModal]  = useState(false);
+  var [form,    setForm]   = useState(null);
+  var [search,  setSearch] = useState('');
+  var [filter,  setFilter] = useState('todos'); // todos|andamento|atrasado|concluido|garantia
+
+  var fcOpps  = load(KEYS.forecast,  []);
+  var orcs    = load('crm_orcs_v1',  []);
+  var clients = load(KEYS.clients,   []);
+
+  function savePvs(list){ setPvs(list); save(KEYS_PV, list); }
+
+  var STATUS_PV = [
+    {id:'aguardando_nf',  label:'⏳ Aguardando NF',     color:'#64748B'},
+    {id:'em_transito',    label:'🚚 Em trânsito',        color:'#2563EB'},
+    {id:'entregue_parcial',label:'📦 Entregue parcial',  color:'#CA8A04'},
+    {id:'entregue_total', label:'✅ Entregue total',     color:'#16A34A'},
+    {id:'em_garantia',    label:'🔧 Em garantia',        color:'#7C3AED'},
+    {id:'concluido',      label:'🏁 Concluído',          color:'#64748B'},
+    {id:'problema',       label:'⚠️ Problema',           color:'#DC2626'},
+  ];
+
+  var EMPTY_PV = {
+    id:'', cliente:'', contato:'', oppId:'', orcId:'',
+    // PO e NF
+    numeroPO:'', dataEmissaoPO:'', valorPO:0,
+    numeroNF:'', dataEmissaoNF:'', dataVencimentoNF:'',
+    // Entrega
+    statusEntrega:'aguardando_nf', prazoEntrega:'', dataEntregaPrevista:'',
+    dataEntregaReal:'', entregaParcial:false, percEntregue:0,
+    // Garantia
+    temGarantia:true, prazoGarantia:'12 meses', inicioGarantia:'', fimGarantia:'',
+    // Financeiro
+    condiçoesPag:'', dataPagamento:'', valorPago:0,
+    // Tracking
+    transportadora:'', codigoRastreio:'', responsavel:session.code||'',
+    obs:'', historico:[],
+  };
+
+  function openNew(){
+    setForm(Object.assign({},EMPTY_PV,{id:'pv_'+Date.now()}));
+    setModal(true);
+  }
+  function openEdit(p){ setForm(Object.assign({},p)); setModal(true); }
+  function saveForm(){
+    if(!form.cliente){ alert('Informe o cliente.'); return; }
+    var exists = pvs.find(function(p){return p.id===form.id;});
+    if(exists) savePvs(pvs.map(function(p){return p.id===form.id?form:p;}));
+    else savePvs([form,...pvs]);
+    setModal(false);
+  }
+  function deletePv(id){ if(confirm('Excluir?')) savePvs(pvs.filter(function(p){return p.id!==id;})); }
+
+  function addHistorico(){
+    var txt = prompt('Registrar ocorrência:');
+    if(!txt) return;
+    var h = {data:new Date().toLocaleDateString('pt-BR'), texto:txt, resp:session.code||''};
+    setForm(Object.assign({},form,{historico:[h,...(form.historico||[])]}));
+  }
+
+  // Verificar atraso
+  function isAtrasado(pv){
+    if(pv.statusEntrega==='entregue_total'||pv.statusEntrega==='concluido') return false;
+    if(!pv.dataEntregaPrevista) return false;
+    return pv.dataEntregaPrevista < new Date().toISOString().slice(0,10);
+  }
+
+  // Dias para vencer garantia
+  function diasGarantia(pv){
+    if(!pv.fimGarantia) return null;
+    var diff = Math.round((new Date(pv.fimGarantia)-new Date())/86400000);
+    return diff;
+  }
+
+  var hoje = new Date().toISOString().slice(0,10);
+
+  var filtered = pvs.filter(function(p){
+    if(filter==='andamento') return ['aguardando_nf','em_transito','entregue_parcial'].includes(p.statusEntrega);
+    if(filter==='atrasado')  return isAtrasado(p);
+    if(filter==='concluido') return p.statusEntrega==='concluido'||p.statusEntrega==='entregue_total';
+    if(filter==='garantia')  return p.statusEntrega==='em_garantia';
+    return true;
+  }).filter(function(p){
+    if(!search.trim()) return true;
+    var q = search.toLowerCase();
+    return (p.cliente&&p.cliente.toLowerCase().includes(q))
+      ||(p.numeroPO&&p.numeroPO.toLowerCase().includes(q))
+      ||(p.numeroNF&&p.numeroNF.toLowerCase().includes(q));
+  });
+
+  var countAtrasado = pvs.filter(isAtrasado).length;
+  var countGarantia = pvs.filter(function(p){return p.statusEntrega==='em_garantia';}).length;
+
+  var inp = {width:'100%'};
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:12,height:'100%'}}>
+
+      {/* Métricas */}
+      <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+        {[
+          {l:'Total',      v:pvs.length,                                                       c:'var(--text)',  f:'todos'},
+          {l:'Em andamento',v:pvs.filter(function(p){return ['aguardando_nf','em_transito','entregue_parcial'].includes(p.statusEntrega);}).length, c:'#2563EB', f:'andamento'},
+          {l:'Atrasados',  v:countAtrasado, c:'#DC2626', f:'atrasado'},
+          {l:'Em garantia',v:countGarantia, c:'#7C3AED', f:'garantia'},
+          {l:'Concluídos', v:pvs.filter(function(p){return p.statusEntrega==='concluido'||p.statusEntrega==='entregue_total';}).length, c:'#16A34A', f:'concluido'},
+        ].map(function(m){
+          return (
+            <div key={m.l} onClick={function(){setFilter(m.f);}} className="metric"
+              style={{cursor:'pointer',borderBottom:'2px solid '+(filter===m.f?m.c:'transparent'),paddingBottom:4,flex:1,minWidth:80}}>
+              <div className="metric-val" style={{color:m.c,fontSize:20}}>{m.v}</div>
+              <div className="metric-lbl">{m.l}</div>
+            </div>
+          );
+        })}
+        <div style={{flex:2}}/>
+        <input value={search} onChange={function(e){setSearch(e.target.value);}} placeholder="🔍 PO, NF, cliente..." style={{width:200}}/>
+        <button className="btn btn-primary" onClick={openNew}>+ Novo pós-venda</button>
+      </div>
+
+      {/* Lista */}
+      <div style={{flex:1,overflowY:'auto',display:'flex',flexDirection:'column',gap:8}}>
+        {filtered.length===0 ? (
+          <div className="card" style={{textAlign:'center',padding:'40px 20px',color:'var(--text3)'}}>
+            <div style={{fontSize:36,marginBottom:10}}>📦</div>
+            <div style={{fontWeight:600,marginBottom:4}}>Nenhum registro de pós-venda</div>
+            <button className="btn btn-primary" style={{marginTop:12}} onClick={openNew}>+ Criar primeiro registro</button>
+          </div>
+        ) : filtered.map(function(pv){
+          var st   = STATUS_PV.find(function(s){return s.id===pv.statusEntrega;})||STATUS_PV[0];
+          var atrasado = isAtrasado(pv);
+          var dg   = diasGarantia(pv);
+          var opp  = pv.oppId  ? fcOpps.find(function(o){return o.id===pv.oppId;})  : null;
+          var orc  = pv.orcId  ? orcs.find(function(o){return o.id===pv.orcId;})    : null;
+          return (
+            <div key={pv.id} className="card" style={{borderLeft:'3px solid '+(atrasado?'#DC2626':st.color)}}>
+              <div style={{display:'flex',gap:10,alignItems:'flex-start',flexWrap:'wrap'}}>
+                <div style={{flex:1,minWidth:200}}>
+                  {/* Header */}
+                  <div style={{display:'flex',gap:8,alignItems:'baseline',flexWrap:'wrap',marginBottom:4}}>
+                    <span style={{fontWeight:700,fontSize:13}}>{pv.cliente}</span>
+                    <span style={{fontSize:11,padding:'1px 8px',borderRadius:10,fontWeight:600,
+                      background:st.color+'18',color:st.color}}>{st.label}</span>
+                    {atrasado&&<span style={{fontSize:10,padding:'1px 8px',borderRadius:5,
+                      background:'rgba(220,38,38,.15)',color:'#FCA5A5',fontWeight:700}}>ATRASADO</span>}
+                    {dg!==null&&dg<=30&&dg>=0&&<span style={{fontSize:10,padding:'1px 8px',borderRadius:5,
+                      background:'rgba(124,58,237,.15)',color:'#A78BFA',fontWeight:700}}>Garantia: {dg}d</span>}
+                  </div>
+                  {/* PO e NF */}
+                  <div style={{display:'flex',gap:14,flexWrap:'wrap',fontSize:11,color:'var(--text3)',marginBottom:4}}>
+                    {pv.numeroPO&&<span>📋 PO: <b style={{color:'var(--text)'}}>{pv.numeroPO}</b></span>}
+                    {pv.numeroNF&&<span>🧾 NF: <b style={{color:'var(--text)'}}>{pv.numeroNF}</b></span>}
+                    {pv.dataEntregaPrevista&&<span>📅 Prev: {pv.dataEntregaPrevista.split('-').reverse().join('/')}</span>}
+                    {pv.dataEntregaReal&&<span>✅ Real: {pv.dataEntregaReal.split('-').reverse().join('/')}</span>}
+                    {pv.responsavel&&<span>👤 {pv.responsavel}</span>}
+                  </div>
+                  {/* Links */}
+                  <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                    {opp&&<div style={{fontSize:10,padding:'2px 8px',borderRadius:5,
+                      background:'rgba(37,99,235,.08)',border:'1px solid rgba(37,99,235,.15)',color:'#60A5FA'}}>
+                      📊 {opp.customer} · {(opp.description||'').slice(0,35)}
+                    </div>}
+                    {orc&&<div style={{fontSize:10,padding:'2px 8px',borderRadius:5,
+                      background:'rgba(22,163,74,.08)',border:'1px solid rgba(22,163,74,.15)',color:'#4ADE80'}}>
+                      📝 {orc.numero}
+                    </div>}
+                  </div>
+                </div>
+                {/* Valor */}
+                {pv.valorPO>0&&(
+                  <div style={{textAlign:'right',flexShrink:0}}>
+                    <div style={{fontSize:14,fontWeight:700,color:'#4ADE80'}}>
+                      R${parseFloat(pv.valorPO).toLocaleString('pt-BR',{minimumFractionDigits:2})}
+                    </div>
+                    <div style={{fontSize:9,color:'var(--text3)'}}>Valor PO</div>
+                  </div>
+                )}
+                {/* Ações */}
+                <div style={{display:'flex',gap:4,flexShrink:0}}>
+                  <button onClick={function(){openEdit(pv);}} style={{background:'none',border:'1px solid var(--border)',borderRadius:6,cursor:'pointer',padding:'5px 8px',fontSize:12,color:'var(--text3)'}}>✏️</button>
+                  <button onClick={function(){deletePv(pv.id);}} style={{background:'none',border:'none',cursor:'pointer',padding:'5px 6px',fontSize:13,color:'var(--text3)',opacity:.4}} onMouseEnter={function(ev){ev.target.style.opacity=1;}} onMouseLeave={function(ev){ev.target.style.opacity=.4;}}>✕</button>
+                </div>
+              </div>
+              {/* Histórico resumido */}
+              {pv.historico&&pv.historico.length>0&&(
+                <div style={{marginTop:6,fontSize:10,color:'var(--text3)',borderTop:'1px solid var(--border)',paddingTop:5}}>
+                  {pv.historico[0].data} · {pv.historico[0].texto}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* MODAL */}
+      {modal && form && (
+        <div className="modal-bg">
+          <div className="modal" style={{maxWidth:700}}>
+            <div className="modal-hd">
+              <h2>📦 Pós-Venda</h2>
+              <button className="modal-close" onClick={function(){setModal(false);}}>✕</button>
+            </div>
+
+            {/* Status */}
+            <div style={{display:'flex',gap:5,flexWrap:'wrap',marginBottom:14}}>
+              {STATUS_PV.map(function(s){
+                var sel = form.statusEntrega===s.id;
+                return (
+                  <button key={s.id} onClick={function(){setForm(Object.assign({},form,{statusEntrega:s.id}));}}
+                    style={{padding:'4px 10px',borderRadius:16,border:'1px solid '+(sel?s.color:'var(--border)'),
+                      background:sel?s.color+'20':'transparent',color:sel?s.color:'var(--text3)',
+                      cursor:'pointer',fontSize:10,fontWeight:sel?700:400}}>
+                    {s.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="grid-2" style={{marginBottom:10}}>
+              <div className="field">
+                <label>Cliente</label>
+                <select value={form.cliente||''} onChange={function(e){setForm(Object.assign({},form,{cliente:e.target.value}));}} style={inp}>
+                  <option value="">— Selecione —</option>
+                  {clients.map(function(c){return <option key={c.id} value={c.apelido}>{c.apelido}</option>;})}
+                </select>
+              </div>
+              <div className="field"><label>Contato</label><input value={form.contato||''} onChange={function(e){setForm(Object.assign({},form,{contato:e.target.value}));}} style={inp}/></div>
+            </div>
+
+            <div className="grid-2" style={{marginBottom:10}}>
+              <div className="field">
+                <label>Vincular Forecast</label>
+                <select value={form.oppId||''} onChange={function(e){setForm(Object.assign({},form,{oppId:e.target.value}));}} style={inp}>
+                  <option value="">— Nenhuma —</option>
+                  {fcOpps.filter(function(o){return !form.cliente||o.customer===form.cliente;}).map(function(o){
+                    return <option key={o.id} value={o.id}>{o.customer} · {(o.description||'').slice(0,40)}</option>;
+                  })}
+                </select>
+              </div>
+              <div className="field">
+                <label>Vincular Orçamento</label>
+                <select value={form.orcId||''} onChange={function(e){setForm(Object.assign({},form,{orcId:e.target.value}));}} style={inp}>
+                  <option value="">— Nenhum —</option>
+                  {orcs.filter(function(o){return !form.cliente||o.cliente===form.cliente;}).map(function(o){
+                    return <option key={o.id} value={o.id}>{o.numero} — {o.cliente}</option>;
+                  })}
+                </select>
+              </div>
+            </div>
+
+            <div style={{fontSize:10,fontWeight:700,color:'var(--text2)',marginBottom:6,textTransform:'uppercase',letterSpacing:'.06em'}}>Pedido de Compra (PO)</div>
+            <div className="grid-3" style={{marginBottom:10}}>
+              <div className="field"><label>Número da PO</label><input value={form.numeroPO||''} onChange={function(e){setForm(Object.assign({},form,{numeroPO:e.target.value}));}} style={inp} placeholder="PO-2026-001"/></div>
+              <div className="field"><label>Data emissão PO</label><input type="date" value={form.dataEmissaoPO||''} onChange={function(e){setForm(Object.assign({},form,{dataEmissaoPO:e.target.value}));}} style={inp}/></div>
+              <div className="field"><label>Valor da PO (R$)</label><input type="number" value={form.valorPO||''} onChange={function(e){setForm(Object.assign({},form,{valorPO:e.target.value}));}} style={inp}/></div>
+            </div>
+
+            <div style={{fontSize:10,fontWeight:700,color:'var(--text2)',marginBottom:6,textTransform:'uppercase',letterSpacing:'.06em'}}>Nota Fiscal (NF)</div>
+            <div className="grid-3" style={{marginBottom:10}}>
+              <div className="field"><label>Número da NF</label><input value={form.numeroNF||''} onChange={function(e){setForm(Object.assign({},form,{numeroNF:e.target.value}));}} style={inp} placeholder="NF 123456"/></div>
+              <div className="field"><label>Data emissão NF</label><input type="date" value={form.dataEmissaoNF||''} onChange={function(e){setForm(Object.assign({},form,{dataEmissaoNF:e.target.value}));}} style={inp}/></div>
+              <div className="field"><label>Vencimento NF</label><input type="date" value={form.dataVencimentoNF||''} onChange={function(e){setForm(Object.assign({},form,{dataVencimentoNF:e.target.value}));}} style={inp}/></div>
+            </div>
+
+            <div style={{fontSize:10,fontWeight:700,color:'var(--text2)',marginBottom:6,textTransform:'uppercase',letterSpacing:'.06em'}}>Entrega</div>
+            <div className="grid-4" style={{marginBottom:10}}>
+              <div className="field"><label>Prazo contratual</label><input value={form.prazoEntrega||''} onChange={function(e){setForm(Object.assign({},form,{prazoEntrega:e.target.value}));}} style={inp} placeholder="120 dias"/></div>
+              <div className="field"><label>Data prev. entrega</label><input type="date" value={form.dataEntregaPrevista||''} onChange={function(e){setForm(Object.assign({},form,{dataEntregaPrevista:e.target.value}));}} style={inp}/></div>
+              <div className="field"><label>Data entrega real</label><input type="date" value={form.dataEntregaReal||''} onChange={function(e){setForm(Object.assign({},form,{dataEntregaReal:e.target.value}));}} style={inp}/></div>
+              <div className="field"><label>% entregue</label><input type="number" min="0" max="100" value={form.percEntregue||''} onChange={function(e){setForm(Object.assign({},form,{percEntregue:e.target.value}));}} style={inp} placeholder="100"/></div>
+            </div>
+            <div className="grid-2" style={{marginBottom:10}}>
+              <div className="field"><label>Transportadora</label><input value={form.transportadora||''} onChange={function(e){setForm(Object.assign({},form,{transportadora:e.target.value}));}} style={inp}/></div>
+              <div className="field"><label>Código rastreio</label><input value={form.codigoRastreio||''} onChange={function(e){setForm(Object.assign({},form,{codigoRastreio:e.target.value}));}} style={inp}/></div>
+            </div>
+
+            <div style={{fontSize:10,fontWeight:700,color:'var(--text2)',marginBottom:6,textTransform:'uppercase',letterSpacing:'.06em'}}>Garantia</div>
+            <div className="grid-3" style={{marginBottom:10}}>
+              <div className="field">
+                <label>Tem garantia?</label>
+                <select value={form.temGarantia?'sim':'nao'} onChange={function(e){setForm(Object.assign({},form,{temGarantia:e.target.value==='sim'}));}} style={inp}>
+                  <option value="sim">Sim</option><option value="nao">Não</option>
+                </select>
+              </div>
+              {form.temGarantia&&(
+                <div className="field"><label>Prazo garantia</label><input value={form.prazoGarantia||''} onChange={function(e){setForm(Object.assign({},form,{prazoGarantia:e.target.value}));}} style={inp} placeholder="12 meses"/></div>
+              )}
+              {form.temGarantia&&(
+                <div className="field"><label>Início garantia</label><input type="date" value={form.inicioGarantia||''} onChange={function(e){
+                  var d = e.target.value;
+                  var fim = '';
+                  if(d){ var dt=new Date(d); dt.setFullYear(dt.getFullYear()+1); fim=dt.toISOString().slice(0,10); }
+                  setForm(Object.assign({},form,{inicioGarantia:d,fimGarantia:fim}));
+                }} style={inp}/></div>
+              )}
+            </div>
+            {form.temGarantia&&form.fimGarantia&&(
+              <div style={{fontSize:11,padding:'5px 10px',borderRadius:5,background:'rgba(124,58,237,.08)',border:'1px solid rgba(124,58,237,.2)',color:'#A78BFA',marginBottom:10}}>
+                🔧 Garantia expira em {form.fimGarantia.split('-').reverse().join('/')}
+                {(function(){ var d=Math.round((new Date(form.fimGarantia)-new Date())/86400000); return d>=0?' ('+d+' dias)':' (VENCIDA)'; })()}
+              </div>
+            )}
+
+            <div style={{fontSize:10,fontWeight:700,color:'var(--text2)',marginBottom:6,textTransform:'uppercase',letterSpacing:'.06em'}}>Financeiro</div>
+            <div className="grid-3" style={{marginBottom:10}}>
+              <div className="field"><label>Cond. pagamento</label><input value={form.condiçoesPag||''} onChange={function(e){setForm(Object.assign({},form,{'condiçoesPag':e.target.value}));}} style={inp} placeholder="30 DDL"/></div>
+              <div className="field"><label>Data pagamento</label><input type="date" value={form.dataPagamento||''} onChange={function(e){setForm(Object.assign({},form,{dataPagamento:e.target.value}));}} style={inp}/></div>
+              <div className="field"><label>Responsável</label><input value={form.responsavel||''} onChange={function(e){setForm(Object.assign({},form,{responsavel:e.target.value}));}} style={inp}/></div>
+            </div>
+
+            <div className="field" style={{marginBottom:10}}>
+              <label>Observações</label>
+              <textarea value={form.obs||''} onChange={function(e){setForm(Object.assign({},form,{obs:e.target.value}));}} style={{width:'100%',height:50,resize:'vertical'}}/>
+            </div>
+
+            {/* Histórico de ocorrências */}
+            <div style={{marginBottom:12}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+                <div style={{fontSize:10,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'.06em'}}>Histórico / Ocorrências</div>
+                <button className="btn btn-secondary" style={{fontSize:10,padding:'3px 10px'}} onClick={addHistorico}>+ Registrar</button>
+              </div>
+              {(form.historico||[]).length===0
+                ? <div style={{fontSize:11,color:'var(--text3)'}}>Nenhuma ocorrência registrada.</div>
+                : (form.historico||[]).map(function(h,i){
+                    return (
+                      <div key={i} style={{fontSize:10,padding:'5px 8px',borderRadius:5,background:'var(--bg3)',marginBottom:4}}>
+                        <span style={{color:'var(--text3)',marginRight:8}}>{h.data}</span>
+                        {h.resp&&<span style={{color:'#60A5FA',marginRight:8}}>[{h.resp}]</span>}
+                        {h.texto}
+                      </div>
+                    );
+                  })
+              }
+            </div>
+
+            <div style={{display:'flex',gap:8}}>
+              <button className="btn btn-primary" onClick={saveForm} style={{flex:1}}>💾 Salvar</button>
+              <button className="btn btn-secondary" onClick={function(){setModal(false);}}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── APP PRINCIPAL ────────────────────────────────────────────
 function App() {
   const [session, setSession] = useState(function(){ return load(KEYS.session, null); });
@@ -4939,6 +5391,7 @@ function App() {
     {id:'budget',      icon:'💰', label:'Budget'},
     {id:'divider1',    divider:true},
     {id:'orcamento',   icon:'📝', label:'Orçamento'},
+    {id:'posvenda',    icon:'📦', label:'Pós-Venda'},
     {id:'relatorio',   icon:'📋', label:'Relatórios'},
     {id:'tarefas',     icon:'✅', label:'Tarefas'},
     {id:'radar',       icon:'🧠', label:'Radar'},
@@ -4960,6 +5413,7 @@ function App() {
     if (view==='clientes')  return <ViewClientes  session={session}/>;
     if (view==='budget')    return <ViewBudget    session={session} isGestor={isGestor}/>;
     if (view==='orcamento') return <ViewOrcamento session={session} isGestor={isGestor}/>;
+    if (view==='posvenda')  return <ViewPosVenda  session={session} isGestor={isGestor}/>;
     if (view==='relatorio') return <ViewRelatorio session={session} isGestor={isGestor} isConsultor={isConsultor}/>;
     if (view==='tarefas')   return <ViewTarefas   session={session} isGestor={isGestor}/>;
     if (view==='radar')     return <ViewRadar     session={session} isGestor={isGestor} isConsultor={isConsultor}/>;
