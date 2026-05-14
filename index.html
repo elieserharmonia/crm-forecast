@@ -226,41 +226,24 @@ function save(key, val) {
 
 // ─── SYNC: ao iniciar, restaurar do Supabase APENAS se localStorage vazio ─
 function syncFromSupabase(onDone) {
-  var keys = Object.keys(SUPA_MAP);
-  // Verificar quais chaves estão vazias no localStorage
-  var emptyKeys = keys.filter(function(key) {
-    var raw = localStorage.getItem(key);
-    if(!raw) return true;
-    try {
-      var v = JSON.parse(raw);
-      if(Array.isArray(v) && v.length === 0) return true;
-      if(v === null || v === undefined) return true;
-    } catch(e) { return true; }
-    return false;
-  });
-
-  if(emptyKeys.length === 0) {
-    // localStorage tem todos os dados — não precisa buscar Supabase
-    onDone();
-    return;
-  }
-
-  // Buscar do Supabase apenas as chaves vazias
-  var pending = emptyKeys.length;
-  emptyKeys.forEach(function(key) {
-    var map = SUPA_MAP[key];
-    supaGet(map.table, map.id, function(err, remoteData) {
-      if(!err && remoteData) {
-        var hasData = (Array.isArray(remoteData) && remoteData.length > 0)
-          || (remoteData && typeof remoteData === 'object' && !Array.isArray(remoteData) && Object.keys(remoteData).length > 0);
+  // Supabase é APENAS backup silencioso — nunca interfere no carregamento
+  onDone();
+  // Backup assíncrono em background: se localStorage tem dados, enviar para Supabase
+  setTimeout(function() {
+    Object.keys(SUPA_MAP).forEach(function(key) {
+      var raw = localStorage.getItem(key);
+      if(!raw) return;
+      try {
+        var v = JSON.parse(raw);
+        var hasData = (Array.isArray(v) && v.length > 0) ||
+                      (v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length > 0);
         if(hasData) {
-          try { localStorage.setItem(key, JSON.stringify(remoteData)); } catch(e) {}
+          var map = SUPA_MAP[key];
+          supaSet(map.table, map.id, v);
         }
-      }
-      pending--;
-      if(pending === 0) onDone();
+      } catch(e) {}
     });
-  });
+  }, 3000); // aguardar 3s após o app carregar
 }
 
 // Função para forçar upload de tudo para o Supabase (usar no console quando necessário)
@@ -6540,6 +6523,67 @@ function ViewCotacoes({ session, isGestor, filtroVendedor }) {
         })}
         <div style={{flex:2}}/>
         <input value={search} onChange={function(e){setSearch(e.target.value);}} placeholder="🔍 Serial, cliente, título..." style={{width:220}}/>
+        {/* Importar PDF da cotação */}
+        <label className="btn btn-blue" style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:5}} title="Importar PDF do Mercado Eletrônico / Ariba / SAP">
+          📄 Importar PDF
+          <input type="file" accept=".pdf" style={{display:'none'}} onChange={function(e){
+            var file = e.target.files[0]; if(!file) return;
+            var reader = new FileReader();
+            reader.onload = function(ev){
+              // Usar API Claude para extrair dados do PDF
+              var base64 = ev.target.result.split(',')[1];
+              var btn = e.target.parentElement;
+              btn.textContent = '⏳ Lendo...';
+              fetch('https://api.anthropic.com/v1/messages',{
+                method:'POST',
+                headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({
+                  model:'claude-sonnet-4-20250514',
+                  max_tokens:1500,
+                  messages:[{role:'user',content:[
+                    {type:'document',source:{type:'base64',media_type:'application/pdf',data:base64}},
+                    {type:'text',text:'Extraia os dados desta cotação/RFQ e retorne APENAS um JSON válido sem markdown:\n{"serial":"","titulo":"","plataforma":"Mercado Eletrônico","comprador":"","emailComprador":"","cliente":"","cnpjCliente":"","prazoResposta":"YYYY-MM-DD","condicaoPag":"","enderecoEntrega":"","localFaturamento":"","obsCliente":"","itens":[{"item":1,"descricao":"","fabricante":"","qtd":1,"unidade":"PC","prazoEntrega":""}]}\nPreencha todos os campos possíveis com as informações do documento.'}
+                  ]}]
+                })
+              })
+              .then(function(r){return r.json();})
+              .then(function(data){
+                var text = (data.content||[]).filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('');
+                var match = text.match(/\{[\s\S]*\}/);
+                if(!match){btn.textContent='📄 Importar PDF';alert('Não foi possível extrair os dados. Tente novamente.');return;}
+                var parsed;
+                try{parsed=JSON.parse(match[0]);}catch(ex){btn.textContent='📄 Importar PDF';alert('Erro ao ler o PDF.');return;}
+                // Montar form com dados extraídos
+                var novoForm = Object.assign({},EMPTY,{
+                  id:'cot_'+Date.now(),
+                  serial:      parsed.serial||'',
+                  titulo:      parsed.titulo||'',
+                  plataforma:  parsed.plataforma||'Mercado Eletrônico',
+                  comprador:   parsed.comprador||'',
+                  emailComprador:parsed.emailComprador||'',
+                  cliente:     parsed.cliente||'',
+                  cnpjCliente: parsed.cnpjCliente||'',
+                  prazoResposta:parsed.prazoResposta||'',
+                  condicaoPag: parsed.condicaoPag||'30 DDL',
+                  enderecoEntrega:parsed.enderecoEntrega||'',
+                  localFaturamento:parsed.localFaturamento||'',
+                  obsCliente:  parsed.obsCliente||'',
+                  itens:       (parsed.itens&&parsed.itens.length)?parsed.itens.map(function(it,i){
+                    return {item:i+1,descricao:it.descricao||'',fabricante:it.fabricante||'',qtd:it.qtd||1,unidade:it.unidade||'PC',precoUnit:0,prazoEntrega:it.prazoEntrega||'',obs:''};
+                  }):[{item:1,descricao:'',fabricante:'',qtd:1,unidade:'PC',precoUnit:0,prazoEntrega:'',obs:''}],
+                  resp:session.code||'',
+                  status:'aberto',
+                });
+                setForm(novoForm);
+                setModal(true);
+                btn.textContent='📄 Importar PDF';
+              })
+              .catch(function(){btn.textContent='📄 Importar PDF';alert('Erro de conexão ao importar.');});
+            };
+            reader.readAsDataURL(file);
+            e.target.value='';
+          }}/>
+        </label>
         <button className="btn btn-primary" onClick={openNew}>+ Nova cotação</button>
       </div>
 
@@ -6798,14 +6842,11 @@ function App() {
   const [corDia, setCorDia] = useState(function(){ return load('crm_cor_dia',''); });
   const [tema,   setTema]   = useState(function(){ return load('crm_tema','dark'); });
   const [filtroVendedor, setFiltroVendedor] = useState('todos');
-  const [syncing, setSyncing] = useState(true); // aguardando sync do Supabase
 
   useEffect(function(){
     initUsers();
-    // Sincronizar dados do Supabase antes de renderizar
-    syncFromSupabase(function(){
-      setSyncing(false);
-    });
+    // Backup silencioso para Supabase em background
+    syncFromSupabase(function(){});
   }, []);
 
   // Aplicar tema no <html>
@@ -6821,21 +6862,6 @@ function App() {
 
   if (!session) {
     return <Login onLogin={function(u){ setSession(u); save(KEYS.session, u); }}/>;
-  }
-
-  // Aguardar sync do Supabase
-  if (syncing) {
-    return (
-      <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100vh',background:'var(--bg)',gap:16}}>
-        <div style={{fontSize:36}}>⚡</div>
-        <div style={{fontSize:14,fontWeight:700,color:'var(--text)'}}>FORGE B2B</div>
-        <div style={{display:'flex',gap:6,alignItems:'center',color:'var(--text3)',fontSize:12}}>
-          <div style={{width:16,height:16,border:'2px solid var(--blue)',borderTopColor:'transparent',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>
-          Sincronizando com a nuvem...
-        </div>
-        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-      </div>
-    );
   }
 
   const isGestor      = session.role === 'gestor';
