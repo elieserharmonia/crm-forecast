@@ -241,8 +241,22 @@ function loadTeam(baseKey, def) {
   return result.length ? result : (Array.isArray(def) ? def : load(baseKey, def));
 }
 function initUsers() {
-  const existing = load(KEYS.users, null);
-  if (!existing) save(KEYS.users, DEFAULT_USERS);
+  var existing = load(KEYS.users, null);
+  // Validar: deve ser array com ao menos 1 usuário com email e password
+  var valid = Array.isArray(existing) &&
+              existing.length > 0 &&
+              existing.every(function(u){ return u && u.email && u.password && u.role; });
+  if(!valid){
+    // Dados corrompidos ou ausentes — restaurar padrão preservando usuários extras válidos
+    var extras = [];
+    if(Array.isArray(existing)){
+      extras = existing.filter(function(u){
+        return u && u.email && u.password && u.role &&
+               !DEFAULT_USERS.find(function(d){ return d.id===u.id; });
+      });
+    }
+    save(KEYS.users, DEFAULT_USERS.concat(extras));
+  }
   return load(KEYS.users, DEFAULT_USERS);
 }
 
@@ -284,33 +298,31 @@ function Login({ onLogin }) {
   const [fMsg,     setFMsg]     = useState('');
 
   function findUser(emailInput) {
-    const users = load(KEYS.users, DEFAULT_USERS);
-    const q = (emailInput||'').trim().toLowerCase();
+    // Sempre carregar DEFAULT_USERS como fallback garantido
+    var stored = load(KEYS.users, null);
+    var users  = (stored && stored.length) ? stored : DEFAULT_USERS;
+    var q = (emailInput||'').trim().toLowerCase();
     if(!q) return null;
-    // 1. Match exato de email
-    var u = users.find(function(u){ return u.email.toLowerCase()===q; });
-    if(u) return u;
-    // 2. Parte antes do @ (ex: "elieser.fernandes" encontra "ef@sinuelo.com.br" pelo nome)
-    var local = q.split('@')[0];
-    // 3. Busca pelo nome (parte do nome bate com o email digitado)
-    u = users.find(function(u){
-      var uLocal = u.email.split('@')[0].toLowerCase();
-      var uName  = u.name.toLowerCase();
-      return uLocal.includes(local)||local.includes(uLocal)||
-             uName.includes(local)||local.includes(uName.split(' ')[0]);
-    });
-    return u||null;
+    // Match exato (único modo confiável para login)
+    return users.find(function(u){ return (u.email||'').toLowerCase()===q; }) || null;
   }
 
   function handleLogin() {
-    const users = load(KEYS.users, DEFAULT_USERS);
-    const user  = findUser(email);
-    if(!user){ setErr('E-mail não encontrado. Verifique o e-mail cadastrado ou use "Esqueci minha senha".'); return; }
-    if(user.password!==pass){ setErr('Senha incorreta. Clique em "Esqueci minha senha" para recuperar.'); return; }
-    if(user.pending)   { setErr('Conta aguardando ativação pelo gestor.'); return; }
-    if(!user.active)   { setErr('Conta desativada. Contate o gestor.'); return; }
-    save(KEYS.session, user);
-    onLogin(user);
+    var stored = load(KEYS.users, null);
+    var users  = (stored && stored.length) ? stored : DEFAULT_USERS;
+    var q      = (email||'').trim().toLowerCase();
+    var user   = users.find(function(u){ return (u.email||'').toLowerCase()===q; });
+    if(!user){
+      // Fallback: tentar nos DEFAULT_USERS caso localStorage esteja corrompido
+      user = DEFAULT_USERS.find(function(u){ return u.email.toLowerCase()===q; });
+    }
+    if(!user){ setErr('E-mail não encontrado: "'+q+'"\nE-mails válidos: adm@sinuelo.com.br, ef@sinuelo.com.br'); return; }
+    if((user.password||'')!==pass){ setErr('Senha incorreta para '+user.name+'. Tente novamente.'); return; }
+    if(user.pending){ setErr('Conta aguardando ativação pelo gestor.'); return; }
+    if(!user.active){ setErr('Conta desativada. Contate o gestor.'); return; }
+    var sessionData = {id:user.id,name:user.name,code:user.code,email:user.email,role:user.role};
+    save(KEYS.session, sessionData);
+    onLogin(sessionData);
   }
 
   function handleForgot() {
