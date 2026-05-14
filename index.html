@@ -232,13 +232,33 @@ function supaLoad(key, cb) {
   if(!map || _supaLoaded[key]) { cb(); return; }
   _supaLoaded[key] = true;
   supaGet(map.table, map.id, function(err, remoteData) {
-    if(err || remoteData === null) { cb(); return; }
-    // Só sobrescrever localStorage se Supabase tiver dados
-    if(Array.isArray(remoteData) && remoteData.length > 0) {
+    if(err) { cb(); return; }
+    // Só sincronizar se o Supabase tiver dados reais (não vazio)
+    var hasRemote = false;
+    if(Array.isArray(remoteData) && remoteData.length > 0) hasRemote = true;
+    if(remoteData && typeof remoteData === 'object' && !Array.isArray(remoteData) && Object.keys(remoteData).length > 0) hasRemote = true;
+
+    var localRaw = localStorage.getItem(key);
+    var hasLocal = false;
+    if(localRaw) {
+      try {
+        var localData = JSON.parse(localRaw);
+        if(Array.isArray(localData) && localData.length > 0) hasLocal = true;
+        if(localData && typeof localData === 'object' && !Array.isArray(localData) && Object.keys(localData).length > 0) hasLocal = true;
+      } catch(e) {}
+    }
+
+    if(hasRemote && !hasLocal) {
+      // Supabase tem dados, local está vazio → usar Supabase
       try { localStorage.setItem(key, JSON.stringify(remoteData)); } catch(e) {}
-    } else if(remoteData && typeof remoteData === 'object' && Object.keys(remoteData).length > 0) {
+    } else if(hasLocal && !hasRemote) {
+      // Local tem dados, Supabase está vazio → salvar no Supabase
+      try { supaSet(map.table, map.id, JSON.parse(localRaw)); } catch(e) {}
+    } else if(hasRemote && hasLocal) {
+      // Ambos têm dados → Supabase é fonte de verdade (mais recente)
       try { localStorage.setItem(key, JSON.stringify(remoteData)); } catch(e) {}
     }
+    // Se nenhum tem dados → não fazer nada
     cb();
   });
 }
@@ -6391,6 +6411,380 @@ function ViewCronograma({ session, isGestor, isConsultor }) {
   );
 }
 
+// ─── VIEW: COTAÇÕES SAP ──────────────────────────────────────
+function ViewCotacoes({ session, isGestor, filtroVendedor }) {
+  var KEYS_COT = 'crm_cotacoes_v1';
+  var [cots,   setCots]   = useState(function(){ return load(KEYS_COT, []); });
+  var [modal,  setModal]  = useState(false);
+  var [form,   setForm]   = useState(null);
+  var [search, setSearch] = useState('');
+  var [filter, setFilter] = useState('todos'); // todos|aberto|respondido|ganho|perdido|vencido
+
+  var clients = load(KEYS.clients, []);
+  var fcOpps  = load(KEYS.forecast, []);
+
+  function saveCots(list){ setCots(list); save(KEYS_COT, list); }
+
+  // Plataformas de e-procurement
+  var PLATAFORMAS = ['Mercado Eletrônico','Ariba SAP','SAP SRM','Ivalua','BEC','BNDES','Licitação.e','Oracle','Direct','E-mail direto','Outro'];
+
+  var STATUS = [
+    {id:'aberto',     label:'📬 Aberto',      color:'#2563EB'},
+    {id:'em_analise', label:'🔍 Em análise',  color:'#7C3AED'},
+    {id:'respondido', label:'📤 Respondido',  color:'#CA8A04'},
+    {id:'ganho',      label:'🏆 Ganho',       color:'#16A34A'},
+    {id:'perdido',    label:'❌ Perdido',      color:'#DC2626'},
+    {id:'cancelado',  label:'🚫 Cancelado',   color:'#64748B'},
+  ];
+
+  var EMPTY = {
+    id:'', plataforma:'Mercado Eletrônico', serial:'', titulo:'',
+    cliente:'', _cliId:'', comprador:'', emailComprador:'',
+    cnpjCliente:'', enderecoEntrega:'', localFaturamento:'',
+    prazoResposta:'', condicaoPag:'30 DDL', frete:'CIF',
+    resp:session.code||'', status:'aberto', oppId:'',
+    obs:'', obsCliente:'',
+    itens:[{item:1, descricao:'', fabricante:'', qtd:1, unidade:'PC', aplicacao:'', codigo:'', precoUnit:0, ipi:0, prazoEntrega:'', obs:''}],
+    // Resposta enviada
+    valorTotal:0, dataResposta:'', proposta:'', observacaoResposta:'',
+    // Resultado
+    motivoPerda:'', concorrente:'', valorConcorrente:0,
+  };
+
+  function openNew(){
+    setForm(Object.assign({},EMPTY,{id:'cot_'+Date.now()}));
+    setModal(true);
+  }
+  function openEdit(c){ setForm(Object.assign({},c)); setModal(true); }
+  function saveCot(){
+    if(!form.titulo.trim()){ alert('Informe o título da cotação.'); return; }
+    var t = totaisCot(form.itens||[]);
+    var f = Object.assign({},form,{valorTotal:t});
+    var exists = cots.find(function(c){return c.id===f.id;});
+    saveCots(exists ? cots.map(function(c){return c.id===f.id?f:c;}) : [f,...cots]);
+    setModal(false);
+  }
+  function deleteCot(id){ if(confirm('Excluir?')) saveCots(cots.filter(function(c){return c.id!==id;})); }
+
+  function totaisCot(itens){
+    return (itens||[]).reduce(function(s,it){
+      return s+(parseFloat(it.precoUnit)||0)*(parseFloat(it.qtd)||1);
+    },0);
+  }
+
+  // Verificar vencimento
+  function isVencido(c){
+    if(!c.prazoResposta) return false;
+    if(c.status==='respondido'||c.status==='ganho'||c.status==='perdido'||c.status==='cancelado') return false;
+    return c.prazoResposta < new Date().toISOString().slice(0,10);
+  }
+  function diasRestantes(c){
+    if(!c.prazoResposta) return null;
+    return Math.round((new Date(c.prazoResposta)-new Date())/86400000);
+  }
+
+  // Filtros
+  var hoje = new Date().toISOString().slice(0,10);
+  var filtered = cots.filter(function(c){
+    if(filtroVendedor&&filtroVendedor!=='todos'&&(c.resp||'').toUpperCase()!==filtroVendedor.toUpperCase()) return false;
+    if(filter==='vencido') return isVencido(c);
+    if(filter!=='todos' && c.status!==filter) return false;
+    if(!search.trim()) return true;
+    var q=search.toLowerCase();
+    return (c.titulo&&c.titulo.toLowerCase().includes(q))
+      ||(c.serial&&c.serial.toLowerCase().includes(q))
+      ||(c.cliente&&c.cliente.toLowerCase().includes(q))
+      ||(c.plataforma&&c.plataforma.toLowerCase().includes(q));
+  });
+
+  // Métricas
+  var abertos    = cots.filter(function(c){return c.status==='aberto'||c.status==='em_analise';}).length;
+  var vencendo   = cots.filter(function(c){ var d=diasRestantes(c); return d!==null&&d>=0&&d<=3&&(c.status==='aberto'||c.status==='em_analise'); }).length;
+  var ganhos     = cots.filter(function(c){return c.status==='ganho';});
+  var vlrGanho   = ganhos.reduce(function(s,c){return s+(c.valorTotal||0);},0);
+  var totalResp  = cots.filter(function(c){return c.status==='respondido'||c.status==='ganho'||c.status==='perdido';}).length;
+  var txGanho    = totalResp>0?Math.round(ganhos.length/totalResp*100):0;
+
+  // Autocomplete cliente
+  var [cliQ, setCliQ] = useState('');
+  var [showCliDrop, setShowCliDrop] = useState(false);
+  var cliFiltered = form&&cliQ.length>=1 ? clients.filter(function(c){
+    var q=cliQ.toLowerCase();
+    return (c.apelido&&c.apelido.toLowerCase().includes(q))||(c.nome&&c.nome.toLowerCase().includes(q));
+  }).slice(0,6) : [];
+
+  var inp = {width:'100%'};
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:12,height:'100%'}}>
+
+      {/* Métricas */}
+      <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+        {[
+          {l:'Em aberto',   v:abertos,             c:'#2563EB', f:'aberto'},
+          {l:'⚠️ Vencendo', v:vencendo,            c:'#DC2626', f:'vencido'},
+          {l:'Respondidas', v:cots.filter(function(c){return c.status==='respondido';}).length, c:'#CA8A04', f:'respondido'},
+          {l:'Ganhas',      v:ganhos.length,        c:'#16A34A', f:'ganho'},
+          {l:'Taxa ganho',  v:txGanho+'%',          c:txGanho>=50?'#16A34A':'#CA8A04', f:'ganho'},
+          {l:'R$ ganho',    v:fmtAmt(vlrGanho),     c:'#4ADE80', f:'ganho'},
+        ].map(function(m){
+          return <div key={m.l} onClick={function(){setFilter(m.f);}} className="metric"
+            style={{cursor:'pointer',borderBottom:'2px solid '+(filter===m.f?m.c:'transparent'),flex:1,minWidth:80}}>
+            <div className="metric-val" style={{color:m.c,fontSize:18}}>{m.v}</div>
+            <div className="metric-lbl">{m.l}</div>
+          </div>;
+        })}
+        <div style={{flex:2}}/>
+        <input value={search} onChange={function(e){setSearch(e.target.value);}} placeholder="🔍 Serial, cliente, título..." style={{width:220}}/>
+        <button className="btn btn-primary" onClick={openNew}>+ Nova cotação</button>
+      </div>
+
+      {/* Filtros de status */}
+      <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+        {[{id:'todos',label:'Todos'},...STATUS,{id:'vencido',label:'⏰ Vencidas',color:'#DC2626'}].map(function(s){
+          var sel=filter===s.id;
+          return <button key={s.id} onClick={function(){setFilter(s.id);}}
+            style={{padding:'4px 12px',borderRadius:16,border:'1px solid '+(sel?(s.color||'var(--blue)'):'var(--border)'),
+              background:sel?(s.color||'var(--blue)')+'20':'transparent',
+              color:sel?(s.color||'#60A5FA'):'var(--text3)',cursor:'pointer',fontSize:10,fontWeight:sel?700:400}}>
+            {s.label||s.id} {filter!==s.id&&s.id!=='todos'&&s.id!=='vencido'?'('+cots.filter(function(c){return c.status===s.id;}).length+')':''}
+          </button>;
+        })}
+      </div>
+
+      {/* Lista */}
+      <div style={{flex:1,overflowY:'auto',display:'flex',flexDirection:'column',gap:6}}>
+        {filtered.length===0 ? (
+          <div className="card" style={{textAlign:'center',padding:'40px',color:'var(--text3)'}}>
+            <div style={{fontSize:36,marginBottom:10}}>📋</div>
+            <div style={{fontWeight:600,marginBottom:4}}>Nenhuma cotação encontrada</div>
+            <button className="btn btn-primary" style={{marginTop:12}} onClick={openNew}>+ Cadastrar cotação</button>
+          </div>
+        ) : filtered.map(function(c){
+          var st   = STATUS.find(function(s){return s.id===c.status;})||STATUS[0];
+          var dias = diasRestantes(c);
+          var venc = isVencido(c);
+          var urgente = dias!==null&&dias>=0&&dias<=3&&!venc;
+          var total= c.valorTotal||totaisCot(c.itens||[]);
+          return (
+            <div key={c.id} className="card" style={{borderLeft:'3px solid '+(venc?'#DC2626':urgente?'#CA8A04':st.color)}}>
+              <div style={{display:'flex',gap:10,alignItems:'flex-start',flexWrap:'wrap'}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:'flex',gap:8,alignItems:'baseline',flexWrap:'wrap',marginBottom:3}}>
+                    {c.serial&&<span style={{fontSize:10,fontFamily:'monospace',color:'#60A5FA',fontWeight:700}}>#{c.serial}</span>}
+                    <span style={{fontWeight:700,fontSize:13}}>{c.titulo}</span>
+                    <span style={{fontSize:10,padding:'1px 8px',borderRadius:10,background:st.color+'18',color:st.color,fontWeight:600}}>{st.label}</span>
+                    <span style={{fontSize:10,padding:'1px 7px',borderRadius:5,background:'var(--bg3)',color:'var(--text3)'}}>{c.plataforma}</span>
+                    {venc&&<span style={{fontSize:10,padding:'1px 7px',borderRadius:5,background:'rgba(220,38,38,.15)',color:'#FCA5A5',fontWeight:700}}>VENCIDA</span>}
+                    {urgente&&<span style={{fontSize:10,padding:'1px 7px',borderRadius:5,background:'rgba(202,138,4,.15)',color:'#FBBF24',fontWeight:700}}>⏰ {dias}d restante{dias!==1?'s':''}</span>}
+                  </div>
+                  <div style={{fontSize:11,color:'var(--text3)',display:'flex',gap:12,flexWrap:'wrap'}}>
+                    {c.cliente&&<span>🏢 {c.cliente}</span>}
+                    {c.comprador&&<span>👤 {c.comprador}</span>}
+                    {c.prazoResposta&&<span>📅 Prazo: {c.prazoResposta.split('-').reverse().join('/')}</span>}
+                    {c.resp&&<span>👤 Resp: {c.resp}</span>}
+                    {(c.itens||[]).length>0&&<span>📦 {(c.itens||[]).length} item(s)</span>}
+                  </div>
+                  {c.obs&&<div style={{fontSize:10,color:'var(--text3)',marginTop:3,fontStyle:'italic'}}>{c.obs.slice(0,120)}</div>}
+                </div>
+                <div style={{textAlign:'right',flexShrink:0}}>
+                  {total>0&&<div style={{fontSize:14,fontWeight:700,color:'#4ADE80',marginBottom:2}}>{fmtAmt(total)}</div>}
+                  <div style={{display:'flex',gap:4,justifyContent:'flex-end'}}>
+                    <button onClick={function(){openEdit(c);}} className="btn btn-secondary" style={{padding:'4px 8px',fontSize:11}}>✏️</button>
+                    <button onClick={function(){deleteCot(c.id);}} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text3)',fontSize:13,opacity:.4}} onMouseEnter={function(ev){ev.target.style.opacity=1;}} onMouseLeave={function(ev){ev.target.style.opacity=.4;}}>✕</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* MODAL */}
+      {modal && form && (
+        <div className="modal-bg">
+          <div className="modal" style={{maxWidth:800}}>
+            <div className="modal-hd">
+              <h2>📋 {form.id&&cots.find(function(c){return c.id===form.id;})?'Editar':'Nova'} Cotação</h2>
+              <button className="modal-close" onClick={function(){setModal(false);}}>✕</button>
+            </div>
+
+            {/* Status */}
+            <div style={{display:'flex',gap:5,flexWrap:'wrap',marginBottom:12}}>
+              {STATUS.map(function(s){
+                var sel=form.status===s.id;
+                return <button key={s.id} onClick={function(){setForm(Object.assign({},form,{status:s.id}));}}
+                  style={{padding:'4px 12px',borderRadius:16,border:'1px solid '+(sel?s.color:'var(--border)'),background:sel?s.color+'20':'transparent',color:sel?s.color:'var(--text3)',cursor:'pointer',fontSize:10,fontWeight:sel?700:400}}>
+                  {s.label}
+                </button>;
+              })}
+            </div>
+
+            {/* Dados da cotação */}
+            <div style={{fontSize:10,fontWeight:700,color:'var(--accent)',marginBottom:6,textTransform:'uppercase',letterSpacing:'.06em'}}>Identificação</div>
+            <div className="grid-4" style={{marginBottom:10}}>
+              <div className="field">
+                <label>Plataforma</label>
+                <select value={form.plataforma||''} onChange={function(e){setForm(Object.assign({},form,{plataforma:e.target.value}));}} style={inp}>
+                  {PLATAFORMAS.map(function(p){return <option key={p} value={p}>{p}</option>;})}
+                </select>
+              </div>
+              <div className="field"><label>Nº Serial / RFQ</label><input value={form.serial||''} onChange={function(e){setForm(Object.assign({},form,{serial:e.target.value}));}} style={inp} placeholder="22299371"/></div>
+              <div className="field"><label>Prazo de resposta *</label><input type="date" value={form.prazoResposta||''} onChange={function(e){setForm(Object.assign({},form,{prazoResposta:e.target.value}));}} style={inp}/></div>
+              <div className="field"><label>Responsável</label><input value={form.resp||''} onChange={function(e){setForm(Object.assign({},form,{resp:e.target.value}));}} style={inp} placeholder="EF"/></div>
+            </div>
+
+            <div className="field" style={{marginBottom:10}}>
+              <label>Título / Objeto *</label>
+              <input value={form.titulo||''} onChange={function(e){setForm(Object.assign({},form,{titulo:e.target.value}));}} style={inp} placeholder="Ex: RFQ - LIXADEIRA PNEUMATICA AT 7112CT" autoFocus/>
+            </div>
+
+            {/* Cliente */}
+            <div style={{fontSize:10,fontWeight:700,color:'var(--accent)',marginBottom:6,textTransform:'uppercase',letterSpacing:'.06em'}}>Cliente / Comprador</div>
+            <div className="grid-2" style={{marginBottom:10}}>
+              <div className="field" style={{position:'relative'}}>
+                <label>Empresa</label>
+                {form._cliId ? (
+                  <div style={{display:'flex',alignItems:'center',gap:8,background:'rgba(37,99,235,.1)',border:'1px solid rgba(37,99,235,.3)',borderRadius:8,padding:'6px 10px'}}>
+                    <span style={{flex:1,fontWeight:600,fontSize:12}}>{form.cliente}</span>
+                    <button onClick={function(){setForm(Object.assign({},form,{_cliId:'',cliente:'',cnpjCliente:'',enderecoEntrega:''}));setCliQ('');}}
+                      style={{background:'none',border:'none',color:'var(--text3)',cursor:'pointer',fontSize:14}}>✕</button>
+                  </div>
+                ) : (
+                  <div>
+                    <input value={cliQ} onChange={function(e){setCliQ(e.target.value);setShowCliDrop(true);}}
+                      onFocus={function(){setShowCliDrop(true);}}
+                      placeholder="Buscar empresa cadastrada..." style={inp}/>
+                    {showCliDrop&&cliFiltered.length>0&&(
+                      <div style={{position:'absolute',top:'100%',left:0,right:0,zIndex:50,background:'var(--bg3)',border:'1px solid var(--blue)',borderRadius:'0 0 8px 8px',maxHeight:180,overflowY:'auto',boxShadow:'0 8px 20px rgba(0,0,0,.5)'}}>
+                        {cliFiltered.map(function(c){
+                          return <div key={c.id} onMouseDown={function(){
+                            var addr = (c.endereco||'')+(c.cidade?' — '+c.cidade:'')+(c.cep?' CEP '+c.cep:'');
+                            setForm(Object.assign({},form,{_cliId:c.id,cliente:c.apelido,cnpjCliente:c.cnpj||'',enderecoEntrega:addr}));
+                            setCliQ(''); setShowCliDrop(false);
+                          }} style={{padding:'7px 12px',cursor:'pointer',borderBottom:'1px solid var(--border2)'}}
+                          onMouseEnter={function(ev){ev.currentTarget.style.background='rgba(37,99,235,.15)';}}
+                          onMouseLeave={function(ev){ev.currentTarget.style.background='transparent';}}>
+                            <div style={{fontWeight:600,fontSize:12}}>{c.apelido}</div>
+                            <div style={{fontSize:10,color:'var(--text3)'}}>{c.cnpj}</div>
+                          </div>;
+                        })}
+                      </div>
+                    )}
+                    {showCliDrop&&cliQ&&cliFiltered.length===0&&(
+                      <div style={{position:'absolute',top:'100%',left:0,right:0,zIndex:50,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:'0 0 8px 8px',padding:'8px 12px',fontSize:11,color:'var(--text3)'}}>
+                        Não encontrado — <button onClick={function(){setForm(Object.assign({},form,{cliente:cliQ}));setShowCliDrop(false);}} style={{background:'none',border:'none',color:'#60A5FA',cursor:'pointer',fontSize:11,padding:0}}>usar "{cliQ}"</button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="field"><label>CNPJ do cliente</label><input value={form.cnpjCliente||''} onChange={function(e){setForm(Object.assign({},form,{cnpjCliente:e.target.value}));}} style={inp} placeholder="42.611.727/0001-55"/></div>
+            </div>
+            <div className="grid-3" style={{marginBottom:10}}>
+              <div className="field"><label>Comprador</label><input value={form.comprador||''} onChange={function(e){setForm(Object.assign({},form,{comprador:e.target.value}));}} style={inp} placeholder="Diego Correa"/></div>
+              <div className="field"><label>E-mail comprador</label><input value={form.emailComprador||''} onChange={function(e){setForm(Object.assign({},form,{emailComprador:e.target.value}));}} style={inp}/></div>
+              <div className="field"><label>Condição pagamento</label><input value={form.condicaoPag||''} onChange={function(e){setForm(Object.assign({},form,{condicaoPag:e.target.value}));}} style={inp} placeholder="30 DDL"/></div>
+            </div>
+            <div className="grid-2" style={{marginBottom:10}}>
+              <div className="field"><label>Local de entrega</label><input value={form.enderecoEntrega||''} onChange={function(e){setForm(Object.assign({},form,{enderecoEntrega:e.target.value}));}} style={inp} placeholder="ROD LUIZ OMETTO, KM 44 — IRACEMÁPOLIS"/></div>
+              <div className="field"><label>Local de faturamento / CNPJ</label><input value={form.localFaturamento||''} onChange={function(e){setForm(Object.assign({},form,{localFaturamento:e.target.value}));}} style={inp}/></div>
+            </div>
+
+            {/* Obs do cliente */}
+            <div className="field" style={{marginBottom:12}}>
+              <label>Observações / Requisitos do cliente</label>
+              <textarea value={form.obsCliente||''} onChange={function(e){setForm(Object.assign({},form,{obsCliente:e.target.value}));}} style={{width:'100%',height:56,resize:'vertical',fontSize:11}} placeholder="Cole aqui as condições especiais, requisitos de plataforma, etc."/>
+            </div>
+
+            {/* Itens */}
+            <div style={{fontSize:10,fontWeight:700,color:'var(--accent)',marginBottom:6,textTransform:'uppercase',letterSpacing:'.06em'}}>Itens da cotação</div>
+            <div style={{overflowX:'auto',marginBottom:8}}>
+              <table className="tbl" style={{minWidth:700,fontSize:11}}>
+                <thead><tr>
+                  <th style={{width:30}}>IT</th>
+                  <th>DESCRIÇÃO / CÓDIGO CLIENTE</th>
+                  <th style={{width:90}}>FABRICANTE</th>
+                  <th style={{width:50}}>QTD</th>
+                  <th style={{width:50}}>UN</th>
+                  <th style={{width:85}}>PREÇO UNIT</th>
+                  <th style={{width:85}}>PRAZO ENT.</th>
+                  <th style={{width:24}}></th>
+                </tr></thead>
+                <tbody>
+                  {(form.itens||[]).map(function(it,i){
+                    function upd(f,v){var ni=[...form.itens];ni[i]=Object.assign({},it,{[f]:v});setForm(Object.assign({},form,{itens:ni}));}
+                    return (
+                      <tr key={i}>
+                        <td style={{textAlign:'center',color:'var(--text3)'}}>{i+1}</td>
+                        <td>
+                          <input value={it.descricao||''} onChange={function(e){upd('descricao',e.target.value);}} style={{width:'100%',padding:'2px 5px',fontSize:10}} placeholder="Descrição + código do cliente"/>
+                        </td>
+                        <td><input value={it.fabricante||''} onChange={function(e){upd('fabricante',e.target.value);}} style={{width:'100%',padding:'2px 5px',fontSize:10}} placeholder="PUMA"/></td>
+                        <td><input type="number" value={it.qtd||1} onChange={function(e){upd('qtd',e.target.value);}} style={{width:'100%',padding:'2px 5px',fontSize:10}}/></td>
+                        <td><input value={it.unidade||'PC'} onChange={function(e){upd('unidade',e.target.value);}} style={{width:'100%',padding:'2px 5px',fontSize:10}}/></td>
+                        <td><input type="number" value={it.precoUnit||''} onChange={function(e){upd('precoUnit',e.target.value);}} style={{width:'100%',padding:'2px 5px',fontSize:10}} placeholder="0,00"/></td>
+                        <td><input value={it.prazoEntrega||''} onChange={function(e){upd('prazoEntrega',e.target.value);}} style={{width:'100%',padding:'2px 5px',fontSize:10}} placeholder="30 dias"/></td>
+                        <td><button onClick={function(){setForm(Object.assign({},form,{itens:form.itens.filter(function(_,xi){return xi!==i;})}));}} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text3)',fontSize:12}}>✕</button></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+              <button onClick={function(){setForm(Object.assign({},form,{itens:[...(form.itens||[]),{item:(form.itens||[]).length+1,descricao:'',fabricante:'',qtd:1,unidade:'PC',aplicacao:'',codigo:'',precoUnit:0,ipi:0,prazoEntrega:'',obs:''}]}));}}
+                className="btn btn-secondary" style={{fontSize:11}}>+ Item</button>
+              <div style={{fontSize:12,fontWeight:700,color:'#4ADE80'}}>
+                Total: {fmtAmt(totaisCot(form.itens||[]))}
+              </div>
+            </div>
+
+            {/* Vincular ao Forecast */}
+            <div className="grid-2" style={{marginBottom:10}}>
+              <div className="field">
+                <label>Vincular ao Forecast (opcional)</label>
+                <select value={form.oppId||''} onChange={function(e){setForm(Object.assign({},form,{oppId:e.target.value}));}} style={inp}>
+                  <option value="">— Nenhuma —</option>
+                  {fcOpps.filter(function(o){return !form.cliente||o.customer===form.cliente;}).map(function(o){
+                    return <option key={o.id} value={o.id}>{o.customer} · {(o.description||'').slice(0,40)}</option>;
+                  })}
+                </select>
+              </div>
+              <div className="field"><label>Observações internas</label>
+                <input value={form.obs||''} onChange={function(e){setForm(Object.assign({},form,{obs:e.target.value}));}} style={inp} placeholder="Notas internas, estratégia..."/>
+              </div>
+            </div>
+
+            {/* Resposta enviada */}
+            {(form.status==='respondido'||form.status==='ganho'||form.status==='perdido') && (
+              <div>
+                <div style={{fontSize:10,fontWeight:700,color:'var(--accent)',marginBottom:6,textTransform:'uppercase',letterSpacing:'.06em'}}>Resposta enviada</div>
+                <div className="grid-2" style={{marginBottom:10}}>
+                  <div className="field"><label>Data resposta</label><input type="date" value={form.dataResposta||''} onChange={function(e){setForm(Object.assign({},form,{dataResposta:e.target.value}));}} style={inp}/></div>
+                  <div className="field"><label>Nº Proposta enviada</label><input value={form.proposta||''} onChange={function(e){setForm(Object.assign({},form,{proposta:e.target.value}));}} style={inp}/></div>
+                </div>
+              </div>
+            )}
+            {form.status==='perdido' && (
+              <div className="grid-3" style={{marginBottom:10}}>
+                <div className="field"><label>Motivo da perda</label><input value={form.motivoPerda||''} onChange={function(e){setForm(Object.assign({},form,{motivoPerda:e.target.value}));}} style={inp} placeholder="Preço / prazo / técnico..."/></div>
+                <div className="field"><label>Concorrente</label><input value={form.concorrente||''} onChange={function(e){setForm(Object.assign({},form,{concorrente:e.target.value}));}} style={inp}/></div>
+                <div className="field"><label>Valor concorrente</label><input type="number" value={form.valorConcorrente||''} onChange={function(e){setForm(Object.assign({},form,{valorConcorrente:e.target.value}));}} style={inp}/></div>
+              </div>
+            )}
+
+            <div style={{display:'flex',gap:8}}>
+              <button className="btn btn-primary" onClick={saveCot} style={{flex:1}}>💾 Salvar</button>
+              <button className="btn btn-secondary" onClick={function(){setModal(false);}}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── APP PRINCIPAL ────────────────────────────────────────────
 function App() {
   const [session, setSession] = useState(function(){ return load(KEYS.session, null); });
@@ -6476,6 +6870,7 @@ function App() {
     {id:'budget',      icon:'💰', label:'Budget'},
     {id:'divider1',    divider:true},
     {id:'orcamento',   icon:'📝', label:'Orçamento'},
+    {id:'cotacoes',    icon:'📋', label:'Cotações'},
     {id:'posvenda',    icon:'📦', label:'Pós-Venda'},
     {id:'relatorio',   icon:'📋', label:'Relatórios'},
     {id:'cronograma',  icon:'📅', label:'Cronograma'},
@@ -6500,6 +6895,7 @@ function App() {
     if (view==='clientes')  return <ViewClientes  session={session}/>;
     if (view==='budget')    return <ViewBudget    session={session} isGestor={isGestor}/>;
     if (view==='orcamento') return <ViewOrcamento session={session} isGestor={isGestor} filtroVendedor={fv}/>;
+    if (view==='cotacoes')  return <ViewCotacoes  session={session} isGestor={isGestor} filtroVendedor={fv}/>;
     if (view==='posvenda')  return <ViewPosVenda  session={session} isGestor={isGestor} filtroVendedor={fv}/>;
     if (view==='relatorio') return <ViewRelatorio session={session} isGestor={isGestor} isConsultor={isConsultor} filtroVendedor={fv}/>;
     if (view==='cronograma')return <ViewCronograma session={session} isGestor={isGestor} isConsultor={isConsultor}/>;
