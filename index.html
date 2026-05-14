@@ -200,7 +200,7 @@ window.SUPA_MAP = window.SUPA_MAP || {}; var SUPA_MAP = window.SUPA_MAP = {
   'crm_posvenda_v1':  {table:'posvenda',  id:'main'},
   'crm_cronograma_v1':{table:'cronograma',id:'main'},
   'crm_settings_v1':  {table:'settings',  id:'main'},
-  'crm_users_v1':     {table:'settings',   id:'users'},
+  'crm_users_v1':     {table:'settings',  id:'users'},
 };
 
 // Expor funções no window para acesso pelo console
@@ -208,73 +208,77 @@ window.forgeSupaSet = supaSet;
 window.forgeSupaGet = supaGet;
 window.forgeSave = function(key, val){ save(key, val); };
 
-// Flag para indicar que Supabase já foi sincronizado nesta sessão
-var _supaLoaded = {};
+// Debounce de writes para o Supabase
 var _supaPending = {};
 
-// ─── OVERRIDE DAS FUNÇÕES load/save ──────────────────────────
-// save: salva no localStorage E dispara sync para Supabase
+// ─── SAVE: localStorage + backup assíncrono para Supabase ─────
+// localStorage é sempre fonte de verdade — nunca fica vazio por causa do Supabase
 function save(key, val) {
   try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) {}
-  // Sync assíncrono para Supabase
   var map = SUPA_MAP[key];
   if(map) {
     clearTimeout(_supaPending[key]);
     _supaPending[key] = setTimeout(function() {
       supaSet(map.table, map.id, val);
-    }, 500); // debounce 500ms
+    }, 800);
   }
 }
 
-// Carregar dados do Supabase na inicialização (uma vez por chave)
-function supaLoad(key, cb) {
-  var map = SUPA_MAP[key];
-  if(!map || _supaLoaded[key]) { cb(); return; }
-  _supaLoaded[key] = true;
-  supaGet(map.table, map.id, function(err, remoteData) {
-    if(err) { cb(); return; }
-    // Só sincronizar se o Supabase tiver dados reais (não vazio)
-    var hasRemote = false;
-    if(Array.isArray(remoteData) && remoteData.length > 0) hasRemote = true;
-    if(remoteData && typeof remoteData === 'object' && !Array.isArray(remoteData) && Object.keys(remoteData).length > 0) hasRemote = true;
-
-    var localRaw = localStorage.getItem(key);
-    var hasLocal = false;
-    if(localRaw) {
-      try {
-        var localData = JSON.parse(localRaw);
-        if(Array.isArray(localData) && localData.length > 0) hasLocal = true;
-        if(localData && typeof localData === 'object' && !Array.isArray(localData) && Object.keys(localData).length > 0) hasLocal = true;
-      } catch(e) {}
-    }
-
-    if(hasRemote && !hasLocal) {
-      // Supabase tem dados, local está vazio → usar Supabase
-      try { localStorage.setItem(key, JSON.stringify(remoteData)); } catch(e) {}
-    } else if(hasLocal && !hasRemote) {
-      // Local tem dados, Supabase está vazio → salvar no Supabase
-      try { supaSet(map.table, map.id, JSON.parse(localRaw)); } catch(e) {}
-    } else if(hasRemote && hasLocal) {
-      // Ambos têm dados → Supabase é fonte de verdade (mais recente)
-      try { localStorage.setItem(key, JSON.stringify(remoteData)); } catch(e) {}
-    }
-    // Se nenhum tem dados → não fazer nada
-    cb();
-  });
-}
-
-// Sincronizar TODAS as chaves do Supabase ao iniciar o app
+// ─── SYNC: ao iniciar, restaurar do Supabase APENAS se localStorage vazio ─
 function syncFromSupabase(onDone) {
   var keys = Object.keys(SUPA_MAP);
-  var pending = keys.length;
-  if(pending === 0) { onDone(); return; }
-  keys.forEach(function(key) {
-    supaLoad(key, function() {
+  // Verificar quais chaves estão vazias no localStorage
+  var emptyKeys = keys.filter(function(key) {
+    var raw = localStorage.getItem(key);
+    if(!raw) return true;
+    try {
+      var v = JSON.parse(raw);
+      if(Array.isArray(v) && v.length === 0) return true;
+      if(v === null || v === undefined) return true;
+    } catch(e) { return true; }
+    return false;
+  });
+
+  if(emptyKeys.length === 0) {
+    // localStorage tem todos os dados — não precisa buscar Supabase
+    onDone();
+    return;
+  }
+
+  // Buscar do Supabase apenas as chaves vazias
+  var pending = emptyKeys.length;
+  emptyKeys.forEach(function(key) {
+    var map = SUPA_MAP[key];
+    supaGet(map.table, map.id, function(err, remoteData) {
+      if(!err && remoteData) {
+        var hasData = (Array.isArray(remoteData) && remoteData.length > 0)
+          || (remoteData && typeof remoteData === 'object' && !Array.isArray(remoteData) && Object.keys(remoteData).length > 0);
+        if(hasData) {
+          try { localStorage.setItem(key, JSON.stringify(remoteData)); } catch(e) {}
+        }
+      }
       pending--;
       if(pending === 0) onDone();
     });
   });
 }
+
+// Função para forçar upload de tudo para o Supabase (usar no console quando necessário)
+window.forgeBackupAll = function() {
+  Object.keys(SUPA_MAP).forEach(function(key) {
+    var raw = localStorage.getItem(key);
+    if(raw) {
+      try {
+        var val = JSON.parse(raw);
+        var map = SUPA_MAP[key];
+        supaSet(map.table, map.id, val, function(err) {
+          console.log(err ? '❌ ' + key + ': ' + err : '✅ ' + key);
+        });
+      } catch(e) {}
+    }
+  });
+  console.log('Backup iniciado para ' + Object.keys(SUPA_MAP).length + ' chaves...');
+};
 
 const {useState, useEffect, useRef, useCallback} = React;
 
