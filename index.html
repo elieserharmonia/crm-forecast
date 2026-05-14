@@ -162,33 +162,44 @@ select option{background:var(--bg3);}
 // ─── SUPABASE CONFIG ──────────────────────────────────────────
 var SUPA_URL = 'https://ryknbndxflbdfnobsapn.supabase.co';
 var SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ5a25ibmR4ZmxiZGZub2JzYXBuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3MzQ0NzMsImV4cCI6MjA5NDMxMDQ3M30._ivdNyv5pYx8X_W32WTzb9JmtVp9ylksKhC5gVsczWY';
-var SUPA_HDR = {'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=representation'};
+var SUPA_HDR = {'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Content-Type':'application/json','Prefer':'return=representation'};
+
+// ─── HELPERS DE NORMALIZAÇÃO ─────────────────────────────────
+// Normaliza código de vendedor: string, trim, uppercase, sem espaços internos
+function normCode(v) {
+  return String(v||'').trim().toUpperCase().replace(/\s+/g,'');
+}
+// Normaliza cabeçalho do Excel: trim, uppercase, sem acentos, sem espaços, sem ponto final
+function normHeader(v) {
+  return String(v||'').trim().toUpperCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/\s+/g,'').replace(/\.$/,'');
+}
 
 // ─── SUPABASE API ─────────────────────────────────────────────
-// Ler tabela por id
 function supaGet(table, id, cb) {
-  var url = SUPA_URL + '/rest/v1/' + table + '?id=eq.' + id + '&select=data&limit=1';
-  fetch(url, {headers: SUPA_HDR})
-    .then(function(r){ return r.json(); })
-    .then(function(rows){ cb(null, rows && rows[0] ? rows[0].data : null); })
-    .catch(function(e){ cb(e, null); });
+  var url = SUPA_URL+'/rest/v1/'+table+'?id=eq.'+id+'&select=data&limit=1';
+  fetch(url,{headers:SUPA_HDR})
+    .then(function(r){return r.json();})
+    .then(function(rows){cb(null, rows&&rows[0]?rows[0].data:null);})
+    .catch(function(e){console.error('[Supabase GET error]',table,e.message);cb(e,null);});
 }
 
-// Gravar/atualizar tabela (upsert)
 function supaSet(table, id, data, cb) {
-  var url = SUPA_URL + '/rest/v1/' + table;
-  fetch(url, {
-    method: 'POST',
-    headers: Object.assign({}, SUPA_HDR, {'Prefer': 'resolution=merge-duplicates'}),
-    body: JSON.stringify({id: id, data: data, updated_at: new Date().toISOString()})
+  var url = SUPA_URL+'/rest/v1/'+table;
+  fetch(url,{
+    method:'POST',
+    headers:Object.assign({},SUPA_HDR,{'Prefer':'resolution=merge-duplicates'}),
+    body:JSON.stringify({id:id, data:data, updated_at:new Date().toISOString()})
   })
-  .then(function(r){ return r.ok ? null : r.text(); })
-  .then(function(err){ if(cb) cb(err); })
-  .catch(function(e){ if(cb) cb(e); });
+  .then(function(r){return r.ok?null:r.text();})
+  .then(function(err){if(err){console.error('[Supabase SET error]',table,err);}if(cb)cb(err||null);})
+  .catch(function(e){console.error('[Supabase SET error]',table,e.message);if(cb)cb(e);});
 }
 
-// ─── MAPEAMENTO localStorage → Supabase ───────────────────────
-window.SUPA_MAP = window.SUPA_MAP || {}; var SUPA_MAP = window.SUPA_MAP = {
+// ─── MAPEAMENTO localStorage → Supabase ──────────────────────
+window.SUPA_MAP = window.SUPA_MAP || {};
+var SUPA_MAP = window.SUPA_MAP = {
   'crm_forecast_v1':  {table:'forecast',  id:'main'},
   'crm_clients_v1':   {table:'clientes',  id:'main'},
   'crm_budget_v1':    {table:'budget',    id:'main'},
@@ -203,64 +214,99 @@ window.SUPA_MAP = window.SUPA_MAP || {}; var SUPA_MAP = window.SUPA_MAP = {
   'crm_users_v1':     {table:'settings',  id:'users'},
 };
 
-// Expor funções no window para acesso pelo console
+// Expor para o console
 window.forgeSupaSet = supaSet;
 window.forgeSupaGet = supaGet;
-window.forgeSave = function(key, val){ save(key, val); };
+window.forgeSave    = function(key,val){save(key,val);};
 
-// Debounce de writes para o Supabase
 var _supaPending = {};
 
-// ─── SAVE: localStorage + backup assíncrono para Supabase ─────
-// localStorage é sempre fonte de verdade — nunca fica vazio por causa do Supabase
+// ─── SAVE ────────────────────────────────────────────────────
+// Salva no localStorage imediatamente.
+// Faz backup no Supabase com debounce de 800ms.
+// Nunca envia arrays/objetos vazios para chaves críticas.
 function save(key, val) {
   try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) {}
   var map = SUPA_MAP[key];
-  if(map) {
-    clearTimeout(_supaPending[key]);
-    _supaPending[key] = setTimeout(function() {
-      supaSet(map.table, map.id, val);
-    }, 800);
-  }
+  if(!map) return;
+  // Não enviar dado vazio para chaves críticas
+  var isEmpty = (Array.isArray(val) && val.length===0) ||
+                (val && typeof val==='object' && !Array.isArray(val) && Object.keys(val).length===0);
+  var critica = (key==='crm_forecast_v1'||key==='crm_clients_v1'||key==='crm_users_v1');
+  if(isEmpty && critica) return;
+  clearTimeout(_supaPending[key]);
+  _supaPending[key] = setTimeout(function(){
+    supaSet(map.table, map.id, val, function(err){
+      if(!err && key==='crm_forecast_v1'){
+        console.log('[FORGE] Forecast salvo no Supabase: '+(Array.isArray(val)?val.length:1)+' oportunidade(s)');
+      }
+    });
+  }, 800);
 }
 
-// ─── SYNC: ao iniciar, restaurar do Supabase APENAS se localStorage vazio ─
+// ─── SYNC ────────────────────────────────────────────────────
+// Prioridade: localStorage > Supabase
+// Se localStorage tem dados → apenas faz backup para Supabase em background
+// Se localStorage vazio → tenta restaurar do Supabase antes de chamar onDone
 function syncFromSupabase(onDone) {
-  // Supabase é APENAS backup silencioso — nunca interfere no carregamento
-  onDone();
-  // Backup assíncrono em background: se localStorage tem dados, enviar para Supabase
-  setTimeout(function() {
-    Object.keys(SUPA_MAP).forEach(function(key) {
-      var raw = localStorage.getItem(key);
-      if(!raw) return;
+  var keysToRestore = [];
+  Object.keys(SUPA_MAP).forEach(function(key){
+    var raw = localStorage.getItem(key);
+    var vazio = true;
+    if(raw){
       try {
         var v = JSON.parse(raw);
-        var hasData = (Array.isArray(v) && v.length > 0) ||
-                      (v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length > 0);
-        if(hasData) {
-          var map = SUPA_MAP[key];
-          supaSet(map.table, map.id, v);
-        }
-      } catch(e) {}
-    });
-  }, 3000); // aguardar 3s após o app carregar
-}
-
-// Função para forçar upload de tudo para o Supabase (usar no console quando necessário)
-window.forgeBackupAll = function() {
-  Object.keys(SUPA_MAP).forEach(function(key) {
-    var raw = localStorage.getItem(key);
-    if(raw) {
+        if(Array.isArray(v) && v.length>0) vazio=false;
+        else if(v && typeof v==='object' && !Array.isArray(v) && Object.keys(v).length>0) vazio=false;
+      } catch(e){}
+    }
+    if(vazio) keysToRestore.push(key);
+    else {
+      // Tem dado local → fazer backup silencioso
       try {
-        var val = JSON.parse(raw);
+        var parsed = JSON.parse(raw);
         var map = SUPA_MAP[key];
-        supaSet(map.table, map.id, val, function(err) {
-          console.log(err ? '❌ ' + key + ': ' + err : '✅ ' + key);
-        });
-      } catch(e) {}
+        setTimeout(function(){supaSet(map.table, map.id, parsed);}, 2000);
+      } catch(e){}
     }
   });
-  console.log('Backup iniciado para ' + Object.keys(SUPA_MAP).length + ' chaves...');
+
+  if(keysToRestore.length===0){ onDone(); return; }
+
+  var pending = keysToRestore.length;
+  keysToRestore.forEach(function(key){
+    var map = SUPA_MAP[key];
+    supaGet(map.table, map.id, function(err, remoteData){
+      if(!err && remoteData){
+        var hasData = (Array.isArray(remoteData) && remoteData.length>0) ||
+                      (remoteData && typeof remoteData==='object' && !Array.isArray(remoteData) && Object.keys(remoteData).length>0);
+        if(hasData){
+          try{
+            localStorage.setItem(key, JSON.stringify(remoteData));
+            console.log('[FORGE] Restaurado do Supabase:', key, Array.isArray(remoteData)?remoteData.length+' itens':'');
+          }catch(e){}
+        }
+      }
+      pending--;
+      if(pending===0) onDone();
+    });
+  });
+}
+
+// Forçar backup completo (usar no console: window.forgeBackupAll())
+window.forgeBackupAll = function(){
+  Object.keys(SUPA_MAP).forEach(function(key){
+    var raw = localStorage.getItem(key);
+    if(!raw) return;
+    try{
+      var val = JSON.parse(raw);
+      var map = SUPA_MAP[key];
+      supaSet(map.table, map.id, val, function(err){
+        console.log(err?'❌ '+key+': '+err:'✅ '+key+(Array.isArray(val)?' ('+val.length+')':''));
+      });
+    }catch(e){}
+  });
+  console.log('[FORGE] Backup iniciado para '+Object.keys(SUPA_MAP).length+' chaves...');
 };
 
 const {useState, useEffect, useRef, useCallback} = React;
@@ -579,13 +625,11 @@ function Sidebar({ view, setView, items }) {
 // ─── VIEW: FORECAST ──────────────────────────────────────────
 function ViewForecast({ session, isGestor, isConsultor, isEspecialista, filtroVendedor }) {
   const [opps, setOpps] = useState(function(){
-    // TODOS leem da mesma chave compartilhada
-    // Gestor/consultor/especialista: vê tudo
-    // Vendedor: vê apenas suas oportunidades (filtrado por resp)
     var all = load(KEYS.forecast, []);
     if(isGestor || isConsultor || isEspecialista) return all;
-    var code = (session.code||'').toUpperCase();
-    return all.filter(function(o){ return (o.resp||'').toUpperCase()===code; });
+    // Vendedor: filtrar pelo código normalizado
+    var code = normCode(session.code);
+    return all.filter(function(o){ return normCode(o.resp)===code; });
   });
   const [search,       setSearch]      = useState('');
   const [modalOpen, setModalOpen] = useState(false);
@@ -607,10 +651,8 @@ function ViewForecast({ session, isGestor, isConsultor, isEspecialista, filtroVe
 
   // Filtro por role + filtro global de vendedor (prop)
   function visibleOpps(list) {
-    // Vendedor já recebe lista filtrada pelo resp no useState
-    // Gestor/consultor/especialista: aplicar filtro de vendedor se selecionado
     if((isGestor||isConsultor||isEspecialista) && filtroVendedor && filtroVendedor!=='todos'){
-      return list.filter(function(o){ return (o.resp||'').toUpperCase()===filtroVendedor.toUpperCase(); });
+      return list.filter(function(o){ return normCode(o.resp)===normCode(filtroVendedor); });
     }
     return list;
   }
@@ -632,18 +674,30 @@ function ViewForecast({ session, isGestor, isConsultor, isEspecialista, filtroVe
   const highPri  = visOpps.filter(function(o){ return parseFloat(o.confidence||0)>=0.5; }).length;
 
   function saveOpps(list) {
-    setOpps(list);
+    // Garantir resp preenchido em cada opp
+    var myCode = normCode(session.code);
+    var listFixed = list.map(function(o){
+      var respNorm = normCode(o.resp);
+      // Se resp vazio e não é gestor, preencher com código do usuário logado
+      if(!respNorm && !(isGestor||isConsultor||isEspecialista)){
+        return Object.assign({},o,{resp:session.code||''});
+      }
+      return o;
+    });
+
     if(isGestor || isConsultor || isEspecialista) {
       // Gestor salva TUDO na chave compartilhada
-      save(KEYS.forecast, list);
+      console.log('[FORGE] Salvando forecast (gestor):', listFixed.length, 'oportunidades');
+      setOpps(listFixed);
+      save(KEYS.forecast, listFixed);
     } else {
-      // Vendedor: ler chave compartilhada, substituir suas opps, salvar de volta
-      var code = (session.code||'').toUpperCase();
-      var all  = load(KEYS.forecast, []);
-      // Remover opps antigas deste vendedor
-      var outros = all.filter(function(o){ return (o.resp||'').toUpperCase()!==code; });
-      // Adicionar opps atuais deste vendedor
-      save(KEYS.forecast, outros.concat(list));
+      // Vendedor: mesclar — manter opps de outros + substituir as suas
+      var all    = load(KEYS.forecast, []);
+      var outros = all.filter(function(o){ return normCode(o.resp)!==myCode; });
+      var merged = outros.concat(listFixed);
+      console.log('[FORGE] Salvando forecast (vendedor '+myCode+'):', listFixed.length, 'próprias |', merged.length, 'total');
+      setOpps(listFixed);
+      save(KEYS.forecast, merged);
     }
   }
 
@@ -703,28 +757,54 @@ function ViewForecast({ session, isGestor, isConsultor, isEspecialista, filtroVe
         const wb = XLSX.read(ev.target.result, {type:'binary'});
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
-        let hdr = -1, headers = [];
+        let hdr = -1, headers = [], headersNorm = [];
         for (let i=0; i<Math.min(5,rows.length); i++) {
           const r = rows[i].map(function(c){ return String(c||'').trim(); });
-          if (r.indexOf('CUSTOMER')>=0) { hdr=i; headers=r; break; }
+          const rn = r.map(normHeader);
+          if (rn.indexOf('CUSTOMER')>=0) { hdr=i; headers=r; headersNorm=rn; break; }
         }
-        if (hdr<0) { alert('Header CUSTOMER não encontrado.'); return; }
-        const iNeg=0, iResp=headers.indexOf('RESP.'), iCust=headers.indexOf('CUSTOMER');
-        const iSupp=headers.indexOf('SUPPLIER'), iDesc=headers.indexOf('DESCRIPTION');
-        const iAmt=headers.indexOf('AMOUNT'), iUf=headers.indexOf('UF');
-        const iConf=headers.findIndex(function(h){ return h.toLowerCase()==='confidence'; });
-        const iFup=headers.indexOf('FOLLOW-UP'), iCont=headers.indexOf('CONTATOS');
+        if (hdr<0) { alert('Cabeçalho CUSTOMER não encontrado.'); return; }
+
+        // Buscar índices usando normHeader — aceita RESP, RESP., RESPONSAVEL, RESPONSÁVEL
+        function hi(labels){
+          var arr = Array.isArray(labels)?labels:[labels];
+          for(var i=0;i<arr.length;i++){
+            var idx = headersNorm.indexOf(normHeader(arr[i]));
+            if(idx>=0) return idx;
+          }
+          return -1;
+        }
+
+        const iNeg  = 0;
+        const iResp = hi(['RESP','RESP.','RESPONSAVEL','RESPONSÁVEL','VENDEDOR']);
+        const iCust = hi('CUSTOMER');
+        const iSupp = hi('SUPPLIER');
+        const iDesc = hi('DESCRIPTION');
+        const iAmt  = hi('AMOUNT');
+        const iUf   = hi('UF');
+        const iConf = hi(['CONFIDENCE','CONF','CONFIANCA','CONFIANÇA']);
+        const iFup  = hi('FOLLOW-UP');
+        const iCont = hi('CONTATOS');
+
         const mCols = {};
         MONTHS.forEach(function(m){
-          const ci = headers.findIndex(function(h){ return h.toUpperCase()===m; });
+          const ci = headersNorm.indexOf(normHeader(m));
           if (ci>=0) mCols[m]=ci;
         });
+
         const imported = [];
         for (let ri=hdr+1; ri<rows.length; ri++) {
           const row = rows[ri];
           if (!row || !row.some(function(c){ return c!==null&&c!==''; })) continue;
           const cust = String(row[iCust]||'').trim();
           if (!cust) continue;
+
+          // Normalizar resp — usar código do usuário logado se vazio e for vendedor
+          var respRaw = iResp>=0 ? normCode(row[iResp]) : '';
+          if(!respRaw && !(isGestor||isConsultor||isEspecialista)){
+            respRaw = normCode(session.code);
+          }
+
           const months = {};
           Object.keys(mCols).forEach(function(m){
             const v = String(row[mCols[m]]||'').trim().toLowerCase();
@@ -733,7 +813,7 @@ function ViewForecast({ session, isGestor, isConsultor, isEspecialista, filtroVe
           imported.push({
             id:'fc_'+Date.now()+'_'+ri,
             neg:    String(row[iNeg]||'D').trim()||'D',
-            resp:   iResp>=0?String(row[iResp]||'').trim():'',
+            resp:   respRaw,
             customer: cust,
             supplier: iSupp>=0?String(row[iSupp]||'').trim():'',
             description: iDesc>=0?String(row[iDesc]||'').trim():'',
@@ -747,6 +827,7 @@ function ViewForecast({ session, isGestor, isConsultor, isEspecialista, filtroVe
           });
         }
         if (!imported.length) { alert('Nenhuma oportunidade encontrada.'); return; }
+        console.log('[FORGE] XLSX importado:', imported.length, 'oportunidades');
         const replace = !opps.length || confirm(imported.length+' oportunidades encontradas.\nOK = Substituir tudo\nCancelar = Mesclar');
         saveOpps(replace ? imported : [...opps,...imported]);
         alert((replace?'Importadas: ':'Mescladas: ')+imported.length+' oportunidades.');
