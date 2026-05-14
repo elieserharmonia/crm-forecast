@@ -219,6 +219,16 @@ window.forgeSupaSet = supaSet;
 window.forgeSupaGet = supaGet;
 window.forgeSave    = function(key,val){save(key,val);};
 
+// Registrar chave de vendedor no SUPA_MAP dinamicamente
+window.forgeRegisterVendor = function(code) {
+  var c = normCode(code);
+  var key = 'crm_forecast_v1_'+c;
+  if(!SUPA_MAP[key]) {
+    SUPA_MAP[key] = {table:'forecast', id:'vendor_'+c};
+    console.log('[FORGE] Chave registrada:', key);
+  }
+};
+
 var _supaPending = {};
 
 // ─── HELPERS DE VALOR ────────────────────────────────────────
@@ -290,6 +300,13 @@ function syncFromSupabase(onDone) {
     supaGet(map.table, map.id, function(err, data) {
       if(err) {
         console.error('[SUPABASE RESTORE ERRO]', key, err);
+        finish();
+        return;
+      }
+      // Verificar novamente se localStorage ainda está vazio (pode ter sido preenchido)
+      var checkAgain = localStorage.getItem(key);
+      if(checkAgain) {
+        console.log('[SYNC] localStorage já preenchido enquanto buscava Supabase:', key);
         finish();
         return;
       }
@@ -638,11 +655,25 @@ function Sidebar({ view, setView, items }) {
 // ─── VIEW: FORECAST ──────────────────────────────────────────
 function ViewForecast({ session, isGestor, isConsultor, isEspecialista, filtroVendedor }) {
   const [opps, setOpps] = useState(function(){
+    // Sempre carregar tudo da chave principal
     var all = load(KEYS.forecast, []);
     if(isGestor || isConsultor || isEspecialista) return all;
-    // Vendedor: filtrar pelo código normalizado
+    // Vendedor: filtrar por resp (aceita vazio como sendo dele também)
     var code = normCode(session.code);
-    return all.filter(function(o){ return normCode(o.resp)===code; });
+    var minhas = all.filter(function(o){ return normCode(o.resp)===code; });
+    // Se não encontrou nada com resp=code, tentar chave isolada legada
+    if(minhas.length===0){
+      var legado = load(KEYS.forecast+'_'+code, []);
+      if(legado.length>0){
+        console.log('[FORECAST] Migrando '+legado.length+' opps da chave legada para a principal');
+        // Migrar: adicionar código do vendedor e salvar na chave principal
+        var legadoFixed = legado.map(function(o){ return Object.assign({},o,{resp:code}); });
+        var allNovo = all.concat(legadoFixed);
+        try{ localStorage.setItem(KEYS.forecast, JSON.stringify(allNovo)); }catch(e){}
+        return legadoFixed;
+      }
+    }
+    return minhas;
   });
   const [search,       setSearch]      = useState('');
   const [modalOpen, setModalOpen] = useState(false);
@@ -689,26 +720,25 @@ function ViewForecast({ session, isGestor, isConsultor, isEspecialista, filtroVe
   function saveOpps(list) {
     var code = normCode(session.code);
 
+    // Garantir resp em todas as opps
     var fixedList = list.map(function(o) {
-      return Object.assign({}, o, {
-        resp: normCode(o.resp) || code
-      });
+      return Object.assign({}, o, { resp: normCode(o.resp) || code });
     });
 
     setOpps(fixedList);
 
     if(isGestor || isConsultor || isEspecialista) {
+      // GESTOR: salva tudo na chave compartilhada
       save(KEYS.forecast, fixedList);
+      console.log('[FORECAST GESTOR]', fixedList.length);
     } else {
+      // VENDEDOR: carregar chave compartilhada, remover apenas SUAS opps, adicionar novas
       var all = load(KEYS.forecast, []);
-      var outros = all.filter(function(o){ return normCode(o.resp)!==code; });
-      save(KEYS.forecast, outros.concat(fixedList));
+      var deOutros = all.filter(function(o){ return normCode(o.resp)!==code; });
+      var merged = deOutros.concat(fixedList);
+      save(KEYS.forecast, merged);
+      console.log('[FORECAST VENDEDOR '+code+'] proprias:'+fixedList.length+' total:'+merged.length);
     }
-
-    console.log('[FORECAST SALVO LOCAL]', fixedList.length);
-    try {
-      console.log('[LOCAL crm_forecast_v1]', JSON.parse(localStorage.getItem('crm_forecast_v1')||'[]').length);
-    } catch(e) {}
   }
 
   function openNew() {
@@ -6960,7 +6990,14 @@ function App() {
   }
 
   if (!session) {
-    return <Login onLogin={function(u){ setSession(u); save(KEYS.session, u); }}/>;
+    return <Login onLogin={function(u){
+      setSession(u);
+      save(KEYS.session, u);
+      // Registrar chave de forecast do vendedor no SUPA_MAP
+      if(u.role!=='gestor' && u.role!=='consultor' && u.role!=='especialista') {
+        window.forgeRegisterVendor(u.code);
+      }
+    }}/>;
   }
 
   const isGestor      = session.role === 'gestor';
