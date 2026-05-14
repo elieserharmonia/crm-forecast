@@ -159,6 +159,98 @@ select option{background:var(--bg3);}
 <body>
 <div id="root"></div>
 <script type="text/babel">
+// ─── SUPABASE CONFIG ──────────────────────────────────────────
+var SUPA_URL = 'https://ryknbndxflbdfnobsapn.supabase.co';
+var SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ5a25ibmR4ZmxiZGZub2JzYXBuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3MzQ0NzMsImV4cCI6MjA5NDMxMDQ3M30._ivdNyv5pYx8X_W32WTzb9JmtVp9ylksKhC5gVsczWY';
+var SUPA_HDR = {'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=representation'};
+
+// ─── SUPABASE API ─────────────────────────────────────────────
+// Ler tabela por id
+function supaGet(table, id, cb) {
+  var url = SUPA_URL + '/rest/v1/' + table + '?id=eq.' + id + '&select=data&limit=1';
+  fetch(url, {headers: SUPA_HDR})
+    .then(function(r){ return r.json(); })
+    .then(function(rows){ cb(null, rows && rows[0] ? rows[0].data : null); })
+    .catch(function(e){ cb(e, null); });
+}
+
+// Gravar/atualizar tabela (upsert)
+function supaSet(table, id, data, cb) {
+  var url = SUPA_URL + '/rest/v1/' + table;
+  fetch(url, {
+    method: 'POST',
+    headers: Object.assign({}, SUPA_HDR, {'Prefer': 'resolution=merge-duplicates'}),
+    body: JSON.stringify({id: id, data: data, updated_at: new Date().toISOString()})
+  })
+  .then(function(r){ return r.ok ? null : r.text(); })
+  .then(function(err){ if(cb) cb(err); })
+  .catch(function(e){ if(cb) cb(e); });
+}
+
+// ─── MAPEAMENTO localStorage → Supabase ───────────────────────
+var SUPA_MAP = {
+  'crm_forecast_v1':  {table:'forecast',  id:'main'},
+  'crm_clients_v1':   {table:'clientes',  id:'main'},
+  'crm_budget_v1':    {table:'budget',    id:'main'},
+  'crm_estoque_v1':   {table:'estoque',   id:'main'},
+  'crm_orcs_v1':      {table:'orcamentos',id:'main'},
+  'crm_demo_v1':      {table:'demos',     id:'main'},
+  'crm_projetos_v1':  {table:'projetos',  id:'main'},
+  'crm_tasks_v1':     {table:'tarefas',   id:'main'},
+  'crm_posvenda_v1':  {table:'posvenda',  id:'main'},
+  'crm_cronograma_v1':{table:'cronograma',id:'main'},
+  'crm_settings_v1':  {table:'settings',  id:'main'},
+  'crm_users_v1':     {table:'settings',   id:'users'},
+};
+
+// Flag para indicar que Supabase já foi sincronizado nesta sessão
+var _supaLoaded = {};
+var _supaPending = {};
+
+// ─── OVERRIDE DAS FUNÇÕES load/save ──────────────────────────
+// save: salva no localStorage E dispara sync para Supabase
+function save(key, val) {
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) {}
+  // Sync assíncrono para Supabase
+  var map = SUPA_MAP[key];
+  if(map) {
+    clearTimeout(_supaPending[key]);
+    _supaPending[key] = setTimeout(function() {
+      supaSet(map.table, map.id, val);
+    }, 500); // debounce 500ms
+  }
+}
+
+// Carregar dados do Supabase na inicialização (uma vez por chave)
+function supaLoad(key, cb) {
+  var map = SUPA_MAP[key];
+  if(!map || _supaLoaded[key]) { cb(); return; }
+  _supaLoaded[key] = true;
+  supaGet(map.table, map.id, function(err, remoteData) {
+    if(err || remoteData === null) { cb(); return; }
+    // Só sobrescrever localStorage se Supabase tiver dados
+    if(Array.isArray(remoteData) && remoteData.length > 0) {
+      try { localStorage.setItem(key, JSON.stringify(remoteData)); } catch(e) {}
+    } else if(remoteData && typeof remoteData === 'object' && Object.keys(remoteData).length > 0) {
+      try { localStorage.setItem(key, JSON.stringify(remoteData)); } catch(e) {}
+    }
+    cb();
+  });
+}
+
+// Sincronizar TODAS as chaves do Supabase ao iniciar o app
+function syncFromSupabase(onDone) {
+  var keys = Object.keys(SUPA_MAP);
+  var pending = keys.length;
+  if(pending === 0) { onDone(); return; }
+  keys.forEach(function(key) {
+    supaLoad(key, function() {
+      pending--;
+      if(pending === 0) onDone();
+    });
+  });
+}
+
 const {useState, useEffect, useRef, useCallback} = React;
 
 // ─── CONSTANTES ────────────────────────────────────────────────
@@ -195,9 +287,7 @@ function load(key, def) {
   try { const r = localStorage.getItem(key); return r ? JSON.parse(r) : def; }
   catch(e) { return def; }
 }
-function save(key, val) {
-  try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) {}
-}
+// save() defined in Supabase block above
 
 // ── Storage com escopo por usuário ─────────────────────────────
 // userKey(baseKey, code) → "crm_forecast_v1_EF"
@@ -6310,8 +6400,15 @@ function App() {
   const [corDia, setCorDia] = useState(function(){ return load('crm_cor_dia',''); });
   const [tema,   setTema]   = useState(function(){ return load('crm_tema','dark'); });
   const [filtroVendedor, setFiltroVendedor] = useState('todos');
+  const [syncing, setSyncing] = useState(true); // aguardando sync do Supabase
 
-  useEffect(function(){ initUsers(); }, []);
+  useEffect(function(){
+    initUsers();
+    // Sincronizar dados do Supabase antes de renderizar
+    syncFromSupabase(function(){
+      setSyncing(false);
+    });
+  }, []);
 
   // Aplicar tema no <html>
   useEffect(function(){
@@ -6326,6 +6423,21 @@ function App() {
 
   if (!session) {
     return <Login onLogin={function(u){ setSession(u); save(KEYS.session, u); }}/>;
+  }
+
+  // Aguardar sync do Supabase
+  if (syncing) {
+    return (
+      <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100vh',background:'var(--bg)',gap:16}}>
+        <div style={{fontSize:36}}>⚡</div>
+        <div style={{fontSize:14,fontWeight:700,color:'var(--text)'}}>FORGE B2B</div>
+        <div style={{display:'flex',gap:6,alignItems:'center',color:'var(--text3)',fontSize:12}}>
+          <div style={{width:16,height:16,border:'2px solid var(--blue)',borderTopColor:'transparent',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>
+          Sincronizando com a nuvem...
+        </div>
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      </div>
+    );
   }
 
   const isGestor      = session.role === 'gestor';
