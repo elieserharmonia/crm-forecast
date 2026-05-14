@@ -221,24 +221,24 @@ function saveUser(baseKey, code, val) {
 // loadTeam: gestor/consultor/especialista lê dados de todos os usuários
 // Retorna array mesclado de todos os vendedores
 function loadTeam(baseKey, def) {
+  // Primeiro tentar a chave compartilhada (salva pelo gestor)
+  var shared = load(baseKey, null);
+  if(Array.isArray(shared) && shared.length > 0) return shared;
+  // Fallback: mesclar chaves individuais por usuário
   var allUsers = load(KEYS.users, DEFAULT_USERS);
   var result = [];
   var seen = {};
   allUsers.forEach(function(u) {
     if (!u.active || u.pending) return;
-    var key = userKey(baseKey, u.code);
-    var data = load(key, null);
+    var data = load(userKey(baseKey, u.code), null);
     if (Array.isArray(data)) {
       data.forEach(function(item) {
         var id = item.id || JSON.stringify(item).slice(0,30);
         if (!seen[id]) { seen[id] = true; result.push(item); }
       });
-    } else if (data && typeof data === 'object' && !Array.isArray(data)) {
-      // Para objetos (ex: budget), mesclar
-      Object.assign(result, data);
     }
   });
-  return result.length ? result : (Array.isArray(def) ? def : load(baseKey, def));
+  return result.length ? result : (Array.isArray(def) ? def : []);
 }
 function initUsers() {
   var existing = load(KEYS.users, null);
@@ -478,25 +478,16 @@ function Sidebar({ view, setView, items }) {
 }
 
 // ─── VIEW: FORECAST ──────────────────────────────────────────
-function ViewForecast({ session, isGestor, isConsultor, isEspecialista }) {
+function ViewForecast({ session, isGestor, isConsultor, isEspecialista, filtroVendedor }) {
   const [opps, setOpps] = useState(function(){
     if(isGestor || isConsultor || isEspecialista) return loadTeam(KEYS.forecast, []);
     return loadUser(KEYS.forecast, session.code, []);
   });
   const [search,       setSearch]      = useState('');
-  const [filterVendedor,setFilterVendedor]=useState('todos'); // 'todos' | code do vendedor
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [perfil, setPerfil] = useState(null);
   const [perfilTab, setPerfilTab] = useState('dados');
-
-  // Lista de vendedores únicos que têm oportunidades
-  var allUsers = load(KEYS.users, DEFAULT_USERS);
-  var vendedores = allUsers.filter(function(u){
-    return u.active && !u.pending && u.code && opps.some(function(o){
-      return (o.resp||'').toUpperCase()===(u.code||'').toUpperCase();
-    });
-  });
 
   const MONTHS_VIS = [
     MONTHS[CUR_MONTH % 12],
@@ -510,13 +501,12 @@ function ViewForecast({ session, isGestor, isConsultor, isEspecialista }) {
     rowColor:'', history:[]
   };
 
-  // Filtro por role + filtro de vendedor (gestor)
+  // Filtro por role + filtro global de vendedor (prop)
   function visibleOpps(list) {
     var base = (isGestor || isConsultor || isEspecialista) ? list
       : list.filter(function(o){ return (o.resp||'').toUpperCase() === (session.code||'').toUpperCase(); });
-    // Filtro de vendedor específico (gestor/consultor/especialista)
-    if((isGestor||isConsultor||isEspecialista) && filterVendedor!=='todos'){
-      base = base.filter(function(o){ return (o.resp||'').toUpperCase()===filterVendedor.toUpperCase(); });
+    if((isGestor||isConsultor||isEspecialista) && filtroVendedor && filtroVendedor!=='todos'){
+      base = base.filter(function(o){ return (o.resp||'').toUpperCase()===filtroVendedor.toUpperCase(); });
     }
     return base;
   }
@@ -540,28 +530,22 @@ function ViewForecast({ session, isGestor, isConsultor, isEspecialista }) {
   function saveOpps(list) {
     setOpps(list);
     if(isGestor || isConsultor || isEspecialista) {
-      // Distribuir cada opp para a chave do seu resp
-      var allUsers = load(KEYS.users, DEFAULT_USERS);
+      // Salvar na chave compartilhada (base) para que loadTeam sempre encontre
+      save(KEYS.forecast, list);
+      // Distribuir cada opp para a chave do resp
+      var allUsers2 = load(KEYS.users, DEFAULT_USERS);
       var byResp = {};
       list.forEach(function(o) {
         var code = (o.resp||session.code||'ADM').toUpperCase();
         if(!byResp[code]) byResp[code] = [];
         byResp[code].push(o);
       });
-      // Manter opps de usuários que não estão na lista atual
-      allUsers.forEach(function(u) {
+      allUsers2.forEach(function(u) {
         var code = (u.code||'').toUpperCase();
-        if(!code) return;
-        var existing = loadUser(KEYS.forecast, code, []);
-        if(!byResp[code]) {
-          // Este usuário não tem opps na lista atual — manter os seus
-          return;
-        }
-        saveUser(KEYS.forecast, code, byResp[code]);
+        if(byResp[code]) saveUser(KEYS.forecast, code, byResp[code]);
       });
-      // Também salvar opps de codigos não mapeados para usuário padrão
       Object.keys(byResp).forEach(function(code) {
-        var u = allUsers.find(function(u){ return u.code.toUpperCase()===code; });
+        var u = allUsers2.find(function(u){ return u.code.toUpperCase()===code; });
         if(!u) saveUser(KEYS.forecast, code, byResp[code]);
       });
     } else {
@@ -705,21 +689,7 @@ function ViewForecast({ session, isGestor, isConsultor, isEspecialista }) {
         <input value={search} onChange={function(e){setSearch(e.target.value);}}
           placeholder="Buscar customer, supplier, descrição, resp..."
           style={{flex:1,minWidth:200}}/>
-        {/* Filtro de vendedor — visível para gestor/consultor/especialista */}
-        {(isGestor||isConsultor||isEspecialista) && (
-          <div style={{display:'flex',alignItems:'center',gap:6}}>
-            <span style={{fontSize:10,color:'var(--text3)',whiteSpace:'nowrap'}}>👤 Vendedor:</span>
-            <select value={filterVendedor} onChange={function(e){setFilterVendedor(e.target.value);}}
-              style={{padding:'6px 10px',fontSize:11,borderRadius:7,border:'1px solid var(--border)',
-                background:'var(--bg3)',color:'var(--text)',minWidth:140}}>
-              <option value="todos">Todos os vendedores</option>
-              {vendedores.map(function(u){
-                var count = opps.filter(function(o){return (o.resp||'').toUpperCase()===u.code.toUpperCase();}).length;
-                return <option key={u.id} value={u.code}>{u.name} ({count})</option>;
-              })}
-            </select>
-          </div>
-        )}
+
         <button className="btn btn-primary" onClick={openNew}>+ Nova</button>
         <label className="btn btn-blue" style={{cursor:'pointer'}}>
           📥 Importar Excel
@@ -2308,7 +2278,7 @@ function ModalPerfil({ session, onClose, onLogout }) {
 }
 
 // ─── VIEW: DEMONSTRAÇÃO ──────────────────────────────────────
-function ViewDemo({ session, isGestor, isEspecialista }) {
+function ViewDemo({ session, isGestor, isEspecialista, filtroVendedor }) {
   const [demos,       setDemos]      = useState(function(){
     if(isGestor||isEspecialista) return loadTeam(KEYS.demo, []);
     return loadUser(KEYS.demo, session.code, []);
@@ -3014,7 +2984,7 @@ function ViewEstoque({ session }) {
 function ViewProjetos({ session, isGestor, isEspecialista }) {
   const INQUIRY_SUPPS = ['3ARM','LÜBBERING','JAGER','NOMUDA','TECNA','HS-T','PANASONIC 4.0','BOSCH IW'];
   const [projetos,  setProjetos]  = useState(function(){
-    if(isGestor||isEspecialista||isConsultor) return loadTeam(KEYS.projetos, []);
+    if(isGestor||isEspecialista) return loadTeam(KEYS.projetos, []);
     return loadUser(KEYS.projetos, session.code, []);
   });
   const [modal,     setModal]     = useState(false);
@@ -3363,15 +3333,19 @@ function ViewProjetos({ session, isGestor, isEspecialista }) {
 }
 
 // ─── VIEW: ORÇAMENTO ─────────────────────────────────────────
-function ViewOrcamento({ session, isGestor }) {
+function ViewOrcamento({ session, isGestor, filtroVendedor }) {
   const [orcs,    setOrcs]    = useState(function(){
-    if(isGestor||isConsultor) return loadTeam('crm_orcs_v1', []);
+    if(isGestor) return loadTeam('crm_orcs_v1', []);
     return loadUser('crm_orcs_v1', session.code, []);
   });
   const [modal,   setModal]   = useState(false);
   const [form,    setForm]    = useState(null);
   const [search,  setSearch]  = useState('');
   const [selOrc,  setSelOrc]  = useState(null);
+  // Orçamentos visíveis considerando filtro de vendedor
+  var orcsVisiveis = (isGestor && filtroVendedor && filtroVendedor!=='todos')
+    ? orcs.filter(function(o){ return (o._resp||session.code||'').toUpperCase()===filtroVendedor.toUpperCase() || (o.cliente&&o.cliente===filtroVendedor); })
+    : orcs;
   const [cliSearch,  setCliSearch]   = useState('');
   const [showCliDrop,setShowCliDrop] = useState(false);
 
@@ -3854,11 +3828,14 @@ function ViewOrcamento({ session, isGestor }) {
 }
 
 // ─── VIEW: DASHBOARD ─────────────────────────────────────────
-function ViewDashboard({ session }) {
+function ViewDashboard({ session, filtroVendedor }) {
   var PERIODOS = [{id:'ano',label:'Ano inteiro'},{id:'semestre',label:'Semestre'},{id:'trimestre',label:'Trimestre'},{id:'mes',label:'Mês'}];
   var [periodo, setPeriodo] = useState('ano');
 
-  var fcOpps   = load(KEYS.forecast, []);
+  var fcOppsAll = load(KEYS.forecast, []);
+  var fcOpps = (filtroVendedor && filtroVendedor!=='todos')
+    ? fcOppsAll.filter(function(o){ return (o.resp||'').toUpperCase()===filtroVendedor.toUpperCase(); })
+    : fcOppsAll;
   var budget   = load(KEYS.budget,   {});
   var orcs     = load('crm_orcs_v1', []);
 
@@ -4091,8 +4068,9 @@ function ViewDashboard({ session }) {
 }
 
 // ─── VIEW: RELATÓRIO ─────────────────────────────────────────
-function ViewRelatorio({ session, isGestor, isConsultor }) {
-  var fcOpps   = load(KEYS.forecast,  []);
+function ViewRelatorio({ session, isGestor, isConsultor, filtroVendedor }) {
+  var fcOppsRaw = (isGestor||isConsultor) ? loadTeam(KEYS.forecast, []) : loadUser(KEYS.forecast, session.code, []);
+  var fcOpps   = fcOppsRaw;
   var clients  = load(KEYS.clients,   []);
   var orcs     = load('crm_orcs_v1',  []);
   var budget   = load(KEYS.budget,    {});
@@ -4108,7 +4086,10 @@ function ViewRelatorio({ session, isGestor, isConsultor }) {
   var [loading, setLoading] = useState(false);
 
   // Visibilidade por role
-  var visOpps = (isGestor||isConsultor) ? fcOpps : fcOpps.filter(function(o){ return (o.resp||'').toUpperCase()===(session.code||'').toUpperCase(); });
+  var visOppsBase = (isGestor||isConsultor) ? fcOpps : fcOpps.filter(function(o){ return (o.resp||'').toUpperCase()===(session.code||'').toUpperCase(); });
+  var visOpps = (filtroVendedor && filtroVendedor!=='todos')
+    ? visOppsBase.filter(function(o){ return (o.resp||'').toUpperCase()===filtroVendedor.toUpperCase(); })
+    : visOppsBase;
 
   function toggleSel(id){ setSelIds(function(prev){ return prev.includes(id)?prev.filter(function(x){return x!==id;}):[...prev,id]; }); }
   function selectAll(list){ setSelIds(list.map(function(o){return o.id;})); }
@@ -4892,12 +4873,16 @@ function ViewRadar({ session, isGestor, isConsultor }) {
 }
 
 // ─── VIEW: TAREFAS & NOTIFICAÇÕES ────────────────────────────
-function ViewTarefas({ session, isGestor }) {
+function ViewTarefas({ session, isGestor, filtroVendedor }) {
   var KEYS_TASKS = 'crm_tasks_v1';
   var [tasks,    setTasks]   = useState(function(){
     if(isGestor) return loadTeam(KEYS_TASKS, []);
     return loadUser(KEYS_TASKS, session.code, []);
   });
+  // Aplicar filtro de vendedor
+  var tasksVisiveis = (isGestor && filtroVendedor && filtroVendedor!=='todos')
+    ? tasks.filter(function(t){ return (t.resp||'').toUpperCase()===filtroVendedor.toUpperCase(); })
+    : tasks;
   var [modal,    setModal]   = useState(false);
   var [form,     setForm]    = useState(null);
   var [filter,   setFilter]  = useState('pendentes');  // pendentes|hoje|concluidas|todas
@@ -5284,10 +5269,10 @@ function ViewTarefas({ session, isGestor }) {
 }
 
 // ─── VIEW: PÓS-VENDA ─────────────────────────────────────────
-function ViewPosVenda({ session, isGestor }) {
+function ViewPosVenda({ session, isGestor, filtroVendedor }) {
   var KEYS_PV = 'crm_posvenda_v1';
   var [pvs,     setPvs]    = useState(function(){
-    if(isGestor||isConsultor) return loadTeam(KEYS_PV, []);
+    if(isGestor) return loadTeam(KEYS_PV, []);
     return loadUser(KEYS_PV, session.code, []);
   });
   var [modal,   setModal]  = useState(false);
@@ -6332,6 +6317,7 @@ function App() {
   const [showPerfil, setShowPerfil] = useState(false);
   const [corDia, setCorDia] = useState(function(){ return load('crm_cor_dia',''); });
   const [tema,   setTema]   = useState(function(){ return load('crm_tema','dark'); });
+  const [filtroVendedor, setFiltroVendedor] = useState('todos');
 
   useEffect(function(){ initUsers(); }, []);
 
@@ -6404,17 +6390,18 @@ function App() {
   }
 
   function renderView() {
-    if (view==='dashboard') return <ViewDashboard session={session}/>;
-    if (view==='forecast')  return <ViewForecast  session={session} isGestor={isGestor} isConsultor={isConsultor} isEspecialista={isEspecialista}/>;
+    var fv = filtroVendedor; // filtro global de vendedor
+    if (view==='dashboard') return <ViewDashboard session={session} filtroVendedor={fv}/>;
+    if (view==='forecast')  return <ViewForecast  session={session} isGestor={isGestor} isConsultor={isConsultor} isEspecialista={isEspecialista} filtroVendedor={fv}/>;
     if (view==='clientes')  return <ViewClientes  session={session}/>;
     if (view==='budget')    return <ViewBudget    session={session} isGestor={isGestor}/>;
-    if (view==='orcamento') return <ViewOrcamento session={session} isGestor={isGestor}/>;
-    if (view==='posvenda')  return <ViewPosVenda  session={session} isGestor={isGestor}/>;
-    if (view==='relatorio') return <ViewRelatorio session={session} isGestor={isGestor} isConsultor={isConsultor}/>;
+    if (view==='orcamento') return <ViewOrcamento session={session} isGestor={isGestor} filtroVendedor={fv}/>;
+    if (view==='posvenda')  return <ViewPosVenda  session={session} isGestor={isGestor} filtroVendedor={fv}/>;
+    if (view==='relatorio') return <ViewRelatorio session={session} isGestor={isGestor} isConsultor={isConsultor} filtroVendedor={fv}/>;
     if (view==='cronograma')return <ViewCronograma session={session} isGestor={isGestor} isConsultor={isConsultor}/>;
-    if (view==='tarefas')   return <ViewTarefas   session={session} isGestor={isGestor}/>;
+    if (view==='tarefas')   return <ViewTarefas   session={session} isGestor={isGestor} filtroVendedor={fv}/>;
     if (view==='radar')     return <ViewRadar     session={session} isGestor={isGestor} isConsultor={isConsultor}/>;
-    if (view==='demo')      return <ViewDemo      session={session} isGestor={isGestor} isEspecialista={isEspecialista}/>;
+    if (view==='demo')      return <ViewDemo      session={session} isGestor={isGestor} isEspecialista={isEspecialista} filtroVendedor={fv}/>;
     if (view==='estoque')   return <ViewEstoque   session={session}/>;
     if (view==='projetos')  return <ViewProjetos  session={session} isGestor={isGestor} isEspecialista={isEspecialista}/>;
     return <div style={{padding:20,color:'var(--text3)'}}>Em desenvolvimento...</div>;
@@ -6440,6 +6427,23 @@ function App() {
             {(NAV.find(function(v){return v.id===view;})||{}).label||view}
           </span>
           <div className="topbar-right">
+            {/* Filtro global de vendedor — apenas para gestor/consultor/especialista */}
+            {(isGestor||isConsultor||isEspecialista) && (function(){
+              var allUsersTop = load(KEYS.users, DEFAULT_USERS).filter(function(u){return u.active&&!u.pending;});
+              var vendors = allUsersTop.filter(function(u){return u.role==='vendedor'||u.role==='consultor'||u.role==='especialista';});
+              return (
+                <div style={{display:'flex',alignItems:'center',gap:5,marginRight:6,background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:7,padding:'3px 8px'}}>
+                  <span style={{fontSize:10,color:'var(--text3)'}}>👤</span>
+                  <select value={filtroVendedor} onChange={function(e){setFiltroVendedor(e.target.value);}}
+                    style={{border:'none',background:'transparent',color:'var(--text)',fontSize:11,cursor:'pointer',outline:'none',maxWidth:130}}>
+                    <option value="todos">Todos</option>
+                    {allUsersTop.map(function(u){
+                      return <option key={u.id} value={u.code}>{u.name}</option>;
+                    })}
+                  </select>
+                </div>
+              );
+            })()}
             {/* Tema */}
             <div style={{display:'flex',gap:1,background:'var(--bg3)',borderRadius:7,padding:2,border:'1px solid var(--border)',marginRight:4}}>
               {[['dark','🌙'],['light','☀️'],['system','💻']].map(function(t){
