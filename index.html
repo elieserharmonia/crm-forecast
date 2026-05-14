@@ -481,7 +481,21 @@ function Sidebar({ view, setView, items }) {
 function ViewForecast({ session, isGestor, isConsultor, isEspecialista, filtroVendedor }) {
   const [opps, setOpps] = useState(function(){
     if(isGestor || isConsultor || isEspecialista) return loadTeam(KEYS.forecast, []);
-    return loadUser(KEYS.forecast, session.code, []);
+    // Vendedor: primeiro tenta sua chave pessoal
+    var pessoal = loadUser(KEYS.forecast, session.code, null);
+    if(pessoal && pessoal.length > 0) return pessoal;
+    // Fallback: chave compartilhada filtrada pelo código do vendedor
+    var shared = load(KEYS.forecast, []);
+    var code   = (session.code||'').toUpperCase();
+    if(shared && shared.length > 0 && code){
+      var mine = shared.filter(function(o){ return (o.resp||'').toUpperCase()===code; });
+      if(mine.length > 0){
+        // Salvar na chave pessoal para próximas sessões
+        saveUser(KEYS.forecast, session.code, mine);
+        return mine;
+      }
+    }
+    return [];
   });
   const [search,       setSearch]      = useState('');
   const [modalOpen, setModalOpen] = useState(false);
