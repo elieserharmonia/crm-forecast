@@ -2367,8 +2367,7 @@ function ModalPerfil({ session, onClose, onLogout }) {
 // ─── VIEW: DEMONSTRAÇÃO ──────────────────────────────────────
 function ViewDemo({ session, isGestor, isEspecialista, filtroVendedor }) {
   const [demos,       setDemos]      = useState(function(){
-    if(isGestor||isEspecialista) return loadTeam(KEYS.demo, []);
-    return loadUser(KEYS.demo, session.code, []);
+    return load(KEYS.demo, []);
   });
   const [estDemo,     setEstDemo]    = useState(function(){ return load(KEYS.estoque+'_demo', []); });
   const [modal,       setModal]      = useState(false);
@@ -2391,7 +2390,7 @@ function ViewDemo({ session, isGestor, isEspecialista, filtroVendedor }) {
     resultados:[{inicio:'',fim:'',homologado:false,naoHomologado:false,consideracao:''}],
   };
 
-  function saveDemos(list){ setDemos(list); saveUser(KEYS.demo, session.code, list); }
+  function saveDemos(list){ setDemos(list); save(KEYS.demo, list); }
 
   function openNew(){
     const seq = String(demos.length+1).padStart(3,'0');
@@ -3071,15 +3070,14 @@ function ViewEstoque({ session }) {
 function ViewProjetos({ session, isGestor, isEspecialista }) {
   const INQUIRY_SUPPS = ['3ARM','LÜBBERING','JAGER','NOMUDA','TECNA','HS-T','PANASONIC 4.0','BOSCH IW'];
   const [projetos,  setProjetos]  = useState(function(){
-    if(isGestor||isEspecialista) return loadTeam(KEYS.projetos, []);
-    return loadUser(KEYS.projetos, session.code, []);
+    return load(KEYS.projetos, []);
   });
   const [modal,     setModal]     = useState(false);
   const [form,      setForm]      = useState(null);
   const [viewProj,  setViewProj]  = useState(null);
   const [search,    setSearch]    = useState('');
 
-  function saveProjs(list){ setProjetos(list); saveUser(KEYS.projetos, session.code, list); }
+  function saveProjs(list){ setProjetos(list); save(KEYS.projetos, list); }
 
   const EMPTY_PROJ = {
     id:'', fornecedor:'3ARM', cliente:'', contato:'', telefone:'', email:'', projeto:'',
@@ -3422,8 +3420,7 @@ function ViewProjetos({ session, isGestor, isEspecialista }) {
 // ─── VIEW: ORÇAMENTO ─────────────────────────────────────────
 function ViewOrcamento({ session, isGestor, filtroVendedor }) {
   const [orcs,    setOrcs]    = useState(function(){
-    if(isGestor) return loadTeam('crm_orcs_v1', []);
-    return loadUser('crm_orcs_v1', session.code, []);
+    return load('crm_orcs_v1', []);
   });
   const [modal,   setModal]   = useState(false);
   const [form,    setForm]    = useState(null);
@@ -3436,7 +3433,7 @@ function ViewOrcamento({ session, isGestor, filtroVendedor }) {
   const [cliSearch,  setCliSearch]   = useState('');
   const [showCliDrop,setShowCliDrop] = useState(false);
 
-  function saveOrcs(list){ setOrcs(list); saveUser('crm_orcs_v1', session.code, list); }
+  function saveOrcs(list){ setOrcs(list); save('crm_orcs_v1', list); }
 
   const EMPTY_ORC = {
     id:'', numero:'', cliente:'', _cliApelido:'', contato:'', email:'',
@@ -4156,8 +4153,9 @@ function ViewDashboard({ session, filtroVendedor }) {
 
 // ─── VIEW: RELATÓRIO ─────────────────────────────────────────
 function ViewRelatorio({ session, isGestor, isConsultor, filtroVendedor }) {
-  var fcOppsRaw = (isGestor||isConsultor) ? loadTeam(KEYS.forecast, []) : loadUser(KEYS.forecast, session.code, []);
-  var fcOpps   = fcOppsRaw;
+  var fcOppsAll = load(KEYS.forecast, []);
+  var fcOpps   = (isGestor||isConsultor) ? fcOppsAll
+    : fcOppsAll.filter(function(o){ return (o.resp||'').toUpperCase()===(session.code||'').toUpperCase(); });
   var clients  = load(KEYS.clients,   []);
   var orcs     = load('crm_orcs_v1',  []);
   var budget   = load(KEYS.budget,    {});
@@ -4173,10 +4171,9 @@ function ViewRelatorio({ session, isGestor, isConsultor, filtroVendedor }) {
   var [loading, setLoading] = useState(false);
 
   // Visibilidade por role
-  var visOppsBase = (isGestor||isConsultor) ? fcOpps : fcOpps.filter(function(o){ return (o.resp||'').toUpperCase()===(session.code||'').toUpperCase(); });
   var visOpps = (filtroVendedor && filtroVendedor!=='todos')
-    ? visOppsBase.filter(function(o){ return (o.resp||'').toUpperCase()===filtroVendedor.toUpperCase(); })
-    : visOppsBase;
+    ? fcOpps.filter(function(o){ return (o.resp||'').toUpperCase()===filtroVendedor.toUpperCase(); })
+    : fcOpps;
 
   function toggleSel(id){ setSelIds(function(prev){ return prev.includes(id)?prev.filter(function(x){return x!==id;}):[...prev,id]; }); }
   function selectAll(list){ setSelIds(list.map(function(o){return o.id;})); }
@@ -4963,8 +4960,7 @@ function ViewRadar({ session, isGestor, isConsultor }) {
 function ViewTarefas({ session, isGestor, filtroVendedor }) {
   var KEYS_TASKS = 'crm_tasks_v1';
   var [tasks,    setTasks]   = useState(function(){
-    if(isGestor) return loadTeam(KEYS_TASKS, []);
-    return loadUser(KEYS_TASKS, session.code, []);
+    return load(KEYS_TASKS, []);
   });
   // Aplicar filtro de vendedor
   var tasksVisiveis = (isGestor && filtroVendedor && filtroVendedor!=='todos')
@@ -4991,7 +4987,7 @@ function ViewTarefas({ session, isGestor, filtroVendedor }) {
     descricao:'', whatsapp:'', concluida:false, notificado:false,
   };
 
-  function saveTasks(list){ setTasks(list); saveUser(KEYS_TASKS, session.code, list); }
+  function saveTasks(list){ setTasks(list); save(KEYS_TASKS, list); }
   function openNew(){
     setForm(Object.assign({},EMPTY,{id:'task_'+Date.now(), data:new Date().toISOString().slice(0,10)}));
     setModal(true);
@@ -5359,8 +5355,7 @@ function ViewTarefas({ session, isGestor, filtroVendedor }) {
 function ViewPosVenda({ session, isGestor, filtroVendedor }) {
   var KEYS_PV = 'crm_posvenda_v1';
   var [pvs,     setPvs]    = useState(function(){
-    if(isGestor) return loadTeam(KEYS_PV, []);
-    return loadUser(KEYS_PV, session.code, []);
+    return load(KEYS_PV, []);
   });
   var [modal,   setModal]  = useState(false);
   var [form,    setForm]   = useState(null);
@@ -5371,7 +5366,7 @@ function ViewPosVenda({ session, isGestor, filtroVendedor }) {
   var orcs    = load('crm_orcs_v1',  []);
   var clients = load(KEYS.clients,   []);
 
-  function savePvs(list){ setPvs(list); saveUser(KEYS_PV, session.code, list); }
+  function savePvs(list){ setPvs(list); save(KEYS_PV, list); }
 
   var STATUS_PV = [
     {id:'aguardando_nf',  label:'⏳ Aguardando NF',     color:'#64748B'},
