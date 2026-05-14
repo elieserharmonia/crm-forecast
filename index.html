@@ -187,10 +187,7 @@ const CUR_MONTH = new Date().getMonth();
 
 // Usuários padrão
 const DEFAULT_USERS = [
-  { id:'u1', name:'Administrador',  code:'ADM', email:'adm@sinuelo.com.br',    password:'sinuelo2026', role:'gestor',       active:true,  pending:false },
-  { id:'u2', name:'Elieser Fernandes', code:'EF', email:'ef@sinuelo.com.br',  password:'ef2026',      role:'vendedor',     active:true,  pending:false },
-  { id:'u3', name:'Consultor',      code:'CS',  email:'cs@sinuelo.com.br',    password:'cs2026',      role:'consultor',    active:true,  pending:false },
-  { id:'u4', name:'Especialista',   code:'ESP', email:'esp@sinuelo.com.br',   password:'esp2026',     role:'especialista', active:true,  pending:false },
+  { id:'u1', name:'Administrador', code:'ADM', email:'adm@sinuelo.com.br', password:'sinuelo2026', role:'gestor', active:true, pending:false },
 ];
 
 // ─── STORAGE HELPERS ───────────────────────────────────────────
@@ -480,22 +477,13 @@ function Sidebar({ view, setView, items }) {
 // ─── VIEW: FORECAST ──────────────────────────────────────────
 function ViewForecast({ session, isGestor, isConsultor, isEspecialista, filtroVendedor }) {
   const [opps, setOpps] = useState(function(){
-    if(isGestor || isConsultor || isEspecialista) return loadTeam(KEYS.forecast, []);
-    // Vendedor: primeiro tenta sua chave pessoal
-    var pessoal = loadUser(KEYS.forecast, session.code, null);
-    if(pessoal && pessoal.length > 0) return pessoal;
-    // Fallback: chave compartilhada filtrada pelo código do vendedor
-    var shared = load(KEYS.forecast, []);
-    var code   = (session.code||'').toUpperCase();
-    if(shared && shared.length > 0 && code){
-      var mine = shared.filter(function(o){ return (o.resp||'').toUpperCase()===code; });
-      if(mine.length > 0){
-        // Salvar na chave pessoal para próximas sessões
-        saveUser(KEYS.forecast, session.code, mine);
-        return mine;
-      }
-    }
-    return [];
+    // TODOS leem da mesma chave compartilhada
+    // Gestor/consultor/especialista: vê tudo
+    // Vendedor: vê apenas suas oportunidades (filtrado por resp)
+    var all = load(KEYS.forecast, []);
+    if(isGestor || isConsultor || isEspecialista) return all;
+    var code = (session.code||'').toUpperCase();
+    return all.filter(function(o){ return (o.resp||'').toUpperCase()===code; });
   });
   const [search,       setSearch]      = useState('');
   const [modalOpen, setModalOpen] = useState(false);
@@ -517,12 +505,12 @@ function ViewForecast({ session, isGestor, isConsultor, isEspecialista, filtroVe
 
   // Filtro por role + filtro global de vendedor (prop)
   function visibleOpps(list) {
-    var base = (isGestor || isConsultor || isEspecialista) ? list
-      : list.filter(function(o){ return (o.resp||'').toUpperCase() === (session.code||'').toUpperCase(); });
+    // Vendedor já recebe lista filtrada pelo resp no useState
+    // Gestor/consultor/especialista: aplicar filtro de vendedor se selecionado
     if((isGestor||isConsultor||isEspecialista) && filtroVendedor && filtroVendedor!=='todos'){
-      base = base.filter(function(o){ return (o.resp||'').toUpperCase()===filtroVendedor.toUpperCase(); });
+      return list.filter(function(o){ return (o.resp||'').toUpperCase()===filtroVendedor.toUpperCase(); });
     }
-    return base;
+    return list;
   }
 
   const filtered = visibleOpps(opps).filter(function(o) {
@@ -544,26 +532,16 @@ function ViewForecast({ session, isGestor, isConsultor, isEspecialista, filtroVe
   function saveOpps(list) {
     setOpps(list);
     if(isGestor || isConsultor || isEspecialista) {
-      // Salvar na chave compartilhada (base) para que loadTeam sempre encontre
+      // Gestor salva TUDO na chave compartilhada
       save(KEYS.forecast, list);
-      // Distribuir cada opp para a chave do resp
-      var allUsers2 = load(KEYS.users, DEFAULT_USERS);
-      var byResp = {};
-      list.forEach(function(o) {
-        var code = (o.resp||session.code||'ADM').toUpperCase();
-        if(!byResp[code]) byResp[code] = [];
-        byResp[code].push(o);
-      });
-      allUsers2.forEach(function(u) {
-        var code = (u.code||'').toUpperCase();
-        if(byResp[code]) saveUser(KEYS.forecast, code, byResp[code]);
-      });
-      Object.keys(byResp).forEach(function(code) {
-        var u = allUsers2.find(function(u){ return u.code.toUpperCase()===code; });
-        if(!u) saveUser(KEYS.forecast, code, byResp[code]);
-      });
     } else {
-      saveUser(KEYS.forecast, session.code, list);
+      // Vendedor: ler chave compartilhada, substituir suas opps, salvar de volta
+      var code = (session.code||'').toUpperCase();
+      var all  = load(KEYS.forecast, []);
+      // Remover opps antigas deste vendedor
+      var outros = all.filter(function(o){ return (o.resp||'').toUpperCase()!==code; });
+      // Adicionar opps atuais deste vendedor
+      save(KEYS.forecast, outros.concat(list));
     }
   }
 
