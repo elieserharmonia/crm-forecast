@@ -221,74 +221,87 @@ window.forgeSave    = function(key,val){save(key,val);};
 
 var _supaPending = {};
 
+// ─── HELPERS DE VALOR ────────────────────────────────────────
+function isEmptyValue(v) {
+  if(Array.isArray(v)) return v.length===0;
+  if(v && typeof v==='object') return Object.keys(v).length===0;
+  return !v;
+}
+function valueCount(v) {
+  if(Array.isArray(v)) return v.length;
+  if(v && typeof v==='object') return Object.keys(v).length;
+  return v?1:0;
+}
+
 // ─── SAVE ────────────────────────────────────────────────────
-// Salva no localStorage imediatamente.
-// Faz backup no Supabase com debounce de 800ms.
-// Nunca envia arrays/objetos vazios para chaves críticas.
 function save(key, val) {
-  try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) {}
+  try {
+    localStorage.setItem(key, JSON.stringify(val));
+  } catch(e) {
+    console.error('[LOCAL SAVE ERRO]', key, e);
+  }
+
   var map = SUPA_MAP[key];
   if(!map) return;
-  // Não enviar dado vazio para chaves críticas
-  var isEmpty = (Array.isArray(val) && val.length===0) ||
-                (val && typeof val==='object' && !Array.isArray(val) && Object.keys(val).length===0);
-  var critica = (key==='crm_forecast_v1'||key==='crm_clients_v1'||key==='crm_users_v1');
-  if(isEmpty && critica) return;
+
   clearTimeout(_supaPending[key]);
-  _supaPending[key] = setTimeout(function(){
-    supaSet(map.table, map.id, val, function(err){
-      if(!err && key==='crm_forecast_v1'){
-        console.log('[FORGE] Forecast salvo no Supabase: '+(Array.isArray(val)?val.length:1)+' oportunidade(s)');
-      }
+  _supaPending[key] = setTimeout(function() {
+    if(key==='crm_forecast_v1' && isEmptyValue(val)) {
+      console.warn('[SUPABASE BLOQUEADO] tentativa de salvar forecast vazio');
+      return;
+    }
+    supaSet(map.table, map.id, val, function(err) {
+      if(err) console.error('[SUPABASE SAVE ERRO]', key, err);
     });
   }, 800);
 }
 
 // ─── SYNC ────────────────────────────────────────────────────
-// Prioridade: localStorage > Supabase
-// Se localStorage tem dados → apenas faz backup para Supabase em background
-// Se localStorage vazio → tenta restaurar do Supabase antes de chamar onDone
 function syncFromSupabase(onDone) {
-  var keysToRestore = [];
-  Object.keys(SUPA_MAP).forEach(function(key){
-    var raw = localStorage.getItem(key);
-    var vazio = true;
-    if(raw){
-      try {
-        var v = JSON.parse(raw);
-        if(Array.isArray(v) && v.length>0) vazio=false;
-        else if(v && typeof v==='object' && !Array.isArray(v) && Object.keys(v).length>0) vazio=false;
-      } catch(e){}
-    }
-    if(vazio) keysToRestore.push(key);
-    else {
-      // Tem dado local → fazer backup silencioso
-      try {
-        var parsed = JSON.parse(raw);
-        var map = SUPA_MAP[key];
-        setTimeout(function(){supaSet(map.table, map.id, parsed);}, 2000);
-      } catch(e){}
-    }
-  });
+  var keys = Object.keys(SUPA_MAP);
+  var pending = keys.length;
 
-  if(keysToRestore.length===0){ onDone(); return; }
+  function finish() {
+    pending--;
+    if(pending<=0 && onDone) onDone();
+  }
 
-  var pending = keysToRestore.length;
-  keysToRestore.forEach(function(key){
+  keys.forEach(function(key) {
     var map = SUPA_MAP[key];
-    supaGet(map.table, map.id, function(err, remoteData){
-      if(!err && remoteData){
-        var hasData = (Array.isArray(remoteData) && remoteData.length>0) ||
-                      (remoteData && typeof remoteData==='object' && !Array.isArray(remoteData) && Object.keys(remoteData).length>0);
-        if(hasData){
-          try{
-            localStorage.setItem(key, JSON.stringify(remoteData));
-            console.log('[FORGE] Restaurado do Supabase:', key, Array.isArray(remoteData)?remoteData.length+' itens':'');
-          }catch(e){}
+    var raw = localStorage.getItem(key);
+
+    if(raw) {
+      // Tem dado local — não sobrescrever, apenas fazer backup no Supabase
+      finish();
+      setTimeout(function() {
+        try {
+          var localVal = JSON.parse(raw);
+          if(!isEmptyValue(localVal)) {
+            supaSet(map.table, map.id, localVal, function(err) {
+              if(err) console.error('[SUPABASE BACKUP ERRO]', key, err);
+            });
+          }
+        } catch(e) {}
+      }, 1000);
+      return;
+    }
+
+    // localStorage vazio — tentar restaurar do Supabase
+    supaGet(map.table, map.id, function(err, data) {
+      if(err) {
+        console.error('[SUPABASE RESTORE ERRO]', key, err);
+        finish();
+        return;
+      }
+      if(!isEmptyValue(data)) {
+        try {
+          localStorage.setItem(key, JSON.stringify(data));
+          console.log('[SUPABASE RESTAURADO]', key, valueCount(data));
+        } catch(e) {
+          console.error('[LOCAL RESTORE ERRO]', key, e);
         }
       }
-      pending--;
-      if(pending===0) onDone();
+      finish();
     });
   });
 }
@@ -674,31 +687,28 @@ function ViewForecast({ session, isGestor, isConsultor, isEspecialista, filtroVe
   const highPri  = visOpps.filter(function(o){ return parseFloat(o.confidence||0)>=0.5; }).length;
 
   function saveOpps(list) {
-    // Garantir resp preenchido em cada opp
-    var myCode = normCode(session.code);
-    var listFixed = list.map(function(o){
-      var respNorm = normCode(o.resp);
-      // Se resp vazio e não é gestor, preencher com código do usuário logado
-      if(!respNorm && !(isGestor||isConsultor||isEspecialista)){
-        return Object.assign({},o,{resp:session.code||''});
-      }
-      return o;
+    var code = normCode(session.code);
+
+    var fixedList = list.map(function(o) {
+      return Object.assign({}, o, {
+        resp: normCode(o.resp) || code
+      });
     });
 
+    setOpps(fixedList);
+
     if(isGestor || isConsultor || isEspecialista) {
-      // Gestor salva TUDO na chave compartilhada
-      console.log('[FORGE] Salvando forecast (gestor):', listFixed.length, 'oportunidades');
-      setOpps(listFixed);
-      save(KEYS.forecast, listFixed);
+      save(KEYS.forecast, fixedList);
     } else {
-      // Vendedor: mesclar — manter opps de outros + substituir as suas
-      var all    = load(KEYS.forecast, []);
-      var outros = all.filter(function(o){ return normCode(o.resp)!==myCode; });
-      var merged = outros.concat(listFixed);
-      console.log('[FORGE] Salvando forecast (vendedor '+myCode+'):', listFixed.length, 'próprias |', merged.length, 'total');
-      setOpps(listFixed);
-      save(KEYS.forecast, merged);
+      var all = load(KEYS.forecast, []);
+      var outros = all.filter(function(o){ return normCode(o.resp)!==code; });
+      save(KEYS.forecast, outros.concat(fixedList));
     }
+
+    console.log('[FORECAST SALVO LOCAL]', fixedList.length);
+    try {
+      console.log('[LOCAL crm_forecast_v1]', JSON.parse(localStorage.getItem('crm_forecast_v1')||'[]').length);
+    } catch(e) {}
   }
 
   function openNew() {
@@ -776,7 +786,9 @@ function ViewForecast({ session, isGestor, isConsultor, isEspecialista, filtroVe
         }
 
         const iNeg  = 0;
-        const iResp = hi(['RESP','RESP.','RESPONSAVEL','RESPONSÁVEL','VENDEDOR']);
+        const iResp = headersNorm.findIndex(function(h){
+          return h==='RESP' || h==='RESPONSAVEL';
+        });
         const iCust = hi('CUSTOMER');
         const iSupp = hi('SUPPLIER');
         const iDesc = hi('DESCRIPTION');
@@ -799,12 +811,6 @@ function ViewForecast({ session, isGestor, isConsultor, isEspecialista, filtroVe
           const cust = String(row[iCust]||'').trim();
           if (!cust) continue;
 
-          // Normalizar resp — usar código do usuário logado se vazio e for vendedor
-          var respRaw = iResp>=0 ? normCode(row[iResp]) : '';
-          if(!respRaw && !(isGestor||isConsultor||isEspecialista)){
-            respRaw = normCode(session.code);
-          }
-
           const months = {};
           Object.keys(mCols).forEach(function(m){
             const v = String(row[mCols[m]]||'').trim().toLowerCase();
@@ -813,7 +819,7 @@ function ViewForecast({ session, isGestor, isConsultor, isEspecialista, filtroVe
           imported.push({
             id:'fc_'+Date.now()+'_'+ri,
             neg:    String(row[iNeg]||'D').trim()||'D',
-            resp:   respRaw,
+            resp:   normCode(iResp>=0 ? row[iResp] : session.code),
             customer: cust,
             supplier: iSupp>=0?String(row[iSupp]||'').trim():'',
             description: iDesc>=0?String(row[iDesc]||'').trim():'',
@@ -827,7 +833,7 @@ function ViewForecast({ session, isGestor, isConsultor, isEspecialista, filtroVe
           });
         }
         if (!imported.length) { alert('Nenhuma oportunidade encontrada.'); return; }
-        console.log('[FORGE] XLSX importado:', imported.length, 'oportunidades');
+        console.log('[FORECAST IMPORTADO]', imported.length);
         const replace = !opps.length || confirm(imported.length+' oportunidades encontradas.\nOK = Substituir tudo\nCancelar = Mesclar');
         saveOpps(replace ? imported : [...opps,...imported]);
         alert((replace?'Importadas: ':'Mescladas: ')+imported.length+' oportunidades.');
@@ -6923,11 +6929,11 @@ function App() {
   const [corDia, setCorDia] = useState(function(){ return load('crm_cor_dia',''); });
   const [tema,   setTema]   = useState(function(){ return load('crm_tema','dark'); });
   const [filtroVendedor, setFiltroVendedor] = useState('todos');
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(function(){
     initUsers();
-    // Backup silencioso para Supabase em background
-    syncFromSupabase(function(){});
+    syncFromSupabase(function(){ setHydrated(true); });
   }, []);
 
   // Aplicar tema no <html>
@@ -6940,6 +6946,18 @@ function App() {
   useEffect(function(){
     if(corDia) document.documentElement.style.setProperty('--accent', corDia);
   }, []);
+
+  if(!hydrated) {
+    return (
+      <div className="login-wrap">
+        <div className="login-box" style={{textAlign:'center'}}>
+          <div style={{fontSize:24,marginBottom:12}}>⏳</div>
+          <div style={{fontWeight:700}}>Carregando dados...</div>
+          <div style={{fontSize:11,color:'var(--text3)',marginTop:6}}>Sincronizando com Supabase</div>
+        </div>
+      </div>
+    );
+  }
 
   if (!session) {
     return <Login onLogin={function(u){ setSession(u); save(KEYS.session, u); }}/>;
