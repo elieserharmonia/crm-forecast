@@ -188,7 +188,7 @@ function supaSet(table, id, data, cb) {
 }
 
 // ─── MAPEAMENTO localStorage → Supabase ───────────────────────
-var SUPA_MAP = {
+window.SUPA_MAP = window.SUPA_MAP || {}; var SUPA_MAP = window.SUPA_MAP = {
   'crm_forecast_v1':  {table:'forecast',  id:'main'},
   'crm_clients_v1':   {table:'clientes',  id:'main'},
   'crm_budget_v1':    {table:'budget',    id:'main'},
@@ -202,6 +202,11 @@ var SUPA_MAP = {
   'crm_settings_v1':  {table:'settings',  id:'main'},
   'crm_users_v1':     {table:'settings',   id:'users'},
 };
+
+// Expor funções no window para acesso pelo console
+window.forgeSupaSet = supaSet;
+window.forgeSupaGet = supaGet;
+window.forgeSave = function(key, val){ save(key, val); };
 
 // Flag para indicar que Supabase já foi sincronizado nesta sessão
 var _supaLoaded = {};
