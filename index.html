@@ -201,6 +201,45 @@ function load(key, def) {
 function save(key, val) {
   try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) {}
 }
+
+// ── Storage com escopo por usuário ─────────────────────────────
+// userKey(baseKey, code) → "crm_forecast_v1_EF"
+function userKey(baseKey, code) {
+  return baseKey + '_' + (code||'shared').toUpperCase();
+}
+
+// loadUser: carrega dado do usuário específico
+function loadUser(baseKey, code, def) {
+  return load(userKey(baseKey, code), def);
+}
+
+// saveUser: salva dado do usuário específico
+function saveUser(baseKey, code, val) {
+  save(userKey(baseKey, code), val);
+}
+
+// loadTeam: gestor/consultor/especialista lê dados de todos os usuários
+// Retorna array mesclado de todos os vendedores
+function loadTeam(baseKey, def) {
+  var allUsers = load(KEYS.users, DEFAULT_USERS);
+  var result = [];
+  var seen = {};
+  allUsers.forEach(function(u) {
+    if (!u.active || u.pending) return;
+    var key = userKey(baseKey, u.code);
+    var data = load(key, null);
+    if (Array.isArray(data)) {
+      data.forEach(function(item) {
+        var id = item.id || JSON.stringify(item).slice(0,30);
+        if (!seen[id]) { seen[id] = true; result.push(item); }
+      });
+    } else if (data && typeof data === 'object' && !Array.isArray(data)) {
+      // Para objetos (ex: budget), mesclar
+      Object.assign(result, data);
+    }
+  });
+  return result.length ? result : (Array.isArray(def) ? def : load(baseKey, def));
+}
 function initUsers() {
   const existing = load(KEYS.users, null);
   if (!existing) save(KEYS.users, DEFAULT_USERS);
@@ -391,8 +430,15 @@ function Sidebar({ view, setView, items }) {
 }
 
 // ─── VIEW: FORECAST ──────────────────────────────────────────
-function ViewForecast({ session, isGestor, isConsultor }) {
-  const [opps, setOpps] = useState(function(){ return load(KEYS.forecast, []); });
+function ViewForecast({ session, isGestor, isConsultor, isEspecialista }) {
+  const [opps, setOpps] = useState(function(){
+    // Gestor/consultor/especialista: mesclar dados de todos os usuários
+    if(isGestor || isConsultor || isEspecialista){
+      return loadTeam(KEYS.forecast, []);
+    }
+    // Vendedor: apenas seus próprios dados
+    return loadUser(KEYS.forecast, session.code, []);
+  });
   const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -413,7 +459,7 @@ function ViewForecast({ session, isGestor, isConsultor }) {
 
   // Filtro por role
   function visibleOpps(list) {
-    if (isGestor || isConsultor) return list;
+    if (isGestor || isConsultor || isEspecialista) return list;
     return list.filter(function(o){ return (o.resp||'').toUpperCase() === (session.code||'').toUpperCase(); });
   }
 
@@ -432,7 +478,37 @@ function ViewForecast({ session, isGestor, isConsultor }) {
   const conf100 = visibleOpps(opps).filter(function(o){ return parseFloat(o.confidence||0)>=1; }).length;
   const highPri = visibleOpps(opps).filter(function(o){ return parseFloat(o.confidence||0)>=0.5; }).length;
 
-  function saveOpps(list) { setOpps(list); save(KEYS.forecast, list); }
+  function saveOpps(list) {
+    setOpps(list);
+    if(isGestor || isConsultor || isEspecialista) {
+      // Distribuir cada opp para a chave do seu resp
+      var allUsers = load(KEYS.users, DEFAULT_USERS);
+      var byResp = {};
+      list.forEach(function(o) {
+        var code = (o.resp||session.code||'ADM').toUpperCase();
+        if(!byResp[code]) byResp[code] = [];
+        byResp[code].push(o);
+      });
+      // Manter opps de usuários que não estão na lista atual
+      allUsers.forEach(function(u) {
+        var code = (u.code||'').toUpperCase();
+        if(!code) return;
+        var existing = loadUser(KEYS.forecast, code, []);
+        if(!byResp[code]) {
+          // Este usuário não tem opps na lista atual — manter os seus
+          return;
+        }
+        saveUser(KEYS.forecast, code, byResp[code]);
+      });
+      // Também salvar opps de codigos não mapeados para usuário padrão
+      Object.keys(byResp).forEach(function(code) {
+        var u = allUsers.find(function(u){ return u.code.toUpperCase()===code; });
+        if(!u) saveUser(KEYS.forecast, code, byResp[code]);
+      });
+    } else {
+      saveUser(KEYS.forecast, session.code, list);
+    }
+  }
 
   function openNew() {
     setEditing({...EMPTY, id:'fc_'+Date.now(), resp:session.code||''});
@@ -2159,7 +2235,10 @@ function ModalPerfil({ session, onClose, onLogout }) {
 
 // ─── VIEW: DEMONSTRAÇÃO ──────────────────────────────────────
 function ViewDemo({ session, isGestor, isEspecialista }) {
-  const [demos,       setDemos]      = useState(function(){ return load(KEYS.demo, []); });
+  const [demos,       setDemos]      = useState(function(){
+    if(isGestor||isEspecialista) return loadTeam(KEYS.demo, []);
+    return loadUser(KEYS.demo, session.code, []);
+  });
   const [estDemo,     setEstDemo]    = useState(function(){ return load(KEYS.estoque+'_demo', []); });
   const [modal,       setModal]      = useState(false);
   const [form,        setForm]       = useState(null);
@@ -2181,7 +2260,7 @@ function ViewDemo({ session, isGestor, isEspecialista }) {
     resultados:[{inicio:'',fim:'',homologado:false,naoHomologado:false,consideracao:''}],
   };
 
-  function saveDemos(list){ setDemos(list); save(KEYS.demo, list); }
+  function saveDemos(list){ setDemos(list); saveUser(KEYS.demo, session.code, list); }
 
   function openNew(){
     const seq = String(demos.length+1).padStart(3,'0');
@@ -2860,13 +2939,16 @@ function ViewEstoque({ session }) {
 // ─── VIEW: PROJETOS ──────────────────────────────────────────
 function ViewProjetos({ session, isGestor, isEspecialista }) {
   const INQUIRY_SUPPS = ['3ARM','LÜBBERING','JAGER','NOMUDA','TECNA','HS-T','PANASONIC 4.0','BOSCH IW'];
-  const [projetos,  setProjetos]  = useState(function(){ return load(KEYS.projetos, []); });
+  const [projetos,  setProjetos]  = useState(function(){
+    if(isGestor||isEspecialista||isConsultor) return loadTeam(KEYS.projetos, []);
+    return loadUser(KEYS.projetos, session.code, []);
+  });
   const [modal,     setModal]     = useState(false);
   const [form,      setForm]      = useState(null);
   const [viewProj,  setViewProj]  = useState(null);
   const [search,    setSearch]    = useState('');
 
-  function saveProjs(list){ setProjetos(list); save(KEYS.projetos, list); }
+  function saveProjs(list){ setProjetos(list); saveUser(KEYS.projetos, session.code, list); }
 
   const EMPTY_PROJ = {
     id:'', fornecedor:'3ARM', cliente:'', contato:'', telefone:'', email:'', projeto:'',
@@ -3208,7 +3290,10 @@ function ViewProjetos({ session, isGestor, isEspecialista }) {
 
 // ─── VIEW: ORÇAMENTO ─────────────────────────────────────────
 function ViewOrcamento({ session, isGestor }) {
-  const [orcs,    setOrcs]    = useState(function(){ return load('crm_orcs_v1', []); });
+  const [orcs,    setOrcs]    = useState(function(){
+    if(isGestor||isConsultor) return loadTeam('crm_orcs_v1', []);
+    return loadUser('crm_orcs_v1', session.code, []);
+  });
   const [modal,   setModal]   = useState(false);
   const [form,    setForm]    = useState(null);
   const [search,  setSearch]  = useState('');
@@ -3216,7 +3301,7 @@ function ViewOrcamento({ session, isGestor }) {
   const [cliSearch,  setCliSearch]   = useState('');
   const [showCliDrop,setShowCliDrop] = useState(false);
 
-  function saveOrcs(list){ setOrcs(list); save('crm_orcs_v1', list); }
+  function saveOrcs(list){ setOrcs(list); saveUser('crm_orcs_v1', session.code, list); }
 
   const EMPTY_ORC = {
     id:'', numero:'', cliente:'', _cliApelido:'', contato:'', email:'',
@@ -4735,7 +4820,10 @@ function ViewRadar({ session, isGestor, isConsultor }) {
 // ─── VIEW: TAREFAS & NOTIFICAÇÕES ────────────────────────────
 function ViewTarefas({ session, isGestor }) {
   var KEYS_TASKS = 'crm_tasks_v1';
-  var [tasks,    setTasks]   = useState(function(){ return load(KEYS_TASKS, []); });
+  var [tasks,    setTasks]   = useState(function(){
+    if(isGestor) return loadTeam(KEYS_TASKS, []);
+    return loadUser(KEYS_TASKS, session.code, []);
+  });
   var [modal,    setModal]   = useState(false);
   var [form,     setForm]    = useState(null);
   var [filter,   setFilter]  = useState('pendentes');  // pendentes|hoje|concluidas|todas
@@ -4757,7 +4845,7 @@ function ViewTarefas({ session, isGestor }) {
     descricao:'', whatsapp:'', concluida:false, notificado:false,
   };
 
-  function saveTasks(list){ setTasks(list); save(KEYS_TASKS, list); }
+  function saveTasks(list){ setTasks(list); saveUser(KEYS_TASKS, session.code, list); }
   function openNew(){
     setForm(Object.assign({},EMPTY,{id:'task_'+Date.now(), data:new Date().toISOString().slice(0,10)}));
     setModal(true);
@@ -5124,7 +5212,10 @@ function ViewTarefas({ session, isGestor }) {
 // ─── VIEW: PÓS-VENDA ─────────────────────────────────────────
 function ViewPosVenda({ session, isGestor }) {
   var KEYS_PV = 'crm_posvenda_v1';
-  var [pvs,     setPvs]    = useState(function(){ return load(KEYS_PV, []); });
+  var [pvs,     setPvs]    = useState(function(){
+    if(isGestor||isConsultor) return loadTeam(KEYS_PV, []);
+    return loadUser(KEYS_PV, session.code, []);
+  });
   var [modal,   setModal]  = useState(false);
   var [form,    setForm]   = useState(null);
   var [search,  setSearch] = useState('');
@@ -5134,7 +5225,7 @@ function ViewPosVenda({ session, isGestor }) {
   var orcs    = load('crm_orcs_v1',  []);
   var clients = load(KEYS.clients,   []);
 
-  function savePvs(list){ setPvs(list); save(KEYS_PV, list); }
+  function savePvs(list){ setPvs(list); saveUser(KEYS_PV, session.code, list); }
 
   var STATUS_PV = [
     {id:'aguardando_nf',  label:'⏳ Aguardando NF',     color:'#64748B'},
@@ -5470,6 +5561,695 @@ function ViewPosVenda({ session, isGestor }) {
   );
 }
 
+// ─── VIEW: CRONOGRAMA (Monday-style) ─────────────────────────
+function ViewCronograma({ session, isGestor, isConsultor }) {
+  var KEYS_CRON = 'crm_cronograma_v1';
+  var [boards,   setBoards]  = useState(function(){ return load(KEYS_CRON, []); });
+  var [selBoard, setSelBoard]= useState(null);
+  var [viewMode, setViewMode]= useState('kanban'); // kanban | lista | gantt | workload
+  var [modal,    setModal]   = useState(null);     // null | 'board' | 'item'
+  var [form,     setForm]    = useState(null);
+  var [dragItem, setDragItem]= useState(null);
+
+  var clients = load(KEYS.clients, []);
+  var fcOpps  = load(KEYS.forecast, []);
+  var allUsers= load(KEYS.users, DEFAULT_USERS).filter(function(u){return u.active;});
+
+  function saveBoards(list){ setBoards(list); save(KEYS_CRON, list); }
+
+  // ── Status padrão do Monday ─────────────────────────────────
+  var DEFAULT_STATUS = [
+    {id:'nao_iniciado', label:'Não iniciado', color:'#C4C4C4'},
+    {id:'em_andamento', label:'Em andamento', color:'#579BFC'},
+    {id:'aguardando',   label:'Aguardando',   color:'#FDBC64'},
+    {id:'concluido',    label:'Concluído',    color:'#00C875'},
+    {id:'bloqueado',    label:'Bloqueado',    color:'#E2445C'},
+  ];
+
+  var PRIORIDADES = [
+    {id:'critica',  label:'🔴 Crítica', color:'#E2445C'},
+    {id:'alta',     label:'🟠 Alta',    color:'#FDBC64'},
+    {id:'media',    label:'🔵 Média',   color:'#579BFC'},
+    {id:'baixa',    label:'⚪ Baixa',   color:'#C4C4C4'},
+  ];
+
+  // ── CRUD Board ──────────────────────────────────────────────
+  function newBoard(){
+    setForm({id:'', nome:'', descricao:'', cliente:'', oppId:'', cor:'#579BFC', itens:[]});
+    setModal('board');
+  }
+
+  function saveBoard(){
+    if(!form.nome.trim()){alert('Informe o nome do projeto.');return;}
+    var b = Object.assign({}, form, {
+      id:    form.id||'board_'+Date.now(),
+      itens: form.itens||[],
+      criadoEm: form.criadoEm||new Date().toISOString(),
+    });
+    var updated = form.id
+      ? boards.map(function(x){return x.id===b.id?b:x;})
+      : [b,...boards];
+    saveBoards(updated);
+    setSelBoard(b);
+    setModal(null);
+  }
+
+  function deleteBoard(id){
+    if(!confirm('Excluir projeto completo?')) return;
+    saveBoards(boards.filter(function(b){return b.id!==id;}));
+    if(selBoard&&selBoard.id===id) setSelBoard(null);
+  }
+
+  // ── CRUD Item ───────────────────────────────────────────────
+  var EMPTY_ITEM = {
+    id:'', titulo:'', descricao:'', status:'nao_iniciado', prioridade:'media',
+    resp:'', dataInicio:'', dataFim:'', progresso:0,
+    dependeDe:'', milestone:false, tags:'', estimativa:0, realizado:0,
+    checklist:[], comentarios:[],
+  };
+
+  function newItem(){
+    setForm(Object.assign({},EMPTY_ITEM,{id:'item_'+Date.now(), resp:session.code||''}));
+    setModal('item');
+  }
+
+  function editItem(item){ setForm(Object.assign({},item)); setModal('item'); }
+
+  function saveItem(){
+    if(!form.titulo.trim()){alert('Informe o título.');return;}
+    var item = Object.assign({},form);
+    var itens = selBoard.itens||[];
+    var updated = item.id&&itens.find(function(x){return x.id===item.id;})
+      ? itens.map(function(x){return x.id===item.id?item:x;})
+      : [...itens, item];
+    var b = Object.assign({},selBoard,{itens:updated});
+    var newBoards = boards.map(function(x){return x.id===b.id?b:x;});
+    saveBoards(newBoards); setSelBoard(b); setModal(null);
+  }
+
+  function deleteItem(itemId){
+    var itens = (selBoard.itens||[]).filter(function(x){return x.id!==itemId;});
+    var b = Object.assign({},selBoard,{itens:itens});
+    saveBoards(boards.map(function(x){return x.id===b.id?b:x;}));
+    setSelBoard(b);
+  }
+
+  function updateItemStatus(itemId, newStatus){
+    var itens = (selBoard.itens||[]).map(function(it){
+      return it.id===itemId ? Object.assign({},it,{status:newStatus}) : it;
+    });
+    var b = Object.assign({},selBoard,{itens:itens});
+    saveBoards(boards.map(function(x){return x.id===b.id?b:x;}));
+    setSelBoard(b);
+  }
+
+  function updateItemProg(itemId, prog){
+    var v = Math.max(0,Math.min(100,parseInt(prog)||0));
+    var itens = (selBoard.itens||[]).map(function(it){
+      return it.id===itemId ? Object.assign({},it,{progresso:v}) : it;
+    });
+    var b = Object.assign({},selBoard,{itens:itens});
+    saveBoards(boards.map(function(x){return x.id===b.id?b:x;}));
+    setSelBoard(b);
+  }
+
+  // ── Cálculos do board ───────────────────────────────────────
+  function progBoard(b){
+    var itens = b.itens||[];
+    if(!itens.length) return 0;
+    var sum = itens.reduce(function(s,it){return s+(it.progresso||0);},0);
+    return Math.round(sum/itens.length);
+  }
+
+  function statusSt(id){ return DEFAULT_STATUS.find(function(s){return s.id===id;})||DEFAULT_STATUS[0]; }
+  function priSt(id)   { return PRIORIDADES.find(function(p){return p.id===id;})||PRIORIDADES[2]; }
+
+  // ── VIEWS ────────────────────────────────────────────────────
+
+  // Kanban
+  function KanbanView(){
+    var itens = selBoard.itens||[];
+    return (
+      <div style={{display:'flex',gap:12,overflowX:'auto',paddingBottom:8}}>
+        {DEFAULT_STATUS.map(function(st){
+          var cols = itens.filter(function(it){return it.status===st.id;});
+          return (
+            <div key={st.id} style={{minWidth:240,flex:'0 0 240px'}}
+              onDragOver={function(e){e.preventDefault();}}
+              onDrop={function(){if(dragItem) updateItemStatus(dragItem,st.id); setDragItem(null);}}>
+              {/* Coluna header */}
+              <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:10,padding:'6px 10px',borderRadius:8,background:'var(--bg3)',border:'1px solid var(--border)'}}>
+                <div style={{width:10,height:10,borderRadius:2,background:st.color,flexShrink:0}}/>
+                <span style={{fontWeight:700,fontSize:12,flex:1}}>{st.label}</span>
+                <span style={{fontSize:11,color:'var(--text3)'}}>{cols.length}</span>
+              </div>
+              {/* Cards */}
+              {cols.map(function(item){
+                var pri = priSt(item.prioridade);
+                var days = item.dataFim ? Math.round((new Date(item.dataFim)-new Date())/86400000) : null;
+                var atrasado = days!==null&&days<0;
+                return (
+                  <div key={item.id} draggable
+                    onDragStart={function(){setDragItem(item.id);}}
+                    onClick={function(){editItem(item);}}
+                    style={{background:'var(--card)',border:'1px solid var(--border)',borderLeft:'3px solid '+st.color,
+                      borderRadius:8,padding:'10px 12px',marginBottom:8,cursor:'pointer',
+                      transition:'box-shadow .15s',boxShadow:'0 1px 4px rgba(0,0,0,.15)'}}>
+                    {/* Título */}
+                    <div style={{fontWeight:600,fontSize:12,marginBottom:5,lineHeight:1.4}}>{item.titulo}</div>
+                    {/* Tags */}
+                    {item.tags&&(
+                      <div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:6}}>
+                        {item.tags.split(',').map(function(t,i){
+                          return t.trim()&&<span key={i} style={{fontSize:9,padding:'1px 6px',borderRadius:10,background:'rgba(87,155,252,.15)',color:'#579BFC'}}>{t.trim()}</span>;
+                        })}
+                      </div>
+                    )}
+                    {/* Progresso */}
+                    {item.progresso>0&&(
+                      <div style={{marginBottom:6}}>
+                        <div style={{height:3,borderRadius:2,background:'var(--bg3)',overflow:'hidden'}}>
+                          <div style={{height:'100%',width:item.progresso+'%',background:item.progresso>=100?'#00C875':'#579BFC',borderRadius:2}}/>
+                        </div>
+                        <div style={{fontSize:9,color:'var(--text3)',textAlign:'right',marginTop:1}}>{item.progresso}%</div>
+                      </div>
+                    )}
+                    {/* Meta */}
+                    <div style={{display:'flex',gap:8,alignItems:'center',justifyContent:'space-between',flexWrap:'wrap'}}>
+                      <div style={{display:'flex',gap:5}}>
+                        <span style={{fontSize:9,padding:'1px 6px',borderRadius:10,background:pri.color+'22',color:pri.color,fontWeight:600}}>{pri.label}</span>
+                        {item.milestone&&<span style={{fontSize:9,padding:'1px 6px',borderRadius:10,background:'rgba(253,188,100,.2)',color:'#FDBC64'}}>🏆 Marco</span>}
+                      </div>
+                      <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                        {item.resp&&<span style={{fontSize:9,padding:'1px 6px',borderRadius:10,background:'var(--bg3)',color:'var(--text3)'}}>{item.resp}</span>}
+                        {item.dataFim&&<span style={{fontSize:9,color:atrasado?'#E2445C':'var(--text3)'}}>{atrasado?'⚠️ ':''}{item.dataFim.split('-').reverse().join('/')}</span>}
+                      </div>
+                    </div>
+                    {/* Checklist */}
+                    {(item.checklist||[]).length>0&&(
+                      <div style={{marginTop:5,fontSize:9,color:'var(--text3)'}}>
+                        ☑ {(item.checklist||[]).filter(function(c){return c.done;}).length}/{(item.checklist||[]).length}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {/* Botão adicionar */}
+              <button onClick={newItem}
+                style={{width:'100%',padding:'7px',border:'1px dashed var(--border)',borderRadius:8,
+                  background:'transparent',color:'var(--text3)',cursor:'pointer',fontSize:11}}>
+                + Adicionar item
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // Lista (estilo Monday table view)
+  function ListaView(){
+    var itens = selBoard.itens||[];
+    return (
+      <div style={{overflowX:'auto'}}>
+        <table className="tbl" style={{minWidth:800}}>
+          <thead style={{position:'sticky',top:0,zIndex:2,background:'var(--bg3)'}}>
+            <tr>
+              <th style={{width:24}}></th>
+              <th>TAREFA / ENTREGA</th>
+              <th style={{width:130}}>STATUS</th>
+              <th style={{width:100}}>PRIORIDADE</th>
+              <th style={{width:80}}>RESP.</th>
+              <th style={{width:95}}>INÍCIO</th>
+              <th style={{width:95}}>FIM</th>
+              <th style={{width:80}}>PROGRESSO</th>
+              <th style={{width:70}}>PRAZO</th>
+              <th style={{width:30}}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {itens.map(function(item){
+              var st  = statusSt(item.status);
+              var pri = priSt(item.prioridade);
+              var days = item.dataFim?Math.round((new Date(item.dataFim)-new Date())/86400000):null;
+              var atrasado = days!==null&&days<0;
+              return (
+                <tr key={item.id} style={{borderLeft:'3px solid '+st.color}}>
+                  <td style={{textAlign:'center'}}>
+                    {item.milestone&&<span title="Marco">🏆</span>}
+                  </td>
+                  <td>
+                    <div style={{fontWeight:600,fontSize:12}}>{item.titulo}</div>
+                    {item.tags&&<div style={{fontSize:9,color:'var(--text3)',marginTop:2}}>{item.tags}</div>}
+                  </td>
+                  <td>
+                    <select value={item.status} onChange={function(e){updateItemStatus(item.id,e.target.value);}}
+                      onClick={function(e){e.stopPropagation();}}
+                      style={{padding:'3px 6px',fontSize:10,borderRadius:5,border:'none',
+                        background:st.color+'22',color:st.color,fontWeight:700,cursor:'pointer'}}>
+                      {DEFAULT_STATUS.map(function(s){
+                        return <option key={s.id} value={s.id}>{s.label}</option>;
+                      })}
+                    </select>
+                  </td>
+                  <td><span style={{fontSize:10,padding:'2px 7px',borderRadius:10,background:pri.color+'22',color:pri.color,fontWeight:600}}>{pri.label}</span></td>
+                  <td style={{fontSize:11,color:'var(--text2)'}}>{item.resp||'—'}</td>
+                  <td style={{fontSize:11,color:'var(--text3)'}}>{item.dataInicio?item.dataInicio.split('-').reverse().join('/'):'—'}</td>
+                  <td style={{fontSize:11,color:atrasado?'#E2445C':'var(--text3)'}}>{item.dataFim?item.dataFim.split('-').reverse().join('/'):'—'}</td>
+                  <td>
+                    <div style={{display:'flex',alignItems:'center',gap:5}}>
+                      <div style={{flex:1,height:4,borderRadius:2,background:'var(--bg3)',overflow:'hidden'}}>
+                        <div style={{height:'100%',width:(item.progresso||0)+'%',background:item.progresso>=100?'#00C875':'#579BFC',borderRadius:2}}/>
+                      </div>
+                      <span style={{fontSize:9,color:'var(--text3)',width:24,textAlign:'right'}}>{item.progresso||0}%</span>
+                    </div>
+                  </td>
+                  <td style={{fontSize:10,textAlign:'center',color:atrasado?'#E2445C':days!==null&&days<=3?'#FDBC64':'var(--text3)',fontWeight:atrasado?700:400}}>
+                    {days===null?'—':atrasado?days+'d':'+'+days+'d'}
+                  </td>
+                  <td>
+                    <div style={{display:'flex',gap:3}}>
+                      <button onClick={function(){editItem(item);}} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text3)',fontSize:12}}>✏️</button>
+                      <button onClick={function(){deleteItem(item.id);}} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text3)',fontSize:12,opacity:.4}} onMouseEnter={function(ev){ev.target.style.opacity=1;}} onMouseLeave={function(ev){ev.target.style.opacity=.4;}}>✕</button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <button onClick={newItem} style={{marginTop:8,padding:'6px 14px',border:'1px dashed var(--border)',borderRadius:7,background:'transparent',color:'var(--text3)',cursor:'pointer',fontSize:11}}>
+          + Adicionar item
+        </button>
+      </div>
+    );
+  }
+
+  // Gantt SVG
+  function GanttView(){
+    var itens = (selBoard.itens||[]).filter(function(it){return it.dataInicio&&it.dataFim;});
+    if(!itens.length) return (
+      <div style={{textAlign:'center',padding:'30px',color:'var(--text3)',fontSize:12}}>
+        Defina datas de início e fim nos itens para ver o Gantt.
+      </div>
+    );
+    var allDates = [];
+    itens.forEach(function(it){allDates.push(new Date(it.dataInicio),new Date(it.dataFim));});
+    var minDate = new Date(Math.min.apply(null,allDates));
+    var maxDate = new Date(Math.max.apply(null,allDates));
+    // Adicionar margem de 7 dias
+    minDate.setDate(minDate.getDate()-3);
+    maxDate.setDate(maxDate.getDate()+7);
+    var totalDays = Math.round((maxDate-minDate)/86400000)||1;
+    var rowH = 38; var labelW = 180; var dayW = Math.max(20, Math.min(40, 800/totalDays));
+    var svgW  = labelW + totalDays*dayW;
+    var svgH  = rowH*(itens.length+1)+10;
+    var today = new Date();
+
+    function dayOffset(d){ return Math.round((new Date(d)-minDate)/86400000); }
+
+    // Gerar labels de semanas
+    var weekLabels = [];
+    var cur = new Date(minDate);
+    while(cur<=maxDate){
+      weekLabels.push({x:labelW+dayOffset(cur)*dayW, label:cur.getDate()+'/'+(cur.getMonth()+1)});
+      cur.setDate(cur.getDate()+7);
+    }
+
+    return (
+      <div style={{overflowX:'auto',overflowY:'auto',maxHeight:'calc(100vh - 220px)'}}>
+        <svg width={svgW+20} height={svgH+20} style={{fontFamily:'var(--font,Arial)',overflow:'visible'}}>
+          {/* Fundo alternado */}
+          {itens.map(function(_,i){
+            return <rect key={i} x={labelW} y={rowH*(i+1)} width={totalDays*dayW} height={rowH} fill={i%2===0?'rgba(255,255,255,.02)':'transparent'}/>;
+          })}
+          {/* Grid vertical por semana */}
+          {weekLabels.map(function(w,i){
+            return (
+              <g key={i}>
+                <line x1={w.x} y1={0} x2={w.x} y2={svgH} stroke="rgba(148,163,184,.1)" strokeWidth={1}/>
+                <text x={w.x+3} y={rowH*0.7} fontSize={9} fill="rgba(148,163,184,.5)">{w.label}</text>
+              </g>
+            );
+          })}
+          {/* Header labels de itens */}
+          {itens.map(function(item,i){
+            var st = statusSt(item.status);
+            var y  = rowH*(i+1);
+            return (
+              <g key={item.id}>
+                <rect x={0} y={y} width={labelW-4} height={rowH-2} rx={3} fill="var(--bg3)"/>
+                <rect x={0} y={y} width={3} height={rowH-2} fill={st.color}/>
+                <text x={8} y={y+rowH/2+4} fontSize={11} fill="var(--text)" fontWeight="600">{item.titulo.slice(0,22)}</text>
+                {item.resp&&<text x={8} y={y+rowH/2+15} fontSize={9} fill="rgba(148,163,184,.6)">{item.resp}</text>}
+              </g>
+            );
+          })}
+          {/* Barras Gantt */}
+          {itens.map(function(item,i){
+            var st   = statusSt(item.status);
+            var pri  = priSt(item.prioridade);
+            var x1   = labelW + dayOffset(item.dataInicio)*dayW;
+            var x2   = labelW + dayOffset(item.dataFim)*dayW;
+            var bW   = Math.max(dayW, x2-x1);
+            var y    = rowH*(i+1)+6;
+            var bH   = rowH-14;
+            var progW= Math.round(bW*(item.progresso||0)/100);
+            return (
+              <g key={item.id} onClick={function(){editItem(item);}} style={{cursor:'pointer'}}>
+                {/* Barra de fundo */}
+                <rect x={x1} y={y} width={bW} height={bH} rx={4} fill={st.color+'33'} stroke={st.color} strokeWidth={1}/>
+                {/* Barra de progresso */}
+                {progW>0&&<rect x={x1} y={y} width={progW} height={bH} rx={4} fill={st.color} opacity={0.85}/>}
+                {/* Label */}
+                <text x={x1+6} y={y+bH/2+4} fontSize={9} fill="#fff" fontWeight="600">{item.titulo.slice(0,18)}{item.progresso?(' '+item.progresso+'%'):''}</text>
+                {/* Marco */}
+                {item.milestone&&<polygon points={(x1-8)+','+(y+bH/2)+' '+x1+','+(y-2)+' '+(x1+8)+','+(y+bH/2)+' '+x1+','+(y+bH+2)} fill="#FDBC64"/>}
+              </g>
+            );
+          })}
+          {/* Linha de hoje */}
+          {(function(){
+            var todayX = labelW+dayOffset(today.toISOString().slice(0,10))*dayW;
+            return todayX>labelW&&todayX<svgW ? (
+              <g>
+                <line x1={todayX} y1={0} x2={todayX} y2={svgH} stroke="#E2445C" strokeWidth={1.5} strokeDasharray="4,3"/>
+                <text x={todayX+3} y={12} fontSize={8} fill="#E2445C" fontWeight="700">Hoje</text>
+              </g>
+            ) : null;
+          })()}
+        </svg>
+      </div>
+    );
+  }
+
+  // Workload view
+  function WorkloadView(){
+    var itens = selBoard.itens||[];
+    var byResp = {};
+    allUsers.forEach(function(u){ byResp[u.code] = {user:u, itens:[]}; });
+    itens.forEach(function(it){
+      var code = (it.resp||'').toUpperCase();
+      if(!byResp[code]) byResp[code] = {user:{name:code,code:code}, itens:[]};
+      byResp[code].itens.push(it);
+    });
+    return (
+      <div style={{display:'flex',flexDirection:'column',gap:10}}>
+        {Object.values(byResp).filter(function(r){return r.itens.length>0;}).map(function(r){
+          var done   = r.itens.filter(function(it){return it.status==='concluido';}).length;
+          var block  = r.itens.filter(function(it){return it.status==='bloqueado';}).length;
+          var total  = r.itens.length;
+          var carga  = Math.min(100, total*10); // 10 itens = 100% carga
+          var corCarga = carga>=80?'#E2445C':carga>=50?'#FDBC64':'#00C875';
+          return (
+            <div key={r.user.code} className="card">
+              <div style={{display:'flex',gap:12,alignItems:'center',marginBottom:8}}>
+                <div style={{width:36,height:36,borderRadius:'50%',background:'var(--accent)',
+                  display:'flex',alignItems:'center',justifyContent:'center',
+                  fontWeight:700,color:'#FFD0D0',fontSize:13,flexShrink:0}}>
+                  {(r.user.name||'?')[0].toUpperCase()}
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:700,fontSize:13}}>{r.user.name||r.user.code}</div>
+                  <div style={{fontSize:10,color:'var(--text3)'}}>{total} item(ns) · {done} concluído(s){block?' · ⚠️ '+block+' bloqueado(s)':''}</div>
+                </div>
+                <div style={{textAlign:'right'}}>
+                  <div style={{fontSize:13,fontWeight:700,color:corCarga}}>{carga}%</div>
+                  <div style={{fontSize:9,color:'var(--text3)'}}>carga</div>
+                </div>
+              </div>
+              {/* Barra de carga */}
+              <div style={{height:5,borderRadius:3,background:'var(--bg3)',marginBottom:8}}>
+                <div style={{height:'100%',width:carga+'%',borderRadius:3,background:corCarga,transition:'width .5s'}}/>
+              </div>
+              {/* Itens do usuário */}
+              <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
+                {r.itens.map(function(it){
+                  var st = statusSt(it.status);
+                  return (
+                    <div key={it.id} onClick={function(){editItem(it);}}
+                      style={{padding:'3px 8px',borderRadius:5,background:st.color+'18',
+                        border:'1px solid '+st.color+'40',fontSize:10,cursor:'pointer',
+                        color:'var(--text)'}}>
+                      {it.titulo.slice(0,25)}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+        {Object.values(byResp).every(function(r){return r.itens.length===0;})&&(
+          <div style={{textAlign:'center',padding:'30px',color:'var(--text3)'}}>
+            Atribua responsáveis aos itens para ver a carga de trabalho.
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  var inp = {width:'100%'};
+
+  return (
+    <div style={{display:'flex',gap:0,height:'100%',minHeight:0}}>
+
+      {/* ── Painel lateral — lista de projetos ── */}
+      <div style={{width:220,flexShrink:0,borderRight:'1px solid var(--border)',display:'flex',flexDirection:'column',paddingRight:10,marginRight:14}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+          <span style={{fontSize:11,fontWeight:700,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'.06em'}}>Projetos</span>
+          <button onClick={newBoard} className="btn btn-primary" style={{padding:'4px 10px',fontSize:11}}>+ Novo</button>
+        </div>
+        <div style={{flex:1,overflowY:'auto',display:'flex',flexDirection:'column',gap:5}}>
+          {boards.length===0&&(
+            <div style={{fontSize:11,color:'var(--text3)',textAlign:'center',padding:'20px 8px'}}>
+              Crie seu primeiro projeto
+            </div>
+          )}
+          {boards.map(function(b){
+            var prog = progBoard(b);
+            var sel  = selBoard&&selBoard.id===b.id;
+            return (
+              <div key={b.id} onClick={function(){setSelBoard(b);setViewMode('kanban');}}
+                style={{padding:'8px 10px',borderRadius:8,cursor:'pointer',
+                  background:sel?'rgba(87,155,252,.12)':'transparent',
+                  border:'1px solid '+(sel?'rgba(87,155,252,.4)':'transparent'),
+                  transition:'all .12s'}}>
+                <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}>
+                  <div style={{width:10,height:10,borderRadius:2,background:b.cor||'#579BFC',flexShrink:0}}/>
+                  <span style={{fontSize:12,fontWeight:sel?700:500,color:sel?'#60A5FA':'var(--text)',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{b.nome}</span>
+                </div>
+                <div style={{height:3,borderRadius:2,background:'var(--bg3)'}}>
+                  <div style={{height:'100%',width:prog+'%',borderRadius:2,background:prog>=100?'#00C875':'#579BFC',transition:'width .4s'}}/>
+                </div>
+                <div style={{fontSize:9,color:'var(--text3)',marginTop:2}}>{(b.itens||[]).length} item(s) · {prog}%</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Área principal ── */}
+      <div style={{flex:1,display:'flex',flexDirection:'column',minWidth:0,minHeight:0}}>
+        {!selBoard ? (
+          <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:14,color:'var(--text3)'}}>
+            <div style={{fontSize:40}}>📋</div>
+            <div style={{fontSize:14,fontWeight:600}}>Selecione um projeto ou crie um novo</div>
+            <button onClick={newBoard} className="btn btn-primary">+ Criar projeto</button>
+          </div>
+        ) : (
+          <div style={{display:'flex',flexDirection:'column',height:'100%'}}>
+            {/* Header do board */}
+            <div style={{display:'flex',gap:10,alignItems:'center',marginBottom:12,flexWrap:'wrap'}}>
+              <div style={{display:'flex',gap:8,alignItems:'center',flex:1}}>
+                <div style={{width:14,height:14,borderRadius:3,background:selBoard.cor||'#579BFC'}}/>
+                <span style={{fontWeight:800,fontSize:15}}>{selBoard.nome}</span>
+                {selBoard.cliente&&<span style={{fontSize:11,padding:'1px 8px',borderRadius:10,background:'rgba(87,155,252,.15)',color:'#579BFC'}}>{selBoard.cliente}</span>}
+                <span style={{fontSize:11,color:'var(--text3)'}}>{(selBoard.itens||[]).length} itens · {progBoard(selBoard)}% concluído</span>
+              </div>
+              {/* View switcher */}
+              <div style={{display:'flex',gap:2,background:'var(--bg3)',borderRadius:8,padding:2,border:'1px solid var(--border)'}}>
+                {[['kanban','⬛ Kanban'],['lista','☰ Lista'],['gantt','📅 Gantt'],['workload','👥 Carga']].map(function(v){
+                  return (
+                    <button key={v[0]} onClick={function(){setViewMode(v[0]);}}
+                      style={{padding:'5px 10px',fontSize:10,fontWeight:viewMode===v[0]?700:400,borderRadius:6,border:'none',
+                        background:viewMode===v[0]?'var(--card)':'transparent',
+                        color:viewMode===v[0]?'var(--text)':'var(--text3)',cursor:'pointer',whiteSpace:'nowrap'}}>
+                      {v[1]}
+                    </button>
+                  );
+                })}
+              </div>
+              <button onClick={function(){setForm(selBoard);setModal('board');}} className="btn btn-secondary" style={{padding:'5px 10px',fontSize:11}}>⚙ Editar</button>
+              {viewMode!=='kanban'&&<button onClick={newItem} className="btn btn-primary" style={{padding:'5px 10px',fontSize:11}}>+ Item</button>}
+            </div>
+            {/* Barra de progresso geral */}
+            <div style={{marginBottom:12}}>
+              <div style={{height:6,borderRadius:3,background:'var(--bg3)',overflow:'hidden'}}>
+                <div style={{height:'100%',width:progBoard(selBoard)+'%',borderRadius:3,
+                  background:progBoard(selBoard)>=100?'#00C875':'#579BFC',transition:'width .5s'}}/>
+              </div>
+            </div>
+            {/* View content */}
+            <div style={{flex:1,overflowY:'auto',overflowX:'auto'}}>
+              {viewMode==='kanban'   && <KanbanView/>}
+              {viewMode==='lista'    && <ListaView/>}
+              {viewMode==='gantt'    && <GanttView/>}
+              {viewMode==='workload' && <WorkloadView/>}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── MODAL BOARD ── */}
+      {modal==='board' && form && (
+        <div className="modal-bg">
+          <div className="modal" style={{maxWidth:500}}>
+            <div className="modal-hd">
+              <h2>{form.id?'✏️ Editar projeto':'📋 Novo projeto'}</h2>
+              <button className="modal-close" onClick={function(){setModal(null);}}>✕</button>
+            </div>
+            <div className="field" style={{marginBottom:10}}>
+              <label>Nome do projeto *</label>
+              <input value={form.nome||''} onChange={function(e){setForm(Object.assign({},form,{nome:e.target.value}));}} style={inp} autoFocus placeholder="Ex: Implantação 3ARM — Honda"/>
+            </div>
+            <div className="grid-2" style={{marginBottom:10}}>
+              <div className="field">
+                <label>Cliente</label>
+                <select value={form.cliente||''} onChange={function(e){setForm(Object.assign({},form,{cliente:e.target.value}));}} style={inp}>
+                  <option value="">— Nenhum —</option>
+                  {clients.map(function(c){return <option key={c.id} value={c.apelido}>{c.apelido}</option>;})}
+                </select>
+              </div>
+              <div className="field">
+                <label>Cor do projeto</label>
+                <div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:4}}>
+                  {['#579BFC','#00C875','#FDBC64','#E2445C','#A25DDC','#037F4C','#FF7575','#66CCFF'].map(function(c){
+                    return <div key={c} onClick={function(){setForm(Object.assign({},form,{cor:c}));}}
+                      style={{width:22,height:22,borderRadius:4,background:c,cursor:'pointer',
+                        border:'2px solid '+(form.cor===c?'#fff':'transparent'),transition:'border .1s'}}/>;
+                  })}
+                </div>
+              </div>
+            </div>
+            <div className="field" style={{marginBottom:14}}>
+              <label>Descrição / Objetivo</label>
+              <textarea value={form.descricao||''} onChange={function(e){setForm(Object.assign({},form,{descricao:e.target.value}));}} style={{width:'100%',height:56,resize:'vertical'}} placeholder="Objetivo, escopo, contexto..."/>
+            </div>
+            <div style={{display:'flex',gap:8}}>
+              <button className="btn btn-primary" onClick={saveBoard} style={{flex:1}}>💾 Salvar</button>
+              {form.id&&isGestor&&<button onClick={function(){deleteBoard(form.id);setModal(null);}} style={{padding:'7px 12px',borderRadius:7,border:'1px solid #E2445C',background:'rgba(226,68,92,.08)',color:'#E2445C',cursor:'pointer',fontSize:11,fontWeight:600}}>🗑 Excluir</button>}
+              <button className="btn btn-secondary" onClick={function(){setModal(null);}}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL ITEM ── */}
+      {modal==='item' && form && (
+        <div className="modal-bg">
+          <div className="modal" style={{maxWidth:640}}>
+            <div className="modal-hd">
+              <h2>{form.id&&(selBoard&&(selBoard.itens||[]).find(function(x){return x.id===form.id;}))?'✏️ Editar item':'+ Novo item'}</h2>
+              <button className="modal-close" onClick={function(){setModal(null);}}>✕</button>
+            </div>
+            {/* Status chips */}
+            <div style={{display:'flex',gap:5,flexWrap:'wrap',marginBottom:12}}>
+              {DEFAULT_STATUS.map(function(st){
+                var sel = form.status===st.id;
+                return <button key={st.id} onClick={function(){setForm(Object.assign({},form,{status:st.id}));}}
+                  style={{padding:'4px 10px',borderRadius:16,border:'1px solid '+(sel?st.color:'var(--border)'),
+                    background:sel?st.color+'22':'transparent',color:sel?st.color:'var(--text3)',
+                    cursor:'pointer',fontSize:10,fontWeight:sel?700:400}}>{st.label}</button>;
+              })}
+              <label style={{display:'flex',alignItems:'center',gap:5,fontSize:10,cursor:'pointer',marginLeft:8,color:'#FDBC64'}}>
+                <input type="checkbox" checked={!!form.milestone} onChange={function(e){setForm(Object.assign({},form,{milestone:e.target.checked}));}}/>
+                🏆 Marco
+              </label>
+            </div>
+            <div className="field" style={{marginBottom:10}}>
+              <label>Título *</label>
+              <input value={form.titulo||''} onChange={function(e){setForm(Object.assign({},form,{titulo:e.target.value}));}} style={inp} autoFocus/>
+            </div>
+            <div className="grid-3" style={{marginBottom:10}}>
+              <div className="field">
+                <label>Prioridade</label>
+                <select value={form.prioridade||'media'} onChange={function(e){setForm(Object.assign({},form,{prioridade:e.target.value}));}} style={inp}>
+                  {PRIORIDADES.map(function(p){return <option key={p.id} value={p.id}>{p.label}</option>;})}
+                </select>
+              </div>
+              <div className="field">
+                <label>Responsável</label>
+                <select value={form.resp||''} onChange={function(e){setForm(Object.assign({},form,{resp:e.target.value}));}} style={inp}>
+                  <option value="">— Nenhum —</option>
+                  {allUsers.map(function(u){return <option key={u.id} value={u.code}>{u.name} ({u.code})</option>;})}
+                </select>
+              </div>
+              <div className="field">
+                <label>Progresso (%)</label>
+                <input type="number" min="0" max="100" value={form.progresso||0} onChange={function(e){setForm(Object.assign({},form,{progresso:parseInt(e.target.value)||0}));}} style={inp}/>
+              </div>
+            </div>
+            <div className="grid-2" style={{marginBottom:10}}>
+              <div className="field"><label>Data início</label><input type="date" value={form.dataInicio||''} onChange={function(e){setForm(Object.assign({},form,{dataInicio:e.target.value}));}} style={inp}/></div>
+              <div className="field"><label>Data fim / entrega</label><input type="date" value={form.dataFim||''} onChange={function(e){setForm(Object.assign({},form,{dataFim:e.target.value}));}} style={inp}/></div>
+            </div>
+            <div className="grid-2" style={{marginBottom:10}}>
+              <div className="field"><label>Estimativa (h)</label><input type="number" value={form.estimativa||''} onChange={function(e){setForm(Object.assign({},form,{estimativa:e.target.value}));}} style={inp} placeholder="0"/></div>
+              <div className="field"><label>Tags (separadas por vírgula)</label><input value={form.tags||''} onChange={function(e){setForm(Object.assign({},form,{tags:e.target.value}));}} style={inp} placeholder="instalação, hardware, cliente"/></div>
+            </div>
+            {(selBoard&&(selBoard.itens||[]).filter(function(x){return x.id!==form.id;}).length>0)&&(
+              <div className="field" style={{marginBottom:10}}>
+                <label>Depende de</label>
+                <select value={form.dependeDe||''} onChange={function(e){setForm(Object.assign({},form,{dependeDe:e.target.value}));}} style={inp}>
+                  <option value="">— Nenhuma dependência —</option>
+                  {(selBoard.itens||[]).filter(function(x){return x.id!==form.id;}).map(function(x){
+                    return <option key={x.id} value={x.id}>{x.titulo.slice(0,50)}</option>;
+                  })}
+                </select>
+              </div>
+            )}
+            <div className="field" style={{marginBottom:14}}>
+              <label>Descrição / Critérios de aceitação</label>
+              <textarea value={form.descricao||''} onChange={function(e){setForm(Object.assign({},form,{descricao:e.target.value}));}} style={{width:'100%',height:60,resize:'vertical'}}/>
+            </div>
+            {/* Checklist */}
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:10,fontWeight:700,color:'var(--text2)',marginBottom:6,textTransform:'uppercase',letterSpacing:'.06em'}}>
+                Checklist ({(form.checklist||[]).filter(function(c){return c.done;}).length}/{(form.checklist||[]).length})
+              </div>
+              {(form.checklist||[]).map(function(c,i){
+                return (
+                  <div key={i} style={{display:'flex',gap:6,alignItems:'center',marginBottom:4}}>
+                    <input type="checkbox" checked={!!c.done} onChange={function(e){
+                      var cl = (form.checklist||[]).map(function(x,xi){return xi===i?Object.assign({},x,{done:e.target.checked}):x;});
+                      setForm(Object.assign({},form,{checklist:cl}));
+                    }}/>
+                    <input value={c.texto||''} onChange={function(e){
+                      var cl = (form.checklist||[]).map(function(x,xi){return xi===i?Object.assign({},x,{texto:e.target.value}):x;});
+                      setForm(Object.assign({},form,{checklist:cl}));
+                    }} style={{flex:1,padding:'3px 7px',fontSize:11}}/>
+                    <button onClick={function(){setForm(Object.assign({},form,{checklist:(form.checklist||[]).filter(function(_,xi){return xi!==i;})}));}}
+                      style={{background:'none',border:'none',cursor:'pointer',color:'var(--text3)',fontSize:12}}>✕</button>
+                  </div>
+                );
+              })}
+              <button onClick={function(){setForm(Object.assign({},form,{checklist:[...(form.checklist||[]),{texto:'',done:false}]}));}}
+                style={{fontSize:10,padding:'4px 10px',border:'1px dashed var(--border)',borderRadius:6,background:'transparent',color:'var(--text3)',cursor:'pointer',marginTop:4}}>
+                + Adicionar item
+              </button>
+            </div>
+            <div style={{display:'flex',gap:8}}>
+              <button className="btn btn-primary" onClick={saveItem} style={{flex:1}}>💾 Salvar</button>
+              {form.id&&<button onClick={function(){deleteItem(form.id);setModal(null);}} style={{padding:'7px 12px',borderRadius:7,border:'1px solid #E2445C',background:'rgba(226,68,92,.08)',color:'#E2445C',cursor:'pointer',fontSize:11}}>🗑</button>}
+              <button className="btn btn-secondary" onClick={function(){setModal(null);}}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── APP PRINCIPAL ────────────────────────────────────────────
 function App() {
   const [session, setSession] = useState(function(){ return load(KEYS.session, null); });
@@ -5534,6 +6314,7 @@ function App() {
     {id:'orcamento',   icon:'📝', label:'Orçamento'},
     {id:'posvenda',    icon:'📦', label:'Pós-Venda'},
     {id:'relatorio',   icon:'📋', label:'Relatórios'},
+    {id:'cronograma',  icon:'📅', label:'Cronograma'},
     {id:'tarefas',     icon:'✅', label:'Tarefas'},
     {id:'radar',       icon:'🧠', label:'Radar'},
     {id:'divider2',    divider:true},
@@ -5550,12 +6331,13 @@ function App() {
 
   function renderView() {
     if (view==='dashboard') return <ViewDashboard session={session}/>;
-    if (view==='forecast')  return <ViewForecast  session={session} isGestor={isGestor} isConsultor={isConsultor}/>;
+    if (view==='forecast')  return <ViewForecast  session={session} isGestor={isGestor} isConsultor={isConsultor} isEspecialista={isEspecialista}/>;
     if (view==='clientes')  return <ViewClientes  session={session}/>;
     if (view==='budget')    return <ViewBudget    session={session} isGestor={isGestor}/>;
     if (view==='orcamento') return <ViewOrcamento session={session} isGestor={isGestor}/>;
     if (view==='posvenda')  return <ViewPosVenda  session={session} isGestor={isGestor}/>;
     if (view==='relatorio') return <ViewRelatorio session={session} isGestor={isGestor} isConsultor={isConsultor}/>;
+    if (view==='cronograma')return <ViewCronograma session={session} isGestor={isGestor} isConsultor={isConsultor}/>;
     if (view==='tarefas')   return <ViewTarefas   session={session} isGestor={isGestor}/>;
     if (view==='radar')     return <ViewRadar     session={session} isGestor={isGestor} isConsultor={isConsultor}/>;
     if (view==='demo')      return <ViewDemo      session={session} isGestor={isGestor} isEspecialista={isEspecialista}/>;
