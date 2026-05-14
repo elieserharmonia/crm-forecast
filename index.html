@@ -283,10 +283,29 @@ function Login({ onLogin }) {
   const [mode,     setMode]     = useState('login');  // 'login'|'forgot'
   const [fMsg,     setFMsg]     = useState('');
 
+  function findUser(emailInput) {
+    const users = load(KEYS.users, DEFAULT_USERS);
+    const q = (emailInput||'').trim().toLowerCase();
+    if(!q) return null;
+    // 1. Match exato de email
+    var u = users.find(function(u){ return u.email.toLowerCase()===q; });
+    if(u) return u;
+    // 2. Parte antes do @ (ex: "elieser.fernandes" encontra "ef@sinuelo.com.br" pelo nome)
+    var local = q.split('@')[0];
+    // 3. Busca pelo nome (parte do nome bate com o email digitado)
+    u = users.find(function(u){
+      var uLocal = u.email.split('@')[0].toLowerCase();
+      var uName  = u.name.toLowerCase();
+      return uLocal.includes(local)||local.includes(uLocal)||
+             uName.includes(local)||local.includes(uName.split(' ')[0]);
+    });
+    return u||null;
+  }
+
   function handleLogin() {
     const users = load(KEYS.users, DEFAULT_USERS);
-    const user  = users.find(function(u){ return u.email===email.trim().toLowerCase(); });
-    if(!user)          { setErr('E-mail não encontrado. Contate o gestor.'); return; }
+    const user  = findUser(email);
+    if(!user){ setErr('E-mail não encontrado. Verifique o e-mail cadastrado ou use "Esqueci minha senha".'); return; }
     if(user.password!==pass){ setErr('Senha incorreta. Clique em "Esqueci minha senha" para recuperar.'); return; }
     if(user.pending)   { setErr('Conta aguardando ativação pelo gestor.'); return; }
     if(!user.active)   { setErr('Conta desativada. Contate o gestor.'); return; }
@@ -297,8 +316,11 @@ function Login({ onLogin }) {
   function handleForgot() {
     if(!email.trim()){ setFMsg('Informe seu e-mail acima.'); return; }
     const users = load(KEYS.users, DEFAULT_USERS);
-    const user  = users.find(function(u){ return u.email===email.trim().toLowerCase(); });
-    if(!user){ setFMsg('E-mail não encontrado no sistema.'); return; }
+    const user  = findUser(email);
+    if(!user){
+      setFMsg('E-mail não encontrado. Dica: use o e-mail cadastrado pelo gestor (ex: ef@sinuelo.com.br).');
+      return;
+    }
     const gestores = users.filter(function(u){ return u.role==='gestor'&&u.active&&!u.pending; });
     if(!gestores.length){ setFMsg('Nenhum gestor ativo. Contate o administrador.'); return; }
     const g = gestores[0];
@@ -363,6 +385,20 @@ function Login({ onLogin }) {
             <div style={{fontSize:11,color:'var(--text3)',marginBottom:14,textAlign:'center',lineHeight:1.6}}>
               Informe seu e-mail e enviaremos uma mensagem ao gestor para redefinir sua senha.
             </div>
+            {(function(){
+              var users = load(KEYS.users, DEFAULT_USERS);
+              var ativos = users.filter(function(u){return u.active&&!u.pending;});
+              return ativos.length>0 ? (
+                <div style={{background:'rgba(87,155,252,.06)',border:'1px solid rgba(87,155,252,.15)',borderRadius:7,padding:'8px 12px',marginBottom:12,fontSize:10}}>
+                  <div style={{fontWeight:600,color:'#60A5FA',marginBottom:5}}>E-mails cadastrados no sistema:</div>
+                  {ativos.map(function(u){
+                    return <div key={u.id} onClick={function(){setEmail(u.email);setFMsg('');}} style={{padding:'2px 4px',cursor:'pointer',color:'var(--text2)',borderRadius:4}} onMouseEnter={function(ev){ev.currentTarget.style.background='rgba(87,155,252,.1)';}} onMouseLeave={function(ev){ev.currentTarget.style.background='transparent';}}>
+                      📧 {u.email} <span style={{color:'var(--text3)'}}>— {u.name}</span>
+                    </div>;
+                  })}
+                </div>
+              ) : null;
+            })()}
             <div className="login-field">
               <label>Seu e-mail</label>
               <input type="email" value={email} onChange={function(e){setEmail(e.target.value);setFMsg('');}}
