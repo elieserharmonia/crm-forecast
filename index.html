@@ -480,18 +480,23 @@ function Sidebar({ view, setView, items }) {
 // ─── VIEW: FORECAST ──────────────────────────────────────────
 function ViewForecast({ session, isGestor, isConsultor, isEspecialista }) {
   const [opps, setOpps] = useState(function(){
-    // Gestor/consultor/especialista: mesclar dados de todos os usuários
-    if(isGestor || isConsultor || isEspecialista){
-      return loadTeam(KEYS.forecast, []);
-    }
-    // Vendedor: apenas seus próprios dados
+    if(isGestor || isConsultor || isEspecialista) return loadTeam(KEYS.forecast, []);
     return loadUser(KEYS.forecast, session.code, []);
   });
-  const [search, setSearch] = useState('');
+  const [search,       setSearch]      = useState('');
+  const [filterVendedor,setFilterVendedor]=useState('todos'); // 'todos' | code do vendedor
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [perfil, setPerfil] = useState(null);
   const [perfilTab, setPerfilTab] = useState('dados');
+
+  // Lista de vendedores únicos que têm oportunidades
+  var allUsers = load(KEYS.users, DEFAULT_USERS);
+  var vendedores = allUsers.filter(function(u){
+    return u.active && !u.pending && u.code && opps.some(function(o){
+      return (o.resp||'').toUpperCase()===(u.code||'').toUpperCase();
+    });
+  });
 
   const MONTHS_VIS = [
     MONTHS[CUR_MONTH % 12],
@@ -505,10 +510,15 @@ function ViewForecast({ session, isGestor, isConsultor, isEspecialista }) {
     rowColor:'', history:[]
   };
 
-  // Filtro por role
+  // Filtro por role + filtro de vendedor (gestor)
   function visibleOpps(list) {
-    if (isGestor || isConsultor || isEspecialista) return list;
-    return list.filter(function(o){ return (o.resp||'').toUpperCase() === (session.code||'').toUpperCase(); });
+    var base = (isGestor || isConsultor || isEspecialista) ? list
+      : list.filter(function(o){ return (o.resp||'').toUpperCase() === (session.code||'').toUpperCase(); });
+    // Filtro de vendedor específico (gestor/consultor/especialista)
+    if((isGestor||isConsultor||isEspecialista) && filterVendedor!=='todos'){
+      base = base.filter(function(o){ return (o.resp||'').toUpperCase()===filterVendedor.toUpperCase(); });
+    }
+    return base;
   }
 
   const filtered = visibleOpps(opps).filter(function(o) {
@@ -520,11 +530,12 @@ function ViewForecast({ session, isGestor, isConsultor, isEspecialista }) {
       ||(o.resp&&o.resp.toLowerCase().includes(q));
   });
 
-  // Métricas
-  const total   = visibleOpps(opps).length;
-  const pipeline = visibleOpps(opps).reduce(function(s,o){ return s+amtNum(o.amount)*parseFloat(o.confidence||0); },0);
-  const conf100 = visibleOpps(opps).filter(function(o){ return parseFloat(o.confidence||0)>=1; }).length;
-  const highPri = visibleOpps(opps).filter(function(o){ return parseFloat(o.confidence||0)>=0.5; }).length;
+  // Métricas — usam visibleOpps que já inclui filtro de vendedor
+  const visOpps  = visibleOpps(opps);
+  const total    = visOpps.length;
+  const pipeline = visOpps.reduce(function(s,o){ return s+amtNum(o.amount)*parseFloat(o.confidence||0); },0);
+  const conf100  = visOpps.filter(function(o){ return parseFloat(o.confidence||0)>=1; }).length;
+  const highPri  = visOpps.filter(function(o){ return parseFloat(o.confidence||0)>=0.5; }).length;
 
   function saveOpps(list) {
     setOpps(list);
@@ -694,6 +705,21 @@ function ViewForecast({ session, isGestor, isConsultor, isEspecialista }) {
         <input value={search} onChange={function(e){setSearch(e.target.value);}}
           placeholder="Buscar customer, supplier, descrição, resp..."
           style={{flex:1,minWidth:200}}/>
+        {/* Filtro de vendedor — visível para gestor/consultor/especialista */}
+        {(isGestor||isConsultor||isEspecialista) && (
+          <div style={{display:'flex',alignItems:'center',gap:6}}>
+            <span style={{fontSize:10,color:'var(--text3)',whiteSpace:'nowrap'}}>👤 Vendedor:</span>
+            <select value={filterVendedor} onChange={function(e){setFilterVendedor(e.target.value);}}
+              style={{padding:'6px 10px',fontSize:11,borderRadius:7,border:'1px solid var(--border)',
+                background:'var(--bg3)',color:'var(--text)',minWidth:140}}>
+              <option value="todos">Todos os vendedores</option>
+              {vendedores.map(function(u){
+                var count = opps.filter(function(o){return (o.resp||'').toUpperCase()===u.code.toUpperCase();}).length;
+                return <option key={u.id} value={u.code}>{u.name} ({count})</option>;
+              })}
+            </select>
+          </div>
+        )}
         <button className="btn btn-primary" onClick={openNew}>+ Nova</button>
         <label className="btn btn-blue" style={{cursor:'pointer'}}>
           📥 Importar Excel
