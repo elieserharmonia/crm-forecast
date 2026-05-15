@@ -655,18 +655,34 @@ function Sidebar({ view, setView, items }) {
 // ─── VIEW: FORECAST ──────────────────────────────────────────
 function ViewForecast({ session, isGestor, isConsultor, isEspecialista, filtroVendedor }) {
   const [opps, setOpps] = useState(function(){
-    // Sempre carregar tudo da chave principal
     var all = load(KEYS.forecast, []);
     if(isGestor || isConsultor || isEspecialista) return all;
-    // Vendedor: filtrar por resp (aceita vazio como sendo dele também)
-    var code = normCode(session.code);
-    var minhas = all.filter(function(o){ return normCode(o.resp)===code; });
-    // Se não encontrou nada com resp=code, tentar chave isolada legada
+    var code     = normCode(session.code);
+    var namePart = normCode(session.name ? session.name.split(' ')[0] : '');
+    // Aceitar: resp === code ('EF') OU resp contém primeiro nome ('ELIESER')
+    var minhas = all.filter(function(o){
+      var r = normCode(o.resp);
+      return r===code || (namePart && r===namePart) || (namePart && r.indexOf(namePart)===0);
+    });
+    // Normalizar resp para o code correto e salvar de volta
+    if(minhas.length > 0){
+      var precisaNormalizar = minhas.some(function(o){ return normCode(o.resp)!==code; });
+      if(precisaNormalizar){
+        console.log('[FORECAST] Normalizando '+minhas.length+' opps: resp → '+code);
+        var minhasFixed = minhas.map(function(o){ return Object.assign({},o,{resp:code}); });
+        var deOutros = all.filter(function(o){
+          var r = normCode(o.resp);
+          return r!==code && !(namePart && (r===namePart||r.indexOf(namePart)===0));
+        });
+        var merged = deOutros.concat(minhasFixed);
+        try{ localStorage.setItem(KEYS.forecast, JSON.stringify(merged)); }catch(e){}
+        return minhasFixed;
+      }
+    }
+    // Fallback: chave isolada legada
     if(minhas.length===0){
       var legado = load(KEYS.forecast+'_'+code, []);
       if(legado.length>0){
-        console.log('[FORECAST] Migrando '+legado.length+' opps da chave legada para a principal');
-        // Migrar: adicionar código do vendedor e salvar na chave principal
         var legadoFixed = legado.map(function(o){ return Object.assign({},o,{resp:code}); });
         var allNovo = all.concat(legadoFixed);
         try{ localStorage.setItem(KEYS.forecast, JSON.stringify(allNovo)); }catch(e){}
@@ -3097,6 +3113,101 @@ function ViewEstoque({ session }) {
     XLSX2.writeFile(wb,'estoque_selecionado_'+new Date().toISOString().slice(0,10)+'.xlsx');
   }
 
+  // Copiar itens para área de transferência em HTML (tabela com bordas para Outlook/Gmail)
+  var [copiedMsg, setCopiedMsg] = useState('');
+  function copiarParaEmail(){
+    var lista = selList.length > 0 ? selList : filtered;
+    if(!lista.length){ alert('Nenhum item para copiar.'); return; }
+    var hoje = new Date().toLocaleDateString('pt-BR');
+
+    // HTML com tabela de bordas finas — funciona no Outlook e Gmail
+    var html = '<div style="font-family:Arial,sans-serif;font-size:11pt;">'
+      +'<p style="margin:0 0 6px 0;"><strong>CONSULTA DE ESTOQUE — FORGE B2B</strong></p>'
+      +'<p style="margin:0 0 10px 0;font-size:10pt;color:#555;">Data: '+hoje+'</p>'
+      +'<table style="border-collapse:collapse;width:100%;font-size:10pt;">'
+      +'<thead>'
+      +'<tr style="background:#1A1A2E;color:#ffffff;">'
+      +'<th style="border:1px solid #999;padding:5px 8px;text-align:center;white-space:nowrap;">QTD</th>'
+      +'<th style="border:1px solid #999;padding:5px 8px;text-align:left;">DESCRIÇÃO</th>'
+      +'<th style="border:1px solid #999;padding:5px 8px;text-align:center;white-space:nowrap;">CÓDIGO</th>'
+      +'<th style="border:1px solid #999;padding:5px 8px;text-align:center;white-space:nowrap;">SIGMA</th>'
+      +'</tr>'
+      +'</thead>'
+      +'<tbody>';
+
+    lista.forEach(function(it, i){
+      var bg = i%2===0 ? '#ffffff' : '#f5f5f5';
+      var qtdColor = (it.sd||0)>0 ? '#166534' : '#991b1b';
+      html += '<tr style="background:'+bg+';">'
+        +'<td style="border:1px solid #ccc;padding:4px 8px;text-align:center;font-weight:700;color:'+qtdColor+';">'+(it.sd||0)+'</td>'
+        +'<td style="border:1px solid #ccc;padding:4px 8px;">'+(it.descricao||'')+'</td>'
+        +'<td style="border:1px solid #ccc;padding:4px 8px;text-align:center;font-family:monospace;">'+(it.codigo||'')+'</td>'
+        +'<td style="border:1px solid #ccc;padding:4px 8px;text-align:center;font-family:monospace;">'+(it.sigma||'')+'</td>'
+        +'</tr>';
+    });
+
+    html += '</tbody>'
+      +'<tfoot>'
+      +'<tr style="background:#f0f0f0;">'
+      +'<td colspan="4" style="border:1px solid #ccc;padding:4px 8px;text-align:right;font-size:9pt;color:#555;">'
+      +'Total: <strong>'+lista.length+'</strong> item(s)'
+      +'</td>'
+      +'</tr>'
+      +'</tfoot>'
+      +'</table>'
+      +'<p style="margin:10px 0 0 0;font-size:9pt;color:#888;">FORGE B2B — Sinuelo Service Ltda | crm@sinuelo.com | www.sinuelo.com</p>'
+      +'</div>';
+
+    // Texto puro como fallback
+    var texto = 'CONSULTA DE ESTOQUE — FORGE B2B\nData: '+hoje+'\n\n'
+      +'QTD\tDESCRIÇÃO\tCÓDIGO\tSIGMA\n'
+      +lista.map(function(it){ return (it.sd||0)+'\t'+(it.descricao||'')+'\t'+(it.codigo||'')+'\t'+(it.sigma||''); }).join('\n')
+      +'\n\nTotal: '+lista.length+' item(s)\nFORGE B2B — Sinuelo Service Ltda';
+
+    // Copiar HTML + texto para clipboard (Outlook lê o HTML)
+    function doCopy(){
+      if(window.ClipboardItem && navigator.clipboard && navigator.clipboard.write){
+        var blob = new Blob([html], {type:'text/html'});
+        var blobText = new Blob([texto], {type:'text/plain'});
+        navigator.clipboard.write([new ClipboardItem({'text/html':blob,'text/plain':blobText})])
+          .then(function(){
+            setCopiedMsg('✅ Copiado!');
+            setTimeout(function(){setCopiedMsg('');},2500);
+          })
+          .catch(function(){ fallbackCopy(); });
+      } else {
+        fallbackCopy();
+      }
+    }
+
+    function fallbackCopy(){
+      // Criar elemento temporário com HTML e usar execCommand
+      var div = document.createElement('div');
+      div.innerHTML = html;
+      div.style.position = 'fixed';
+      div.style.left = '-9999px';
+      div.style.top = '0';
+      div.contentEditable = 'true';
+      document.body.appendChild(div);
+      var range = document.createRange();
+      range.selectNodeContents(div);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      try {
+        document.execCommand('copy');
+        setCopiedMsg('✅ Copiado!');
+        setTimeout(function(){setCopiedMsg('');},2500);
+      } catch(e) {
+        alert('Não foi possível copiar. Tente no Chrome.');
+      }
+      sel.removeAllRanges();
+      document.body.removeChild(div);
+    }
+
+    doCopy();
+  }
+
   return (
     <div style={{display:'flex',flexDirection:'column',gap:12,height:'100%'}}>
       {/* Controles */}
@@ -3122,6 +3233,14 @@ function ViewEstoque({ session }) {
           <button className="btn btn-green" onClick={exportSel}>📊 Exportar {selList.length}</button>
         )}
         {selList.length>0 && <button className="btn btn-secondary" onClick={clearSel}>Limpar</button>}
+        {/* Copiar para e-mail */}
+        <button onClick={copiarParaEmail}
+          style={{display:'flex',alignItems:'center',gap:5,padding:'6px 12px',borderRadius:7,
+            border:'1px solid rgba(37,99,235,.4)',
+            background:copiedMsg?'rgba(22,163,74,.15)':'rgba(37,99,235,.1)',
+            color:copiedMsg?'#4ADE80':'#60A5FA',cursor:'pointer',fontSize:11,fontWeight:600,flexShrink:0}}>
+          {copiedMsg || '📋 Copiar para e-mail'}
+        </button>
         <label className="btn btn-blue" style={{cursor:'pointer'}}>
           {loading?'Importando...':'📥 Importar'}
           <input type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={importXLSX}/>
@@ -4278,8 +4397,13 @@ function ViewDashboard({ session, filtroVendedor }) {
 // ─── VIEW: RELATÓRIO ─────────────────────────────────────────
 function ViewRelatorio({ session, isGestor, isConsultor, filtroVendedor }) {
   var fcOppsAll = load(KEYS.forecast, []);
-  var fcOpps   = (isGestor||isConsultor) ? fcOppsAll
-    : fcOppsAll.filter(function(o){ return (o.resp||'').toUpperCase()===(session.code||'').toUpperCase(); });
+  var code      = normCode(session.code);
+  var namePart  = normCode(session.name ? session.name.split(' ')[0] : '');
+  var fcOpps    = (isGestor||isConsultor) ? fcOppsAll
+    : fcOppsAll.filter(function(o){
+        var r = normCode(o.resp);
+        return r===code || (namePart && (r===namePart || r.indexOf(namePart)===0));
+      });
   var clients  = load(KEYS.clients,   []);
   var orcs     = load('crm_orcs_v1',  []);
   var budget   = load(KEYS.budget,    {});
@@ -4294,9 +4418,9 @@ function ViewRelatorio({ session, isGestor, isConsultor, filtroVendedor }) {
   var [relHtml, setRelHtml] = useState('');
   var [loading, setLoading] = useState(false);
 
-  // Visibilidade por role
+  // Visibilidade por role + filtro global de vendedor
   var visOpps = (filtroVendedor && filtroVendedor!=='todos')
-    ? fcOpps.filter(function(o){ return (o.resp||'').toUpperCase()===filtroVendedor.toUpperCase(); })
+    ? fcOpps.filter(function(o){ return normCode(o.resp)===normCode(filtroVendedor); })
     : fcOpps;
 
   function toggleSel(id){ setSelIds(function(prev){ return prev.includes(id)?prev.filter(function(x){return x!==id;}):[...prev,id]; }); }
