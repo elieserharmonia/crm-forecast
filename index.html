@@ -436,6 +436,21 @@ function initUsers() {
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────
+// Carregar forecast do usuário correto (vendedor=chave isolada, gestor=chave geral)
+function loadForecast(session, isGestor, isConsultor, isEspecialista) {
+  if(isGestor || isConsultor || isEspecialista) return load(KEYS.forecast, []);
+  var code     = normCode(session.code);
+  var namePart = normCode(session.name ? session.name.split(' ')[0] : '');
+  var vendorKey = KEYS.forecast + '_' + code;
+  var vendorData = load(vendorKey, []);
+  if(vendorData.length > 0) return vendorData;
+  // Fallback: filtrar chave geral
+  var all = load(KEYS.forecast, []);
+  return all.filter(function(o){
+    var r = normCode(o.resp);
+    return r===code || (namePart && (r===namePart || r.indexOf(namePart)===0));
+  });
+}
 function fmtAmt(v) {
   const n = parseFloat(String(v||'0').replace(/[^0-9.]/g,''))||0;
   if (n === 0) return '—';
@@ -4228,7 +4243,7 @@ function ViewDashboard({ session, filtroVendedor }) {
   var PERIODOS = [{id:'ano',label:'Ano inteiro'},{id:'semestre',label:'Semestre'},{id:'trimestre',label:'Trimestre'},{id:'mes',label:'Mês'}];
   var [periodo, setPeriodo] = useState('ano');
 
-  var fcOppsAll = load(KEYS.forecast, []);
+  var fcOppsAll = loadForecast(session, isGestor, isConsultor, isEspecialista);
   var fcOpps = (filtroVendedor && filtroVendedor!=='todos')
     ? fcOppsAll.filter(function(o){ return (o.resp||'').toUpperCase()===filtroVendedor.toUpperCase(); })
     : fcOppsAll;
@@ -4465,14 +4480,23 @@ function ViewDashboard({ session, filtroVendedor }) {
 
 // ─── VIEW: RELATÓRIO ─────────────────────────────────────────
 function ViewRelatorio({ session, isGestor, isConsultor, filtroVendedor }) {
-  var fcOppsAll = load(KEYS.forecast, []);
-  var code      = normCode(session.code);
-  var namePart  = normCode(session.name ? session.name.split(' ')[0] : '');
-  var fcOpps    = (isGestor||isConsultor) ? fcOppsAll
-    : fcOppsAll.filter(function(o){
-        var r = normCode(o.resp);
-        return r===code || (namePart && (r===namePart || r.indexOf(namePart)===0));
-      });
+  var code     = normCode(session.code);
+  var namePart = normCode(session.name ? session.name.split(' ')[0] : '');
+
+  // Carregar opps corretamente — mesma lógica do ViewForecast
+  var fcOpps = (function(){
+    if(isGestor || isConsultor) return load(KEYS.forecast, []);
+    // Vendedor: carregar da chave isolada
+    var vendorKey = KEYS.forecast + '_' + code;
+    var vendorData = load(vendorKey, []);
+    if(vendorData.length > 0) return vendorData;
+    // Fallback: chave compartilhada filtrada
+    var all = load(KEYS.forecast, []);
+    return all.filter(function(o){
+      var r = normCode(o.resp);
+      return r===code || (namePart && (r===namePart || r.indexOf(namePart)===0));
+    });
+  })();
   var clients  = load(KEYS.clients,   []);
   var orcs     = load('crm_orcs_v1',  []);
   var budget   = load(KEYS.budget,    {});
