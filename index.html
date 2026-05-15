@@ -655,41 +655,30 @@ function Sidebar({ view, setView, items }) {
 // ─── VIEW: FORECAST ──────────────────────────────────────────
 function ViewForecast({ session, isGestor, isConsultor, isEspecialista, filtroVendedor }) {
   const [opps, setOpps] = useState(function(){
+    if(isGestor || isConsultor || isEspecialista) return load(KEYS.forecast, []);
+    // VENDEDOR: carregar da chave isolada (crm_forecast_v1_EF)
+    var code = normCode(session.code);
+    var vendorKey = KEYS.forecast + '_' + code;
+    var vendorData = load(vendorKey, []);
+    if(vendorData.length > 0){
+      console.log('[FORECAST VENDEDOR] Carregado:', vendorData.length, 'de', vendorKey);
+      return vendorData;
+    }
+    // Fallback: chave compartilhada filtrada (para migração de dados antigos)
     var all = load(KEYS.forecast, []);
-    if(isGestor || isConsultor || isEspecialista) return all;
-    var code     = normCode(session.code);
     var namePart = normCode(session.name ? session.name.split(' ')[0] : '');
-    // Aceitar: resp === code ('EF') OU resp contém primeiro nome ('ELIESER')
     var minhas = all.filter(function(o){
       var r = normCode(o.resp);
-      return r===code || (namePart && r===namePart) || (namePart && r.indexOf(namePart)===0);
+      return r===code || (namePart && (r===namePart||r.indexOf(namePart)===0));
     });
-    // Normalizar resp para o code correto e salvar de volta
     if(minhas.length > 0){
-      var precisaNormalizar = minhas.some(function(o){ return normCode(o.resp)!==code; });
-      if(precisaNormalizar){
-        console.log('[FORECAST] Normalizando '+minhas.length+' opps: resp → '+code);
-        var minhasFixed = minhas.map(function(o){ return Object.assign({},o,{resp:code}); });
-        var deOutros = all.filter(function(o){
-          var r = normCode(o.resp);
-          return r!==code && !(namePart && (r===namePart||r.indexOf(namePart)===0));
-        });
-        var merged = deOutros.concat(minhasFixed);
-        try{ localStorage.setItem(KEYS.forecast, JSON.stringify(merged)); }catch(e){}
-        return minhasFixed;
-      }
+      // Migrar para chave isolada
+      var fixed = minhas.map(function(o){ return Object.assign({},o,{resp:code}); });
+      try{ localStorage.setItem(vendorKey, JSON.stringify(fixed)); }catch(e){}
+      console.log('[FORECAST] Migrado '+fixed.length+' opps → '+vendorKey);
+      return fixed;
     }
-    // Fallback: chave isolada legada
-    if(minhas.length===0){
-      var legado = load(KEYS.forecast+'_'+code, []);
-      if(legado.length>0){
-        var legadoFixed = legado.map(function(o){ return Object.assign({},o,{resp:code}); });
-        var allNovo = all.concat(legadoFixed);
-        try{ localStorage.setItem(KEYS.forecast, JSON.stringify(allNovo)); }catch(e){}
-        return legadoFixed;
-      }
-    }
-    return minhas;
+    return [];
   });
   const [search,       setSearch]      = useState('');
   const [modalOpen, setModalOpen] = useState(false);
@@ -736,7 +725,6 @@ function ViewForecast({ session, isGestor, isConsultor, isEspecialista, filtroVe
   function saveOpps(list) {
     var code = normCode(session.code);
 
-    // Garantir resp em todas as opps
     var fixedList = list.map(function(o) {
       return Object.assign({}, o, { resp: normCode(o.resp) || code });
     });
@@ -744,16 +732,13 @@ function ViewForecast({ session, isGestor, isConsultor, isEspecialista, filtroVe
     setOpps(fixedList);
 
     if(isGestor || isConsultor || isEspecialista) {
-      // GESTOR: salva tudo na chave compartilhada
       save(KEYS.forecast, fixedList);
       console.log('[FORECAST GESTOR]', fixedList.length);
     } else {
-      // VENDEDOR: carregar chave compartilhada, remover apenas SUAS opps, adicionar novas
-      var all = load(KEYS.forecast, []);
-      var deOutros = all.filter(function(o){ return normCode(o.resp)!==code; });
-      var merged = deOutros.concat(fixedList);
-      save(KEYS.forecast, merged);
-      console.log('[FORECAST VENDEDOR '+code+'] proprias:'+fixedList.length+' total:'+merged.length);
+      // VENDEDOR: salva APENAS as suas próprias opps em chave isolada
+      var vendorKey = KEYS.forecast + '_' + code;
+      save(vendorKey, fixedList);
+      console.log('[FORECAST VENDEDOR '+code+']', fixedList.length, '→', vendorKey);
     }
   }
 
@@ -1037,11 +1022,23 @@ function ViewForecast({ session, isGestor, isConsultor, isEspecialista, filtroVe
               </div>
               <div className="field">
                 <label>RESP.</label>
-                <input value={editing.resp||''} onChange={function(e){setEditing(Object.assign({},editing,{resp:e.target.value}));}} placeholder="EF"/>
+                <input value={editing.resp||''} onChange={function(e){setEditing(Object.assign({},editing,{resp:e.target.value}));}}
+                  placeholder="EF" list="fc-resp-list"/>
+                <datalist id="fc-resp-list">
+                  {load(KEYS.users,DEFAULT_USERS).filter(function(u){return u.active;}).map(function(u){
+                    return <option key={u.id} value={u.code}>{u.name}</option>;
+                  })}
+                </datalist>
               </div>
               <div className="field">
                 <label>UF</label>
-                <input value={editing.uf||''} onChange={function(e){setEditing(Object.assign({},editing,{uf:e.target.value}));}} placeholder="SP"/>
+                <input value={editing.uf||''} onChange={function(e){setEditing(Object.assign({},editing,{uf:e.target.value}));}}
+                  placeholder="SP" list="fc-uf-list"/>
+                <datalist id="fc-uf-list">
+                  {['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO'].map(function(u){
+                    return <option key={u} value={u}/>;
+                  })}
+                </datalist>
               </div>
               <div className="field">
                 <label>Confidence</label>
@@ -1053,17 +1050,43 @@ function ViewForecast({ session, isGestor, isConsultor, isEspecialista, filtroVe
             <div className="grid-2" style={{marginBottom:12}}>
               <div className="field">
                 <label>CUSTOMER *</label>
-                <input value={editing.customer||''} onChange={function(e){setEditing(Object.assign({},editing,{customer:e.target.value}));}} autoFocus/>
+                <input value={editing.customer||''} onChange={function(e){setEditing(Object.assign({},editing,{customer:e.target.value}));}}
+                  autoFocus list="fc-customers-list" placeholder="Digite ou selecione..."/>
+                <datalist id="fc-customers-list">
+                  {(function(){
+                    var clts = load(KEYS.clients,[]);
+                    var names = clts.map(function(c){return c.apelido||c.nome||'';}).filter(Boolean);
+                    // Também incluir customers já existentes no forecast
+                    var existing = opps.map(function(o){return o.customer||'';}).filter(Boolean);
+                    var all = names.concat(existing).filter(function(v,i,a){return a.indexOf(v)===i;}).sort();
+                    return all.map(function(n){ return <option key={n} value={n}/>; });
+                  })()}
+                </datalist>
               </div>
               <div className="field">
                 <label>SUPPLIER</label>
-                <input value={editing.supplier||''} onChange={function(e){setEditing(Object.assign({},editing,{supplier:e.target.value}));}}/>
+                <input value={editing.supplier||''} onChange={function(e){setEditing(Object.assign({},editing,{supplier:e.target.value}));}}
+                  list="fc-suppliers-list" placeholder="Digite ou selecione..."/>
+                <datalist id="fc-suppliers-list">
+                  {['BOSCH IW','BOSCH PT','HS-T','LÜBBERING','MILWAUKEE','MOMENTO','NORBAR','ENERPAC','PANASONIC','STAHLWILLE','STURTEVANT','3ARM','KISTLER','SCHATZ','TECNA','JAGER','NOMUDA','VESSEL','OUTROS'].map(function(s){
+                    return <option key={s} value={s}/>;
+                  })}
+                </datalist>
               </div>
             </div>
             <div className="grid-2" style={{marginBottom:12}}>
               <div className="field">
                 <label>DESCRIPTION</label>
-                <input value={editing.description||''} onChange={function(e){setEditing(Object.assign({},editing,{description:e.target.value}));}}/>
+                <input value={editing.description||''} onChange={function(e){setEditing(Object.assign({},editing,{description:e.target.value}));}}
+                  list="fc-desc-list" placeholder="Digite ou selecione..."/>
+                <datalist id="fc-desc-list">
+                  {(function(){
+                    var descs = opps.map(function(o){return o.description||'';}).filter(Boolean);
+                    return descs.filter(function(v,i,a){return a.indexOf(v)===i;}).slice(0,50).map(function(d){
+                      return <option key={d} value={d}/>;
+                    });
+                  })()}
+                </datalist>
               </div>
               <div className="field">
                 <label>AMOUNT (R$)</label>
@@ -4671,6 +4694,32 @@ function ViewRelatorio({ session, isGestor, isConsultor, filtroVendedor }) {
     URL.revokeObjectURL(url);
   }
 
+  var [relCopiedMsg, setRelCopiedMsg] = useState('');
+  function copiarRelatorioEmail(){
+    if(!relHtml && !relText){ alert('Gere o relatório primeiro.'); return; }
+    var html = relHtml || '<pre style="font-family:monospace;font-size:10pt;">'+relText+'</pre>';
+    function doCopy(){
+      if(window.ClipboardItem && navigator.clipboard && navigator.clipboard.write){
+        var blob = new Blob([html],{type:'text/html'});
+        var blobT= new Blob([relText||''],{type:'text/plain'});
+        navigator.clipboard.write([new ClipboardItem({'text/html':blob,'text/plain':blobT})])
+          .then(function(){setRelCopiedMsg('✅ Copiado!');setTimeout(function(){setRelCopiedMsg('');},2500);})
+          .catch(function(){fallbackRel();});
+      } else { fallbackRel(); }
+    }
+    function fallbackRel(){
+      var div = document.createElement('div');
+      div.innerHTML = html; div.style.position='fixed'; div.style.left='-9999px';
+      div.contentEditable='true'; document.body.appendChild(div);
+      var range = document.createRange(); range.selectNodeContents(div);
+      var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+      try{ document.execCommand('copy'); setRelCopiedMsg('✅ Copiado!'); setTimeout(function(){setRelCopiedMsg('');},2500); }
+      catch(e){ alert('Não foi possível copiar. Tente no Chrome.'); }
+      sel.removeAllRanges(); document.body.removeChild(div);
+    }
+    doCopy();
+  }
+
   function imprimirRelatorio(){
     if(!relHtml && !relText) return;
     var w = window.open('','_blank','width=900,height=700');
@@ -4751,6 +4800,12 @@ function ViewRelatorio({ session, isGestor, isConsultor, filtroVendedor }) {
             <div style={{display:'flex',gap:8,flexShrink:0}}>
               <button className="btn btn-secondary" onClick={imprimirRelatorio}>🖨 Imprimir</button>
               {relText && <button className="btn btn-green" onClick={exportarRelatorio}>💾 Exportar .txt</button>}
+              {relText && <button onClick={copiarRelatorioEmail}
+                style={{padding:'6px 14px',borderRadius:7,border:'1px solid rgba(37,99,235,.4)',
+                  background:relCopiedMsg?'rgba(22,163,74,.15)':'rgba(37,99,235,.1)',
+                  color:relCopiedMsg?'#4ADE80':'#60A5FA',cursor:'pointer',fontSize:11,fontWeight:600}}>
+                {relCopiedMsg||'📋 Copiar para e-mail'}
+              </button>}
               {relText && <button className="btn btn-secondary" onClick={function(){navigator.clipboard&&navigator.clipboard.writeText(relText);}} title="Copiar texto">📋 Copiar</button>}
               <button className="btn btn-secondary" style={{marginLeft:'auto'}} onClick={function(){setRelText('');setRelHtml('');}}>✕ Limpar</button>
             </div>
@@ -7119,7 +7174,9 @@ function App() {
       save(KEYS.session, u);
       // Registrar chave de forecast do vendedor no SUPA_MAP
       if(u.role!=='gestor' && u.role!=='consultor' && u.role!=='especialista') {
-        window.forgeRegisterVendor(u.code);
+        var vk = KEYS.forecast+'_'+normCode(u.code);
+        if(!SUPA_MAP[vk]) SUPA_MAP[vk]={table:'forecast',id:'vendor_'+normCode(u.code)};
+        console.log('[FORGE] Chave vendedor registrada:', vk);
       }
     }}/>;
   }
