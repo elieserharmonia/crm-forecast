@@ -4990,14 +4990,14 @@ function ViewRelatorio({ session, isGestor, isConsultor, filtroVendedor }) {
           <div style={{display:'flex',flexDirection:'column',gap:8,height:'100%'}}>
             <div style={{display:'flex',gap:8,flexShrink:0}}>
               <button className="btn btn-secondary" onClick={imprimirRelatorio}>🖨 Imprimir</button>
-              {relText && <button className="btn btn-green" onClick={exportarRelatorio}>💾 Exportar .txt</button>}
-              {relText && <button onClick={copiarRelatorioEmail}
+              {(relText||relHtml) && <button className="btn btn-green" onClick={exportarRelatorio}>💾 Exportar .txt</button>}
+              {(relText||relHtml) && <button onClick={copiarRelatorioEmail}
                 style={{padding:'6px 14px',borderRadius:7,border:'1px solid rgba(37,99,235,.4)',
                   background:relCopiedMsg?'rgba(22,163,74,.15)':'rgba(37,99,235,.1)',
                   color:relCopiedMsg?'#4ADE80':'#60A5FA',cursor:'pointer',fontSize:11,fontWeight:600}}>
                 {relCopiedMsg||'📋 Copiar para e-mail'}
               </button>}
-              {relText && <button onClick={enviarEmailRelatorio}
+              {(relText||relHtml) && <button onClick={enviarEmailRelatorio}
                 style={{padding:'6px 14px',borderRadius:7,border:'1px solid rgba(22,163,74,.4)',
                   background:'rgba(22,163,74,.12)',color:'#4ADE80',cursor:'pointer',fontSize:11,fontWeight:700,
                   display:'flex',alignItems:'center',gap:5}}>
