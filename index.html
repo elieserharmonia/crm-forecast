@@ -4817,51 +4817,85 @@ function ViewRelatorio({ session, isGestor, isConsultor, filtroVendedor }) {
     setShowEmailModal(false);
     var hoje = new Date().toLocaleDateString('pt-BR');
 
-    // 1. Copiar HTML para clipboard (para colar no corpo do e-mail)
-    var htmlFull = '<!DOCTYPE html><html><head><meta charset="UTF-8">'
-      +'<style>body{font-family:Segoe UI,Arial,sans-serif;font-size:11pt;margin:12mm;}'
-      +'ul{margin:2px 0;padding-left:18px;}li{margin-bottom:2px;}</style></head>'
-      +'<body>'+relHtml+'</body></html>';
+    // Wrapper Outlook-compatível — todos estilos inline, sem CSS externo
+    var htmlEmail = '<!DOCTYPE html>'
+      +'<html xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">'
+      +'<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width">'
+      +'<!--[if mso]><xml><o:OfficeDocumentSettings><o:AllowPNG/><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml><![endif]-->'
+      +'</head>'
+      +'<body style="margin:0;padding:0;background:#f4f4f4;font-family:Segoe UI,Arial,sans-serif;">'
+      +'<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f4f4;">'
+      +'<tr><td align="center" style="padding:16px 8px;">'
+      +'<table width="700" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);">'
 
-    var htmlCorpo = relHtml || ('<pre>'+relText+'</pre>');
+      // Header FORGE B2B
+      +'<tr><td style="background:#1E2D4A;padding:14px 20px;">'
+      +'<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
+      +'<td><span style="font-size:18px;font-weight:900;color:#E8F0FF;letter-spacing:.06em;">⚡ FORGE B2B</span>'
+      +'<span style="font-size:10px;color:#A8C4F0;margin-left:10px;letter-spacing:.1em;">TORQUE + CONTROLE · SOLUÇÕES INDUSTRIAIS</span></td>'
+      +'<td align="right"><span style="font-size:10px;color:#A8C4F0;">'+hoje+'</span></td>'
+      +'</tr></table>'
+      +'</td></tr>'
+
+      // Conteúdo do relatório
+      +'<tr><td style="padding:20px 20px 10px 20px;">'
+      +(relHtml||('<pre style="font-family:monospace;font-size:10pt;white-space:pre-wrap;">'+relText+'</pre>'))
+      +'</td></tr>'
+
+      // Footer
+      +'<tr><td style="background:#F8FAFC;padding:12px 20px;border-top:1px solid #E2E8F0;">'
+      +'<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
+      +'<td><span style="font-size:10px;color:#94A3B8;">Gerado por FORGE B2B CRM · Sinuelo Service Ltda</span></td>'
+      +'<td align="right"><span style="font-size:10px;color:#94A3B8;">crm@sinuelo.com · www.sinuelo.com</span></td>'
+      +'</tr></table>'
+      +'</td></tr>'
+
+      +'</table>'
+      +'</td></tr></table>'
+      +'</body></html>';
+
+    // Texto puro fallback
+    var textoPlano = 'Relatório FORGE B2B\nData: '+hoje+'\n\n'+(relText||'[Ver relatório HTML anexo]');
 
     function doClip(){
       if(window.ClipboardItem && navigator.clipboard && navigator.clipboard.write){
-        var blob = new Blob([htmlCorpo],{type:'text/html'});
-        var blobT= new Blob([relText||''],{type:'text/plain'});
+        var blob  = new Blob([htmlEmail], {type:'text/html'});
+        var blobT = new Blob([textoPlano], {type:'text/plain'});
         return navigator.clipboard.write([new ClipboardItem({'text/html':blob,'text/plain':blobT})]);
       }
-      // Fallback execCommand
-      var div = document.createElement('div');
-      div.innerHTML = htmlCorpo;
-      div.style.position='fixed'; div.style.left='-9999px';
-      div.contentEditable='true'; document.body.appendChild(div);
-      var range = document.createRange(); range.selectNodeContents(div);
-      var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
-      try{ document.execCommand('copy'); }catch(e){}
-      sel.removeAllRanges(); document.body.removeChild(div);
-      return Promise.resolve();
+      return new Promise(function(resolve){
+        var div = document.createElement('div');
+        div.innerHTML = htmlEmail;
+        div.style.position='fixed'; div.style.left='-9999px';
+        div.contentEditable='true'; document.body.appendChild(div);
+        var range = document.createRange(); range.selectNodeContents(div);
+        var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+        try{ document.execCommand('copy'); }catch(e){}
+        sel.removeAllRanges(); document.body.removeChild(div);
+        resolve();
+      });
     }
 
     doClip().then(function(){
-      // 2. Abrir Outlook/Gmail com assunto preenchido
-      // O usuário cola (Ctrl+V) o conteúdo no corpo
       var assunto = 'Relatório FORGE B2B — '+hoje;
       if(selIds.length===1){
         var opp = fcOpps.find(function(o){return o.id===selIds[0];});
         if(opp) assunto = 'Relatório — '+opp.customer+(opp.supplier?' / '+opp.supplier:'');
+      } else if(selIds.length>1){
+        assunto = 'Relatório FORGE B2B — '+selIds.length+' oportunidades — '+hoje;
       }
-      var corpo = 'Prezado(a),\n\n'
-        +'Segue relatório de oportunidade gerado pelo FORGE B2B em '+hoje+'.\n\n'
-        +'[Cole o relatório aqui com Ctrl+V]\n\n'
-        +'Atenciosamente,\n'+(session.name||'FORGE B2B')+'\nSinuelo Service Ltda\nwww.sinuelo.com';
+      var corpo = 'Prezado(a),\n\nSegue relatório de oportunidade gerado pelo FORGE B2B.\n\n'
+        +'[ Cole o relatório aqui com Ctrl+V ]\n\n'
+        +'Atenciosamente,\n'+(session.name||'FORGE B2B')+'\nSinuelo Service Ltda\nwww.sinuelo.com | crm@sinuelo.com';
       var mailto = 'mailto:'+(emailDest||'')
         +'?subject='+encodeURIComponent(assunto)
         +'&body='+encodeURIComponent(corpo);
       window.open(mailto,'_blank');
-      alert('✅ Relatório copiado!\n\nO Outlook/Gmail abrirá agora.\nClique no corpo do e-mail e pressione Ctrl+V para colar o relatório formatado.');
+      setTimeout(function(){
+        alert('✅ Relatório copiado!\n\nNo Outlook/Gmail que abriu:\n1. Clique no corpo do e-mail\n2. Pressione Ctrl+V\n\nO relatório completo será colado com formatação.');
+      },300);
     }).catch(function(){
-      alert('Não foi possível copiar automaticamente.\nUse o botão "📋 Copiar para e-mail" e cole manualmente.');
+      alert('Não foi possível copiar automaticamente.\nUse o botão "📋 Copiar para e-mail" e cole manualmente (Ctrl+V) no corpo do e-mail.');
     });
   }
 
