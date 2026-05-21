@@ -4526,6 +4526,36 @@ function ViewRelatorio({ session, isGestor, isConsultor, filtroVendedor }) {
   function toggleSel(id){ setSelIds(function(prev){ return prev.includes(id)?prev.filter(function(x){return x!==id;}):[...prev,id]; }); }
   function selectAll(list){ setSelIds(list.map(function(o){return o.id;})); }
 
+  function formatarProximoPassoLinha(txt){
+    if(!txt) return '';
+    function labelPadrao(label){
+      var l = String(label||'').trim().toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+      if(l==='o que' || l==='oque' || l==='o que?') return 'OQUE';
+      if(l==='por que' || l==='porque' || l==='por quê' || l==='por que?') return 'POR QUÊ';
+      if(l==='quem') return 'QUEM';
+      if(l==='onde') return 'ONDE';
+      if(l==='quando') return 'QUANDO';
+      if(l==='como') return 'COMO';
+      if(l==='quanto') return 'QUANTO';
+      return String(label||'').trim().toUpperCase();
+    }
+    return String(txt).replace(/\n+/g,' | ')
+      .split('|')
+      .map(function(item){ return item.trim(); })
+      .filter(Boolean)
+      .map(function(item){
+        var idx = item.indexOf(':');
+        if(idx<0) return item;
+        var label = item.slice(0,idx);
+        var value = item.slice(idx+1).trim();
+        if(!value) return '';
+        return labelPadrao(label)+': '+value;
+      })
+      .filter(Boolean)
+      .join(' | ');
+  }
+
   // ── GERADORES ──────────────────────────────────────────────
   function gerarRelatorio(){
     setLoading(true); setRelText(''); setRelHtml('');
@@ -4626,18 +4656,9 @@ function ViewRelatorio({ session, isGestor, isConsultor, filtroVendedor }) {
             html += '<div style="font-size:10px;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:.08em;">📋 PRÓXIMO PASSO (5W2H)</div>';
             html += '</div>';
             html += '<div style="padding:10px 14px;background:#EFF6FF;">';
-            // Formatar pipe-separated como itens visuais
-            var w5items = ultimoProximo.split(' | ');
-            w5items.forEach(function(item){
-              if(!item.trim()) return;
-              var parts = item.split(': ');
-              var label = parts[0]||'';
-              var value = parts.slice(1).join(': ')||'';
-              html += '<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:5px;">';
-              html += '<span style="background:#2563EB;color:#fff;font-size:8px;font-weight:700;padding:2px 6px;border-radius:3px;flex-shrink:0;margin-top:1px;">'+label+'</span>';
-              html += '<span style="font-size:11px;color:#1E3A5F;line-height:1.5;">'+value+'</span>';
-              html += '</div>';
-            });
+            // Próximo passo em linha única para PDF/e-mail
+            var proximoLinha = formatarProximoPassoLinha(ultimoProximo);
+            html += '<div style="font-size:11px;color:#1E3A5F;line-height:1.6;font-weight:600;white-space:normal;">'+proximoLinha+'</div>';
             html += '</div>';
             html += '</div>';
           }
@@ -4749,7 +4770,7 @@ function ViewRelatorio({ session, isGestor, isConsultor, filtroVendedor }) {
           ;(opp.history||[]).forEach(function(h){
             lines.push('  ['+h.date+'] '+(h.time?h.time+' ':'')+'['+h.resp+'] '+(h.processo||''));
             lines.push('  '+h.resumo);
-            if(h.proximo){ lines.push('  → PRÓX.: '+h.proximo.replace(/\n/g,' ')); }
+            if(h.proximo){ lines.push('  → PRÓX.: '+formatarProximoPassoLinha(h.proximo)); }
             lines.push('');
           });
         });
