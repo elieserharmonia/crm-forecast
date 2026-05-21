@@ -4512,6 +4512,7 @@ function ViewRelatorio({ session, isGestor, isConsultor, filtroVendedor }) {
     {id:'oportunidade', label:'📊 Oportunidade', desc:'Perfil completo com Forecast, histórico de visitas e próximos passos 5W2H'},
   ];
   var [tipo,    setTipo]    = useState('oportunidade');
+  var [escopoRelatorio, setEscopoRelatorio] = useState('completo'); // 'completo' | 'ultima'
   var [selIds,  setSelIds]  = useState([]);
   var [periodo, setPeriodo] = useState('todos');
   var [relText, setRelText] = useState('');
@@ -4630,8 +4631,10 @@ function ViewRelatorio({ session, isGestor, isConsultor, filtroVendedor }) {
         var meses = Object.keys(opp.months||{}).filter(function(m){return (opp.months||{})[m];}).join(', ')||'—';
         var confC = parseFloat(opp.confidence||0)>=1?'#16A34A':parseFloat(opp.confidence||0)>=0.5?'#2563EB':'#CA8A04';
         var hist  = opp.history||[];
+        var histRel = escopoRelatorio==='ultima' ? hist.slice(0,1) : hist;
+        var histTitulo = escopoRelatorio==='ultima' ? 'ÚLTIMA VISITA' : 'HISTÓRICO DE VISITAS ('+histRel.length+')';
         var ultimoProximo = '';
-        if(hist.length && hist[0] && hist[0].proximo) ultimoProximo = hist[0].proximo;
+        if(histRel.length && histRel[0] && histRel[0].proximo) ultimoProximo = histRel[0].proximo;
 
         // Cabeçalho igual ao relatório PDF
         html += '<div style="border:1.5px solid #1E3A5F;border-bottom:none;border-radius:8px 8px 0 0;padding:10px 14px;background:#FFFFFF;">';
@@ -4669,14 +4672,14 @@ function ViewRelatorio({ session, isGestor, isConsultor, filtroVendedor }) {
         }
 
         // Histórico de visitas
-        if(hist.length){
+        if(histRel.length){
           html += '<div style="margin-top:14px;">';
-          html += '<div style="font-size:12px;font-weight:900;color:#334155;text-transform:uppercase;letter-spacing:.06em;padding-bottom:5px;border-bottom:2px solid #E2E8F0;">HISTÓRICO DE VISITAS ('+hist.length+')</div>';
+          html += '<div style="font-size:12px;font-weight:900;color:#334155;text-transform:uppercase;letter-spacing:.06em;padding-bottom:5px;border-bottom:2px solid #E2E8F0;">'+histTitulo+'</div>';
 
           textBlocks.push('');
-          textBlocks.push('HISTÓRICO DE VISITAS ('+hist.length+')');
+          textBlocks.push(histTitulo);
 
-          hist.forEach(function(h,hi){
+          histRel.forEach(function(h,hi){
             html += '<div style="margin-top:10px;border:1px solid #E2E8F0;border-radius:6px;overflow:hidden;background:#FFFFFF;">';
 
             // Header da visita em tabela para não quebrar no Outlook/Gmail
@@ -5032,6 +5035,25 @@ function ViewRelatorio({ session, isGestor, isConsultor, filtroVendedor }) {
             );
           })}
         </div>
+
+        {tipo==='oportunidade' && (
+          <div className="card" style={{padding:12}}>
+            <div style={{fontSize:10,fontWeight:700,color:'var(--text2)',marginBottom:8,textTransform:'uppercase',letterSpacing:'.06em'}}>Conteúdo do relatório</div>
+            {[
+              ['completo','📚 Completo','Inclui todo o histórico de visitas da oportunidade.'],
+              ['ultima','🕐 Apenas última visita','Inclui somente a visita mais recente, mantendo o mesmo modelo visual.']
+            ].map(function(opt){
+              var active = escopoRelatorio===opt[0];
+              return (
+                <button key={opt[0]} onClick={function(){setEscopoRelatorio(opt[0]);setRelText('');setRelHtml('');}}
+                  style={{width:'100%',textAlign:'left',padding:'8px 10px',marginBottom:4,borderRadius:7,border:'1px solid '+(active?'var(--blue)':'var(--border)'),background:active?'rgba(37,99,235,.15)':'transparent',color:active?'#60A5FA':'var(--text)',cursor:'pointer',fontSize:11,fontWeight:active?600:400}}>
+                  {opt[1]}
+                  {active&&<div style={{fontSize:9,color:'var(--text3)',marginTop:2,fontWeight:400}}>{opt[2]}</div>}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Período (para pipeline e orçamentos) */}
         {(tipo==='pipeline'||tipo==='orcamento') && (
