@@ -4,7 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>FORGE B2B</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2064%2064%22%3E%0A%20%20%3Crect%20x=%224%22%20y=%224%22%20width=%2256%22%20height=%2256%22%20rx=%2212%22%20fill=%22#8C1A1A%22%20stroke=%22#000000%22%20stroke-width=%225%22/%3E%0A%20%20%3Cpath%20d=%22M18%2016H48M18%2030H42M18%2044H36%22%20fill=%22none%22%20stroke=%22#000000%22%20stroke-width=%2210%22%20stroke-linecap=%22round%22/%3E%0A%20%20%3Cpath%20d=%22M18%2016H48M18%2030H42M18%2044H36%22%20fill=%22none%22%20stroke=%22#FFFFFF%22%20stroke-width=%224%22%20stroke-linecap=%22round%22/%3E%0A%3C/svg%3E"/>
+<link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAD+UlEQVR42q2Xa2/iZhCFj29cYgIJZLNdVdr//8O2aZqSpIQFYzB2vzyzOnqVbGlVS8jGzH3OnHcodNmV6d9f2Qd6uaSxpIWkrrzQ2MC9RLnC+IBBSTpJaiUdE50M+bGkWtJEUoHcIbswk5mkG5QbjJ8l9QQQTkYYfuFdjbMpwXWSdujXkl7/KYBrSUsUTpLeCKD/QD5Km0u6IohXnHYELX6bS3oqf5L1PQG8SXpGObKaEkSD01LSQdJe0hM2Ftg4k71jqeDTlx+A5BecPGB0xLuJZdLQmjPv5+i2BLGhbXOSGAwbVVQjS7IeJH1G4A/KvpS0wvBfBNS9E3j0+taw0BPMKZG9474uEuf39OcRpWjDKwG1P+n/gNM3KlPh/Jg4PhHgIKkpTTmif0ApnD9Q7ku4IdA9krQGF5HcHbhYYu855jquFdFvcTynEo0Z8WtumWQ4rCT9SsU2prcguW9U51ZGLAJEE7KNUn3n855zAaKBEQvW+0rWa9ObYW9DMjnvWxmLzXC2J7rCxmmw6agIusDBydoTI/cbOgMjegduSuOAcUxBiaHCDE3oT59kv+DeI7O3apS07ZuRTYHOM3YW3PdGx+echzEBlPy4S7IXwNwlqO7JaEHZG2vHZ6qSoVcgGzKjiLw0qq1x0BlbZQa0QH/08Yrp2QO8zNpRSvrdSKfheWdVUsmXrWW8I7Nbyhrz3VhFTnymvP/TAl0h84j9mu8NCcmqoJJsoxW9Zdkbcv34DSpdIfOSIP464f6ztbCyQ+sYyA5ARNlrMxjnu09Cj9ERk9IZAS2YpkOyD8SRXhh2zmGwM+o8IRTjWSWn1xlHQdetyX2yhcWZMqo6sucqAowAWvp5tHnPEyMdGS44lA5WlU8GxD6pWGZgb4w9f1QgJuCK5y39vU5K1pLdhgAiuC8E/Gp4ys1Jjb2TTVrmRCSiX9KKqfVtDkbC4MHGLQ6YKe/dcW7M2BnhTXneB9FFrw/88AWFo72fEnWO8xjXGzuwtgbQisqVtkVFNVbYCtYdChu5wXp9xfPY9rkoeYvze5x/hzNaw4msZbExxeHVcOr+QHdmpDSxIB65X9ss18jd2GpdUaUc5y0yI9snI5nYik8egD/f4ixw8GY7/c4Onb2N4JjMlgbWANka+YWdG42fJx5AZ3tBLJQ1wGxt+z0TQG6Ec+ZTWP+DeGbYCx54ThdJv3YIzmzl7pMlNEatJrC5jWpmh1lwysboeZ0uN8U7m87OqPOAsRsCCqCNuK9t5WrprWOho61bJmh4b5V+b9k88Jmj1FkLglaz5O/XwVrolPviqP8v/3oLK+9Xy6y12Q/SKtgBWjtp/9e/3UFWhS2suQHvyc6Ii66/ASY3eir8MpVuAAAAAElFTkSuQmCC"/>
 <script src="https://unpkg.com/react@17/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -4526,36 +4526,6 @@ function ViewRelatorio({ session, isGestor, isConsultor, filtroVendedor }) {
   function toggleSel(id){ setSelIds(function(prev){ return prev.includes(id)?prev.filter(function(x){return x!==id;}):[...prev,id]; }); }
   function selectAll(list){ setSelIds(list.map(function(o){return o.id;})); }
 
-  function formatarProximoPassoLinha(txt){
-    if(!txt) return '';
-    function labelPadrao(label){
-      var l = String(label||'').trim().toLowerCase()
-        .normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-      if(l==='o que' || l==='oque' || l==='o que?') return 'OQUE';
-      if(l==='por que' || l==='porque' || l==='por quê' || l==='por que?') return 'POR QUÊ';
-      if(l==='quem') return 'QUEM';
-      if(l==='onde') return 'ONDE';
-      if(l==='quando') return 'QUANDO';
-      if(l==='como') return 'COMO';
-      if(l==='quanto') return 'QUANTO';
-      return String(label||'').trim().toUpperCase();
-    }
-    return String(txt).replace(/\n+/g,' | ')
-      .split('|')
-      .map(function(item){ return item.trim(); })
-      .filter(Boolean)
-      .map(function(item){
-        var idx = item.indexOf(':');
-        if(idx<0) return item;
-        var label = item.slice(0,idx);
-        var value = item.slice(idx+1).trim();
-        if(!value) return '';
-        return labelPadrao(label)+': '+value;
-      })
-      .filter(Boolean)
-      .join(' | ');
-  }
-
   // ── GERADORES ──────────────────────────────────────────────
   function gerarRelatorio(){
     setLoading(true); setRelText(''); setRelHtml('');
@@ -4567,100 +4537,181 @@ function ViewRelatorio({ session, isGestor, isConsultor, filtroVendedor }) {
       var selecionadas = fcOpps.filter(function(o){return selIds.includes(o.id);});
       if(!selecionadas.length){ alert('Selecione ao menos uma oportunidade.'); setLoading(false); return; }
 
-      // Paleta de cores do Forecast
-      var FC_BG   = '#0F1C3A';  // fundo das células do forecast
-      var FC_HDR  = '#1A2D55';  // fundo do cabeçalho das células
-      var FC_BDR  = '#2A4070';  // borda
-      var FC_TEXT = '#A8C4F0';  // texto cabeçalho
-      var FC_VAL  = '#E8F0FF';  // texto valor
+      function esc(v){
+        return String(v==null?'':v)
+          .replace(/&/g,'&amp;')
+          .replace(/</g,'&lt;')
+          .replace(/>/g,'&gt;')
+          .replace(/"/g,'&quot;')
+          .replace(/'/g,'&#39;');
+      }
 
-      function cell(title, value, w){
-        return '<td style="border:1px solid '+FC_BDR+';padding:0;vertical-align:top;'+(w?'width:'+w+';':'')+'"><div style="background:'+FC_HDR+';color:'+FC_TEXT+';font-size:9px;font-weight:700;padding:3px 7px;letter-spacing:.05em;text-transform:uppercase;">'+title+'</div><div style="background:'+FC_BG+';color:'+FC_VAL+';font-size:11px;padding:5px 7px;min-height:22px;">'+value+'</div></td>';
+      function cleanLine(v){
+        return String(v||'').replace(/\s+/g,' ').trim();
+      }
+
+      function sectionTitle(t, extra){
+        return '<div style="font-size:11px;font-weight:800;color:#334155;margin:12px 0 6px 0;text-transform:uppercase;letter-spacing:.06em;'+(extra||'')+'">'+esc(t)+'</div>';
       }
 
       function bulletList(text){
-        if(!text) return '<em style="color:#666">—</em>';
-        var items = text.split('\n').map(function(l){return l.trim();}).filter(function(l){return l.length>0;});
-        return '<ul style="margin:0;padding-left:16px;list-style:disc;">'+items.map(function(l){return '<li style="margin-bottom:3px;">'+l.replace(/^[•\-\*]\s*/,'')+'</li>';}).join('')+'</ul>';
+        if(!text) return '<em style="color:#64748B">—</em>';
+        var items = String(text).split('\n').map(function(l){return cleanLine(l).replace(/^[•\-\*]\s*/,'');}).filter(Boolean);
+        if(!items.length) return '<em style="color:#64748B">—</em>';
+        return '<ul style="margin:0;padding-left:18px;list-style:disc;">'
+          +items.map(function(l){return '<li style="margin:0 0 4px 0;padding:0;color:#334155;">'+esc(l)+'</li>';}).join('')
+          +'</ul>';
       }
 
-      var html = '<div style="font-family:Segoe UI,Arial,sans-serif;font-size:12px;color:#1a1a1a;">';
+      function plainBullets(text){
+        if(!text) return ['—'];
+        var items = String(text).split('\n').map(function(l){return cleanLine(l).replace(/^[•\-\*]\s*/,'');}).filter(Boolean);
+        return items.length ? items : ['—'];
+      }
+
+      function forecastCell(title, value, w){
+        return '<td style="border:2px solid #1E3A5F;padding:0;vertical-align:top;background:#FFFFFF;'+(w?'width:'+w+';':'')+'">'
+          +'<div style="font-size:9px;font-weight:800;color:#475569;padding:5px 7px 2px 7px;letter-spacing:.08em;text-transform:uppercase;">'+esc(title)+'</div>'
+          +'<div style="font-size:11px;color:#334155;padding:3px 7px 8px 7px;min-height:22px;">'+value+'</div>'
+          +'</td>';
+      }
+
+      function normalizeW5Label(label){
+        var l = String(label||'').toUpperCase()
+          .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+          .replace(/[^A-Z0-9]/g,'');
+        if(l==='OQUE' || l==='OQ') return 'OQUE';
+        if(l==='PORQUE' || l==='PORQ') return 'POR QUÊ';
+        if(l==='QUEM') return 'QUEM';
+        if(l==='ONDE') return 'ONDE';
+        if(l==='QUANDO') return 'QUANDO';
+        if(l==='COMO') return 'COMO';
+        if(l==='QUANTO') return 'QUANTO';
+        return String(label||'').toUpperCase();
+      }
+
+      function parseProximo(raw){
+        var txt = String(raw||'').replace(/\n+/g,' | ').replace(/\s*\|\s*/g,' | ').replace(/\s+/g,' ').trim();
+        if(!txt) return [];
+        return txt.split(' | ').map(function(item){
+          var idx = item.indexOf(':');
+          if(idx<0) return {label:'', value:cleanLine(item)};
+          return {
+            label: normalizeW5Label(item.slice(0,idx)),
+            value: cleanLine(item.slice(idx+1))
+          };
+        }).filter(function(x){return x.value;});
+      }
+
+      function proximoHtml(raw){
+        var items = parseProximo(raw);
+        if(!items.length) return '';
+        return items.map(function(it){
+          return '<span style="white-space:normal;"><strong style="font-weight:800;color:#1E3A5F;">'+esc(it.label)+':</strong> '+esc(it.value)+'</span>';
+        }).join(' <span style="color:#64748B;font-weight:700;">|</span> ');
+      }
+
+      function proximoPlain(raw){
+        var items = parseProximo(raw);
+        return items.map(function(it){return it.label+': '+it.value;}).join(' | ');
+      }
+
+      var html = '<div style="font-family:Segoe UI,Arial,sans-serif;font-size:12px;color:#334155;background:#FFFFFF;line-height:1.35;max-width:820px;margin:0 auto;">';
+      var textBlocks = [];
 
       selecionadas.forEach(function(opp,oi){
-        if(oi>0) html += '<div style="height:24px;border-top:3px solid #2563EB;margin:20px 0;"></div>';
+        if(oi>0){
+          html += '<div style="height:18px;border-top:2px solid #CBD5E1;margin:18px 0;"></div>';
+          textBlocks.push('');
+          textBlocks.push('────────────────────────────────────────────────────────');
+          textBlocks.push('');
+        }
+
         var meses = Object.keys(opp.months||{}).filter(function(m){return (opp.months||{})[m];}).join(', ')||'—';
         var confC = parseFloat(opp.confidence||0)>=1?'#16A34A':parseFloat(opp.confidence||0)>=0.5?'#2563EB':'#CA8A04';
         var hist  = opp.history||[];
+        var ultimoProximo = '';
+        if(hist.length && hist[0] && hist[0].proximo) ultimoProximo = hist[0].proximo;
 
-        // Cabeçalho
-        html += '<div style="background:#1E2D4A;border:1px solid #2A4070;border-radius:6px 6px 0 0;padding:10px 14px;margin-bottom:0;">';
-        html += '<div style="font-size:16px;font-weight:800;color:#E8F0FF;">'+opp.customer+'</div>';
-        html += '<div style="font-size:12px;color:#A8C4F0;margin-top:2px;">'+(opp.description||'—')+'</div>';
+        // Cabeçalho igual ao relatório PDF
+        html += '<div style="border:1.5px solid #1E3A5F;border-bottom:none;border-radius:8px 8px 0 0;padding:10px 14px;background:#FFFFFF;">';
+        html += '<div style="font-size:18px;font-weight:800;color:#64748B;line-height:1.15;">'+esc(opp.customer||'—')+'</div>';
+        html += '<div style="font-size:12px;color:#64748B;margin-top:3px;">'+esc(opp.description||'—')+'</div>';
         html += '</div>';
 
-        // Linha do Forecast (células)
-        html += '<div style="background:'+FC_BG+';border:1px solid '+FC_BDR+';border-top:none;border-radius:0 0 0 0;">';
-        html += '<div style="padding:4px 8px;background:#142040;font-size:9px;font-weight:700;color:'+FC_TEXT+';letter-spacing:.08em;text-transform:uppercase;border-bottom:1px solid '+FC_BDR+';">FORECAST</div>';
-        html += '<table style="width:100%;border-collapse:collapse;"><tr>';
-        html += cell('TIPO',opp.neg||'D','60px');
-        html += cell('RESP.',opp.resp||'—','70px');
-        html += cell('SUPPLIER',opp.supplier||'—','120px');
-        html += cell('UF',opp.uf||'—','50px');
-        html += cell('AMOUNT',fmtAmt(opp.amount),'90px');
-        html += cell('CONFIDENCE','<span style="color:'+confC+';font-weight:700;">'+fmtConf(opp.confidence)+'</span>','90px');
-        html += cell('MESES',meses,'');
-        html += cell('CONTATOS',opp.contatos||'—','');
+        // Linha Forecast igual ao PDF
+        html += '<div style="border-left:1.5px solid #1E3A5F;border-right:1.5px solid #1E3A5F;border-bottom:1.5px solid #1E3A5F;border-radius:0 0 0 0;background:#FFFFFF;">';
+        html += '<div style="font-size:10px;font-weight:900;color:#334155;letter-spacing:.09em;text-transform:uppercase;padding:5px 8px;border-top:1px solid #1E3A5F;border-bottom:2px solid #1E3A5F;">FORECAST</div>';
+        html += '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;table-layout:fixed;background:#FFFFFF;"><tr>';
+        html += forecastCell('TIPO',esc(opp.neg||'D'),'60px');
+        html += forecastCell('RESP.',esc(opp.resp||'—'),'74px');
+        html += forecastCell('SUPPLIER',esc(opp.supplier||'—'),'120px');
+        html += forecastCell('UF',esc(opp.uf||'—'),'52px');
+        html += forecastCell('AMOUNT',esc(fmtAmt(opp.amount)),'90px');
+        html += forecastCell('CONFIDENCE','<span style="color:'+confC+';font-weight:800;">'+esc(fmtConf(opp.confidence))+'</span>','94px');
+        html += forecastCell('MESES',esc(meses),'66px');
+        html += forecastCell('CONTATOS',esc(opp.contatos||'—'),'120px');
         html += '</tr></table>';
         html += '</div>';
 
+        textBlocks.push(opp.customer||'—');
+        textBlocks.push(opp.description||'—');
+        textBlocks.push('FORECAST');
+        textBlocks.push('TIPO: '+(opp.neg||'D')+' | RESP.: '+(opp.resp||'—')+' | SUPPLIER: '+(opp.supplier||'—')+' | UF: '+(opp.uf||'—')+' | AMOUNT: '+fmtAmt(opp.amount)+' | CONFIDENCE: '+fmtConf(opp.confidence)+' | MESES: '+meses+' | CONTATOS: '+(opp.contatos||'—'));
+
         // Follow-up
         if(opp.followup){
-          html += '<div style="margin-top:10px;">';
-          html += '<div style="font-weight:700;font-size:11px;color:#334155;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;">FOLLOW-UP</div>';
-          html += '<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:4px;padding:8px 10px;font-size:11px;color:#334155;line-height:1.6;">'+bulletList(opp.followup)+'</div>';
-          html += '</div>';
+          html += sectionTitle('FOLLOW-UP');
+          html += '<div style="background:#FFFFFF;border:1px solid #E2E8F0;border-radius:4px;padding:9px 12px;font-size:11px;color:#334155;line-height:1.55;">'+bulletList(opp.followup)+'</div>';
+          textBlocks.push('');
+          textBlocks.push('FOLLOW-UP');
+          plainBullets(opp.followup).forEach(function(l){textBlocks.push('• '+l);});
         }
 
-        // Histórico de visitas — todos juntos, próximo passo ao final
+        // Histórico de visitas
         if(hist.length){
-          html += '<div style="margin-top:12px;">';
-          html += '<div style="font-weight:700;font-size:11px;color:#334155;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em;padding-bottom:4px;border-bottom:2px solid #E2E8F0;">HISTÓRICO DE VISITAS ('+hist.length+')</div>';
+          html += '<div style="margin-top:14px;">';
+          html += '<div style="font-size:12px;font-weight:900;color:#334155;text-transform:uppercase;letter-spacing:.06em;padding-bottom:5px;border-bottom:2px solid #E2E8F0;">HISTÓRICO DE VISITAS ('+hist.length+')</div>';
 
-          // Coletar todos os próximos passos — só o mais recente vai ao final
-          var ultimoProximo = '';
+          textBlocks.push('');
+          textBlocks.push('HISTÓRICO DE VISITAS ('+hist.length+')');
 
           hist.forEach(function(h,hi){
-            html += '<div style="margin-bottom:10px;border:1px solid #E2E8F0;border-radius:6px;overflow:hidden;">';
-            // Header da visita
-            html += '<div style="background:#F1F5F9;padding:6px 10px;display:flex;gap:10px;align-items:center;border-bottom:1px solid #E2E8F0;">';
-            html += '<span style="background:#1E3A5F;color:#fff;font-size:9px;font-weight:700;padding:1px 7px;border-radius:10px;">'+(hi+1)+'</span>';
-            if(h.date) html += '<span style="font-weight:700;font-size:11px;">'+h.date+'</span>';
-            if(h.time) html += '<span style="font-size:10px;color:#64748B;">🕐 '+h.time+'</span>';
-            if(h.resp) html += '<span style="font-size:10px;padding:1px 8px;border-radius:10px;background:#FEE2E2;color:#991B1B;font-weight:600;">'+h.resp+'</span>';
-            if(h.processo) html += '<span style="font-size:10px;color:#2563EB;font-style:italic;">'+h.processo+'</span>';
-            html += '</div>';
-            // Resumo em bullets
-            html += '<div style="padding:8px 10px;font-size:11px;color:#334155;">'+bulletList(h.resumo)+'</div>';
+            html += '<div style="margin-top:10px;border:1px solid #E2E8F0;border-radius:6px;overflow:hidden;background:#FFFFFF;">';
+
+            // Header da visita em tabela para não quebrar no Outlook/Gmail
+            html += '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;background:#FFFFFF;border-bottom:1px solid #E2E8F0;">';
+            html += '<tr>';
+            html += '<td width="36" align="center" style="padding:7px 6px;font-size:10px;color:#64748B;font-weight:700;">'+(hi+1)+'</td>';
+            html += '<td width="96" style="padding:7px 6px;font-size:11px;color:#111827;font-weight:800;">'+esc(h.date||'')+'</td>';
+            html += '<td width="62" style="padding:7px 6px;font-size:10px;color:#475569;">'+(h.time?'🕐 '+esc(h.time):'')+'</td>';
+            html += '<td width="42" style="padding:7px 6px;font-size:10px;color:#991B1B;font-weight:800;">'+esc(h.resp||'')+'</td>';
+            html += '<td style="padding:7px 6px;font-size:10px;color:#2563EB;font-style:italic;">'+esc(h.processo||'')+'</td>';
+            html += '</tr></table>';
+
+            html += '<div style="padding:9px 12px;font-size:11px;color:#334155;line-height:1.5;">'+bulletList(h.resumo)+'</div>';
             html += '</div>';
 
-            // Guardar o próximo passo mais recente (índice 0 = mais recente)
+            textBlocks.push((hi+1)+'. '+(h.date||'')+(h.time?' | '+h.time:'')+(h.resp?' | '+h.resp:'')+(h.processo?' | '+h.processo:''));
+            plainBullets(h.resumo).forEach(function(l){textBlocks.push('• '+l);});
+
             if(hi===0 && h.proximo) ultimoProximo = h.proximo;
           });
 
           html += '</div>';
 
-          // Próximo passo — SEMPRE ao final do relatório
+          // Próximo passo ao final, em linha única, como no PDF
           if(ultimoProximo){
-            html += '<div style="margin-top:16px;border:2px solid #2563EB;border-radius:8px;overflow:hidden;">';
-            html += '<div style="background:#1E3A5F;padding:8px 12px;">';
-            html += '<div style="font-size:10px;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:.08em;">📋 PRÓXIMO PASSO (5W2H)</div>';
+            var proxHtml = proximoHtml(ultimoProximo);
+            var proxPlain = proximoPlain(ultimoProximo);
+            html += '<div style="margin-top:16px;border:2px solid #2563EB;border-radius:8px;padding:12px 14px;background:#FFFFFF;">';
+            html += '<div style="font-size:10px;font-weight:900;color:#64748B;text-transform:uppercase;letter-spacing:.12em;margin-bottom:12px;">📋 PRÓXIMO PASSO (5W2H)</div>';
+            html += '<div style="font-size:11px;color:#1E3A5F;font-weight:600;line-height:1.7;">'+proxHtml+'</div>';
             html += '</div>';
-            html += '<div style="padding:10px 14px;background:#EFF6FF;">';
-            // Próximo passo em linha única para PDF/e-mail
-            var proximoLinha = formatarProximoPassoLinha(ultimoProximo);
-            html += '<div style="font-size:11px;color:#1E3A5F;line-height:1.6;font-weight:600;white-space:normal;">'+proximoLinha+'</div>';
-            html += '</div>';
-            html += '</div>';
+
+            textBlocks.push('');
+            textBlocks.push('📋 PRÓXIMO PASSO (5W2H)');
+            textBlocks.push(proxPlain);
           }
         }
 
@@ -4669,7 +4720,7 @@ function ViewRelatorio({ session, isGestor, isConsultor, filtroVendedor }) {
 
       html += '</div>';
       setRelHtml(html);
-      setRelText(''); // limpar text mode
+      setRelText(textBlocks.join('\n'));
       setLoading(false);
       return;
     }
@@ -4770,7 +4821,7 @@ function ViewRelatorio({ session, isGestor, isConsultor, filtroVendedor }) {
           ;(opp.history||[]).forEach(function(h){
             lines.push('  ['+h.date+'] '+(h.time?h.time+' ':'')+'['+h.resp+'] '+(h.processo||''));
             lines.push('  '+h.resumo);
-            if(h.proximo){ lines.push('  → PRÓX.: '+formatarProximoPassoLinha(h.proximo)); }
+            if(h.proximo){ lines.push('  → PRÓX.: '+h.proximo.replace(/\n/g,' ')); }
             lines.push('');
           });
         });
