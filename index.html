@@ -212,6 +212,9 @@ var SUPA_MAP = window.SUPA_MAP = {
   'crm_cronograma_v1':{table:'cronograma',id:'main'},
   'crm_settings_v1':  {table:'settings',  id:'main'},
   'crm_users_v1':     {table:'settings',  id:'users'},
+  'crm_radar_clients_on': {table:'settings', id:'radar_clients_on'},
+  'crm_radar_news_v1':    {table:'settings', id:'radar_news'},
+  'crm_radar_ts_v1':      {table:'settings', id:'radar_ts'},
 };
 
 // Expor para o console
@@ -5100,22 +5103,46 @@ function ViewRadar({ session, isGestor, isConsultor }) {
   var KEYS_RADAR_NEWS = 'crm_radar_news_v1';
   var KEYS_RADAR_TS   = 'crm_radar_ts_v1';
 
-  // ── Estados ───────────────────────────────────────────────────────────────────
-  var [radarOn,    setRadarOn]    = useState(function(){ return load(KEYS_RADAR_ON, {}); });
-  var [news,       setNews]       = useState(function(){ return load(KEYS_RADAR_NEWS, {}); });
-  var [timestamps, setTimestamps] = useState(function(){ return load(KEYS_RADAR_TS, {}); });
-  var [loading,    setLoading]    = useState(false);
-  var [loadingId,  setLoadingId]  = useState(null);
-  var [progress,   setProgress]   = useState('');
-  var [search,     setSearch]     = useState('');
-  var [filterScore,setFilterScore]= useState('todos');
-  var [expandedId, setExpandedId] = useState(null);
+  // ── Estados ─────────────────────────────────────────────────────────────────
+  var [radarOn,       setRadarOn]       = useState(function(){ return load(KEYS_RADAR_ON, {}); });
+  var [news,          setNews]          = useState(function(){ return load(KEYS_RADAR_NEWS, {}); });
+  var [timestamps,    setTimestamps]    = useState(function(){ return load(KEYS_RADAR_TS, {}); });
+  var [loading,       setLoading]       = useState(false);
+  var [loadingId,     setLoadingId]     = useState(null);
+  var [progress,      setProgress]      = useState('');
+  var [search,        setSearch]        = useState('');
+  var [filterScore,   setFilterScore]   = useState('todos');
+  var [filterCategory,setFilterCategory]= useState('todas');
+  var [expandedId,    setExpandedId]    = useState(null);
 
-  var clients  = load(KEYS.clients,  []);
-  var fcOpps   = load(KEYS.forecast, []);
+  var clients  = load(KEYS.clients, []);
+  var fcOpps   = (typeof loadForecast === 'function') ? loadForecast(session, isGestor, isConsultor, false) : load(KEYS.forecast, []);
   var MAX_RADAR = 20;
 
-  // ── Toggle Radar ON/OFF ───────────────────────────────────────────────────────
+  // ── Helpers de texto ────────────────────────────────────────────────────────
+  function normRadarTxt(v){
+    return String(v||'')
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+      .replace(/\s+/g,' ')
+      .trim();
+  }
+  function uniq(arr){
+    var out=[]; var seen={};
+    (arr||[]).forEach(function(v){
+      v = String(v||'').trim();
+      if(!v) return;
+      var k = normRadarTxt(v);
+      if(!seen[k]){ seen[k]=true; out.push(v); }
+    });
+    return out;
+  }
+  function clip(v, n){
+    v = String(v||'');
+    return v.length>n ? v.slice(0,n-1)+'…' : v;
+  }
+
+  // ── Toggle Radar ON/OFF ─────────────────────────────────────────────────────
   function toggleRadarOn(cliId){
     var on = !!radarOn[cliId];
     if(!on){
@@ -5129,27 +5156,158 @@ function ViewRadar({ session, isGestor, isConsultor }) {
     setRadarOn(next); save(KEYS_RADAR_ON, next);
   }
 
-  // ── Score keywords ────────────────────────────────────────────────────────────
-  var KEYWORDS = [
-    {word:'nova fábrica',     score:30},{word:'nova planta',     score:30},
-    {word:'expansão',         score:25},{word:'investimento',    score:20},
-    {word:'CAPEX',            score:20},{word:'ampliação',       score:22},
-    {word:'automação',        score:15},{word:'indústria 4.0',   score:15},
-    {word:'contratação',      score:10},{word:'linha de produção',score:18},
-    {word:'modernização',     score:15},{word:'aquisição',       score:20},
-    {word:'torque',           score:25},{word:'ferramentas',     score:15},
-    {word:'manutenção',       score:10},{word:'qualidade',       score:10},
-    {word:'recall',           score:12},{word:'rastreabilidade', score:18},
-    {word:'montagem',         score:14},{word:'fornecedor',      score:12},
+  // ── Categorias de intenção de compra ────────────────────────────────────────
+  var COMPRA_CATS = [
+    {
+      id:'expansao',
+      label:'Projetos e expansão',
+      emoji:'🏗️',
+      color:'#EA580C',
+      score:28,
+      terms:['nova fábrica','nova fabrica','nova planta','expansão','expansao','ampliação','ampliacao','aumento de capacidade','capacidade produtiva','nova linha','linha de produção','linha de producao','modernização','modernizacao','investimento','capex'],
+      products:['Projeto completo de ferramentas, dispositivos, bancadas, automação e treinamento para nova linha'],
+      action:'Agendar visita técnica com engenharia de processos para mapear nova linha, volume, torque, criticidade e prazo de compra.'
+    },
+    {
+      id:'torque',
+      label:'Torque e montagem',
+      emoji:'🔩',
+      color:'#2563EB',
+      score:24,
+      terms:['torque','aperto','parafusamento','parafusadeira','ferramenta industrial','ferramentas industriais','montagem','linha de montagem','controle de aperto','junta aparafusada','processo de montagem'],
+      products:['Parafusadeiras Bosch EXACT ION/ANGLE EXACT ION, ferramentas pneumáticas, torquímetros, braços de reação e acessórios'],
+      action:'Abordar produção e engenharia perguntando quais juntas são críticas, faixa de torque, volume, ergonomia e necessidade de rastreabilidade.'
+    },
+    {
+      id:'rastreabilidade',
+      label:'Rastreabilidade e Indústria 4.0',
+      emoji:'📡',
+      color:'#7C3AED',
+      score:22,
+      terms:['rastreabilidade','industria 4.0','indústria 4.0','digitalização','digitalizacao','mes','dados de produção','dados de producao','controle de processo','auditoria','automação','automacao','conectividade','qualidade 4.0'],
+      products:['Ferramentas controladas, controladores, coleta de dados, integração MES e solução de rastreabilidade de aperto'],
+      action:'Oferecer diagnóstico de processo: como registram torque hoje, quem audita, quais falhas precisam rastrear e qual integração existe na fábrica.'
+    },
+    {
+      id:'manutencao',
+      label:'Manutenção, peças e calibração',
+      emoji:'🛠️',
+      color:'#16A34A',
+      score:18,
+      terms:['manutenção','manutencao','parada de linha','reparo','retrofit','preventiva','corretiva','assistência técnica','assistencia tecnica','peças de reposição','pecas de reposicao','calibração','calibracao','reforma'],
+      products:['Serviços técnicos, peças de reposição, manutenção preventiva/corretiva, calibração e contrato de suporte'],
+      action:'Falar com manutenção: parque instalado, ferramentas paradas, histórico de falhas, disponibilidade de peças e plano de calibração.'
+    },
+    {
+      id:'qualidade',
+      label:'Qualidade e risco de falha',
+      emoji:'✅',
+      color:'#CA8A04',
+      score:20,
+      terms:['qualidade','recall','retrabalho','não conformidade','nao conformidade','falha','auditoria','garantia','reclamação','reclamacao','controle de qualidade','inspeção','inspecao'],
+      products:['Controle de torque, torquímetros de auditoria, rastreabilidade, treinamento de torque e melhoria de processo'],
+      action:'Abordar qualidade com foco em redução de retrabalho, evidência de processo, auditoria de torque e prevenção de falhas em campo.'
+    },
+    {
+      id:'solda',
+      label:'Solda industrial',
+      emoji:'⚡',
+      color:'#DC2626',
+      score:20,
+      terms:['solda','soldagem','ponto de solda','solda por resistência','solda por resistencia','caldeiraria','linha de solda','robô de solda','robo de solda','célula de solda','celula de solda'],
+      products:['Controlador de solda Bosch PRC7300, diagnóstico, parametrização, manutenção e serviços técnicos de soldagem'],
+      action:'Validar com manutenção/engenharia se há células de solda, controladores Bosch, falhas de processo ou necessidade de suporte técnico.'
+    },
+    {
+      id:'compras',
+      label:'Compras, edital e fornecedor',
+      emoji:'🧾',
+      color:'#0EA5E9',
+      score:26,
+      terms:['licitação','licitacao','pregão','pregao','edital','compra de equipamentos','compras industriais','cadastro de fornecedores','homologação','homologacao','fornecedor industrial','aquisição','aquisicao','suprimentos','comprador técnico','comprador tecnico'],
+      products:['Homologação como fornecedor, proposta técnica, fornecimento de ferramentas, serviços, peças e equipamentos industriais'],
+      action:'Acionar comprador técnico/suprimentos com proposta objetiva, diferenciais técnicos, prazos, documentação e cadastro de fornecedor.'
+    },
+    {
+      id:'vagas',
+      label:'Vagas e aumento de equipe',
+      emoji:'👷',
+      color:'#64748B',
+      score:16,
+      terms:['vaga','vagas','contratação','contratacao','engenheiro de processos','engenharia de processos','manutenção industrial','manutencao industrial','analista de qualidade','técnico de manutenção','tecnico de manutencao','comprador','produção','producao'],
+      products:['Mapeamento de oportunidade: expansão de operação, novos processos, manutenção, qualidade e compras técnicas'],
+      action:'Usar a vaga como gatilho de conversa: entender se a contratação está ligada a nova linha, aumento de produção ou problema recorrente.'
+    }
   ];
+
+  var CATEGORY_OPTIONS = [{id:'todas',label:'Todas as categorias'}].concat(COMPRA_CATS.map(function(c){ return {id:c.id,label:c.emoji+' '+c.label}; }));
+
+  var KEYWORDS = [
+    {word:'nova fábrica',score:30},{word:'nova planta',score:30},
+    {word:'expansão',score:25},{word:'ampliação',score:22},
+    {word:'investimento',score:20},{word:'CAPEX',score:20},
+    {word:'licitação',score:30},{word:'pregão',score:30},{word:'edital',score:25},
+    {word:'compra de equipamentos',score:28},{word:'homologação',score:22},
+    {word:'automação',score:18},{word:'indústria 4.0',score:18},
+    {word:'linha de produção',score:22},{word:'modernização',score:18},
+    {word:'torque',score:25},{word:'parafusamento',score:24},{word:'montagem',score:16},
+    {word:'rastreabilidade',score:22},{word:'qualidade',score:15},{word:'recall',score:25},
+    {word:'manutenção',score:16},{word:'calibração',score:16},{word:'peças de reposição',score:16},
+    {word:'solda',score:18},{word:'soldagem',score:18},
+    {word:'contratação',score:12},{word:'vaga',score:12},{word:'engenharia de processos',score:18},
+    {word:'comprador técnico',score:20},{word:'fornecedor industrial',score:18}
+  ];
+
+  function analisarIntencaoCompra(texto){
+    var low = normRadarTxt(texto);
+    var categorias = [];
+    var categoriaLabels = [];
+    var produtos = [];
+    var motivos = [];
+    var acoes = [];
+    var score = 0;
+
+    COMPRA_CATS.forEach(function(cat){
+      var achou = [];
+      cat.terms.forEach(function(t){
+        if(low.indexOf(normRadarTxt(t)) >= 0) achou.push(t);
+      });
+      if(achou.length){
+        categorias.push(cat.id);
+        categoriaLabels.push(cat.emoji+' '+cat.label);
+        produtos = produtos.concat(cat.products);
+        motivos = motivos.concat(achou);
+        acoes.push(cat.action);
+        score += cat.score + Math.min(12, achou.length*3);
+      }
+    });
+
+    categorias = uniq(categorias);
+    categoriaLabels = uniq(categoriaLabels);
+    produtos = uniq(produtos);
+    motivos = uniq(motivos);
+    acoes = uniq(acoes);
+
+    return {
+      score: Math.min(score,100),
+      categorias: categorias,
+      categoriaLabels: categoriaLabels,
+      produtos: produtos,
+      motivos: motivos,
+      acao: acoes[0] || 'Monitorar novos sinais e validar necessidade em contato consultivo.',
+    };
+  }
 
   function scoreNoticia(text){
     var total = 0; var found = [];
-    var low = (text||'').toLowerCase();
+    var low = normRadarTxt(text);
     KEYWORDS.forEach(function(kw){
-      if(low.indexOf(kw.word.toLowerCase())>=0){ total+=kw.score; found.push(kw.word); }
+      if(low.indexOf(normRadarTxt(kw.word))>=0){ total+=kw.score; found.push(kw.word); }
     });
-    return {score:Math.min(total,100), kws:found};
+    var intent = analisarIntencaoCompra(text);
+    found = uniq(found.concat(intent.motivos));
+    total = Math.min(100, total + intent.score);
+    return {score:total, kws:found, intent:intent};
   }
 
   function classificar(score){
@@ -5159,22 +5317,130 @@ function ViewRadar({ session, isGestor, isConsultor }) {
     return             {label:'🔵 Frio',              color:'#2563EB',id:'frio'};
   }
 
-  function scoreCliente(cliId){
-    var lista = news[cliId]||[];
-    if(!lista.length) return 0;
-    var top = lista.map(function(n){return n.score||0;}).sort(function(a,b){return b-a;}).slice(0,5);
-    return Math.round(top.reduce(function(s,v){return s+v;},0)/top.length);
+  function historicoClienteCRM(cli){
+    var nomes = [cli.apelido, cli.nome].map(normRadarTxt).filter(function(n){return n && n.length>2;});
+    var opps = (fcOpps||[]).filter(function(o){
+      var cust = normRadarTxt(o.customer||'');
+      if(!cust || cust.length<3) return false;
+      return nomes.some(function(n){ return cust.indexOf(n)>=0 || n.indexOf(cust)>=0; });
+    });
+
+    var motivos = [];
+    var produtos = [];
+    var score = 0;
+
+    opps.forEach(function(o){
+      var texto = [o.supplier,o.description,o.followup,o.contatos].join(' ');
+      var intent = analisarIntencaoCompra(texto);
+      produtos = produtos.concat(intent.produtos);
+      motivos = motivos.concat(intent.motivos);
+      var conf = parseFloat(o.confidence||0);
+      var amt  = amtNum(o.amount||0);
+      if(amt>0){ score += 8; motivos.push('histórico de cotação no CRM'); }
+      if(conf>=0.5){ score += 10; motivos.push('oportunidade anterior com alta confiança'); }
+      if((o.followup||'').trim()){ score += 5; motivos.push('follow-up registrado no CRM'); }
+      if(o.supplier){ produtos.push('Retomar histórico com '+o.supplier); }
+      if(o.description){ produtos.push('Reavaliar oportunidade: '+o.description); }
+    });
+
+    return {
+      score: Math.min(score,35),
+      motivos: uniq(motivos),
+      produtos: uniq(produtos),
+      opps: opps
+    };
   }
 
-  // ── MOTOR PRINCIPAL: Google News RSS sem API key ─────────────────────────────
-  // Funciona no navegador usando proxy CORS. Não depende de Anthropic/API key.
+  function consolidarIntencaoCliente(cli, lista){
+    lista = lista || [];
+    var categorias = [];
+    var categoriaLabels = [];
+    var produtos = [];
+    var motivos = [];
+    var sinais = [];
+    var scoreCats = {};
+    var scoreNoticias = lista.map(function(n){ return n.score||0; }).sort(function(a,b){return b-a;}).slice(0,5);
+    var baseNoticias = scoreNoticias.length ? Math.round(scoreNoticias.reduce(function(s,v){return s+v;},0)/scoreNoticias.length) : 0;
+
+    lista.forEach(function(n){
+      var it = n.intencao || analisarIntencaoCompra([n.titulo,n.resumo,(n.kws||[]).join(' ')].join(' '));
+      categorias = categorias.concat(it.categorias||[]);
+      categoriaLabels = categoriaLabels.concat(it.categoriaLabels||[]);
+      produtos = produtos.concat(it.produtos||[]);
+      motivos = motivos.concat(it.motivos||[]);
+      (it.categorias||[]).forEach(function(cid){ scoreCats[cid]=(scoreCats[cid]||0)+1+(n.score||0)/25; });
+      if(n.titulo) sinais.push(n.titulo);
+    });
+
+    var crm = historicoClienteCRM(cli);
+    produtos = produtos.concat(crm.produtos||[]);
+    motivos = motivos.concat(crm.motivos||[]);
+    if(crm.opps && crm.opps.length) sinais.push(crm.opps.length+' oportunidade(s) no CRM');
+
+    categorias = uniq(categorias);
+    categoriaLabels = uniq(categoriaLabels);
+    produtos = uniq(produtos).slice(0,5);
+    motivos = uniq(motivos).slice(0,8);
+    sinais = uniq(sinais).slice(0,4);
+
+    var scoreExtraCategorias = Math.min(18, categorias.length*5);
+    var score = Math.min(100, Math.round(baseNoticias*0.75 + (crm.score||0) + scoreExtraCategorias));
+
+    var bestCat = null;
+    categorias.forEach(function(cid){
+      if(!bestCat || (scoreCats[cid]||0) > (scoreCats[bestCat.id]||0)){
+        bestCat = COMPRA_CATS.find(function(c){return c.id===cid;}) || bestCat;
+      }
+    });
+
+    if(!bestCat && produtos.length){
+      bestCat = COMPRA_CATS.find(function(c){ return c.id==='torque'; }) || null;
+    }
+
+    var produtoPrincipal = produtos[0] || 'Sem produto provável definido ainda — manter monitoramento e validar necessidade em campo.';
+    var acao = bestCat ? bestCat.action : 'Monitorar a empresa e buscar contato com engenharia, manutenção, qualidade ou compras para validar se há projeto ativo.';
+
+    var resumo = lista.length
+      ? 'Hipótese comercial gerada a partir de '+lista.length+' notícia(s), palavras-chave e histórico do CRM. Produto provável: '+produtoPrincipal
+      : (crm.opps && crm.opps.length
+          ? 'Não encontrei notícia pública relevante agora, mas há histórico interno no CRM que merece retomada.'
+          : 'Sem sinal público forte encontrado no momento. Manter monitoramento.');
+
+    var origem = [];
+    if(lista.length) origem.push('Google News RSS');
+    if(crm.opps && crm.opps.length) origem.push('CRM');
+    if(!origem.length) origem.push('Sem fonte ativa');
+
+    return {
+      score: score,
+      categorias: categorias,
+      categoriaLabels: categoriaLabels,
+      produtos: produtos,
+      produtoPrincipal: produtoPrincipal,
+      motivos: motivos,
+      sinais: sinais,
+      acao: acao,
+      resumo: resumo,
+      origem: origem.join(' + ')
+    };
+  }
+
+  function scoreClienteObj(cli){
+    var lista = ((news[cli.id]||{}).noticias)||[];
+    return consolidarIntencaoCliente(cli, lista).score;
+  }
+
+  // ── MOTOR PRINCIPAL: Google News RSS sem API key ────────────────────────────
   function xmlText(node, tag){
     var el = node.getElementsByTagName(tag)[0];
     return el ? (el.textContent || '').trim() : '';
   }
 
   function limparEmpresa(nome){
-    return String(nome||'').replace(/\b(ltda|s\/?a|sa|eireli|me|epp|industria|indústria|comercio|comércio)\b/ig,'').replace(/\s+/g,' ').trim();
+    return String(nome||'')
+      .replace(/\b(ltda|s\/?a|sa|eireli|me|epp|industria|indústria|comercio|comércio|máquinas|maquinas|equipamentos)\b/ig,'')
+      .replace(/\s+/g,' ')
+      .trim();
   }
 
   function rssUrl(query){
@@ -5195,7 +5461,7 @@ function ViewRadar({ session, isGestor, isConsultor }) {
         if(!r.ok) throw new Error('HTTP '+r.status);
         return r.text();
       }).then(function(txt){
-        if(!txt || txt.indexOf('<rss') < 0 && txt.indexOf('<feed') < 0) {
+        if(!txt || (txt.indexOf('<rss') < 0 && txt.indexOf('<feed') < 0)) {
           throw new Error('Resposta não parece RSS/XML: '+txt.slice(0,80));
         }
         return txt;
@@ -5220,11 +5486,10 @@ function ViewRadar({ session, isGestor, isConsultor }) {
       var m = titulo.match(/ - ([^-]+)$/);
       if(m) fonte = m[1];
       var desc = xmlText(item,'description').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim();
-      var sc = scoreNoticia(titulo+' '+desc+' '+keyword);
-      var kws = sc.kws.slice();
-      if(kws.indexOf(keyword)<0) kws.unshift(keyword);
+      var sc = scoreNoticia(titulo+' '+desc+' '+keyword+' '+empresa);
+      var kws = uniq((sc.kws||[]).concat(keyword?[keyword]:[])).slice(0,8);
       return {
-        id: btoa(unescape(encodeURIComponent((titulo+link).slice(0,80)))).replace(/[^a-zA-Z0-9]/g,'').slice(0,24),
+        id: btoa(unescape(encodeURIComponent((titulo+link).slice(0,120)))).replace(/[^a-zA-Z0-9]/g,'').slice(0,24),
         titulo: titulo,
         resumo: desc || ('Notícia encontrada para '+empresa+' relacionada a '+keyword+'.'),
         data: data ? new Date(data).toLocaleDateString('pt-BR') : '',
@@ -5232,7 +5497,10 @@ function ViewRadar({ session, isGestor, isConsultor }) {
         link: link,
         keywords: kws,
         kws: kws.slice(0,6),
-        score: sc.score || (keyword ? 5 : 0)
+        score: sc.score || (keyword ? 5 : 0),
+        intencao: sc.intent,
+        produtoProvavel: (sc.intent.produtos||[]).slice(0,2).join(' • '),
+        acaoRecomendada: sc.intent.acao
       };
     });
   }
@@ -5240,9 +5508,20 @@ function ViewRadar({ session, isGestor, isConsultor }) {
   function buscarClienteIA(cli){
     var empresa = limparEmpresa(cli.nome || cli.apelido);
     var apelido = limparEmpresa(cli.apelido || empresa);
-    var termos = ['investimento','expansão','nova fábrica','nova planta','ampliação','automação','contratação','linha de produção','modernização','CAPEX'];
+
+    var termos = [
+      'investimento','expansão','nova fábrica','nova planta','ampliação','aumento de capacidade',
+      'nova linha de produção','modernização','automação','indústria 4.0','rastreabilidade',
+      'qualidade','recall','manutenção industrial','vaga engenharia de processos','vaga manutenção industrial',
+      'vaga qualidade','vaga comprador técnico','licitação','pregão','edital','compra de equipamentos',
+      'cadastro de fornecedores','homologação fornecedor','torque','parafusamento','solda industrial'
+    ];
+
     var queries = termos.map(function(t){ return '"'+apelido+'" '+t; });
-    if(empresa && empresa !== apelido) queries = queries.concat(termos.slice(0,4).map(function(t){ return '"'+empresa+'" '+t; }));
+    if(empresa && normRadarTxt(empresa)!==normRadarTxt(apelido)) {
+      queries = queries.concat(termos.slice(0,10).map(function(t){ return '"'+empresa+'" '+t; }));
+    }
+    queries = uniq(queries).slice(0,24);
 
     var encontrados = [];
     var vistos = {};
@@ -5251,19 +5530,18 @@ function ViewRadar({ session, isGestor, isConsultor }) {
     function proxima(){
       if(idx >= queries.length) {
         encontrados.sort(function(a,b){ return (b.score||0) - (a.score||0); });
-        var top = encontrados.slice(0,15);
-        var media = top.length ? Math.round(top.reduce(function(s,n){return s+(n.score||0);},0)/top.length) : 0;
-        var analise = top.length
-          ? 'Foram encontrados sinais públicos recentes ligados a '+apelido+'. Priorize abordagem consultiva nas notícias com maior score e valide em campo se existe projeto, CAPEX, prazo e responsável técnico.'
-          : 'Sem notícias relevantes encontradas no Google News RSS para esta empresa no momento.';
+        var top = encontrados.slice(0,18);
+        var intencao = consolidarIntencaoCliente(cli, top);
+        var analise = intencao.resumo + ' Ação sugerida: ' + intencao.acao;
         return Promise.resolve({
           noticias: top,
           analise: analise,
-          temperatura: media>=61?'quente':media>=31?'morno':'frio'
+          temperatura: intencao.score>=61?'quente':intencao.score>=31?'morno':'frio',
+          intencao: intencao
         });
       }
       var q = queries[idx++];
-      var kw = termos.find(function(t){ return q.toLowerCase().indexOf(t.toLowerCase())>=0; }) || '';
+      var kw = termos.find(function(t){ return normRadarTxt(q).indexOf(normRadarTxt(t))>=0; }) || '';
       var url = rssUrl(q);
       if(window.debugRadar) console.log('[Radar] query:', q, url);
       return fetchRssWithFallback(url).then(function(xml){
@@ -5280,7 +5558,7 @@ function ViewRadar({ session, isGestor, isConsultor }) {
     return proxima();
   }
 
-  // ── GERAR PARA TODOS (botão único) ────────────────────────────────────────────
+  // ── GERAR PARA TODOS ────────────────────────────────────────────────────────
   function gerarRadarTodos(){
     var ativos = clients.filter(function(c){ return radarOn[c.id]; });
     if(!ativos.length){ alert('Ative o Radar para ao menos 1 empresa.'); return; }
@@ -5303,22 +5581,25 @@ function ViewRadar({ session, isGestor, isConsultor }) {
       setProgress('Pesquisando '+cli.apelido+'... ('+idx+'/'+ativos.length+')');
 
       buscarClienteIA(cli).then(function(resultado){
-        // Só salvar se trouxe notícias ou se não tinha nada antes
         if(resultado.noticias.length > 0 || !newsAtual[cli.id]){
           newsAtual[cli.id] = {
             noticias:    resultado.noticias,
             analise:     resultado.analise,
             temperatura: resultado.temperatura,
+            intencao:    resultado.intencao
           };
+        } else if(newsAtual[cli.id]) {
+          var listaCache = newsAtual[cli.id].noticias || [];
+          newsAtual[cli.id].intencao = consolidarIntencaoCliente(cli, listaCache);
+          newsAtual[cli.id].analise  = newsAtual[cli.id].intencao.resumo;
         }
         tsAtual[cli.id] = new Date().toISOString();
-        // Atualizar estado parcialmente para mostrar resultados em tempo real
+
         var snap = Object.assign({}, newsAtual);
         setNews(snap); save(KEYS_RADAR_NEWS, snap);
         next();
       }).catch(function(err){
         console.error('[Radar] Erro em '+cli.apelido+':', err.message);
-        // Não sobrescrever cache existente em caso de erro
         tsAtual[cli.id] = tsAtual[cli.id] || new Date().toISOString();
         next();
       });
@@ -5326,7 +5607,7 @@ function ViewRadar({ session, isGestor, isConsultor }) {
     next();
   }
 
-  // ── Auto-atualização ao montar (6h de cache) ──────────────────────────────────
+  // ── Auto-atualização ao montar (6h de cache) ────────────────────────────────
   useEffect(function(){
     var ativos = clients.filter(function(c){ return radarOn[c.id]; });
     if(!ativos.length || loading) return;
@@ -5339,7 +5620,7 @@ function ViewRadar({ session, isGestor, isConsultor }) {
     if(precisa) gerarRadarTodos();
   }, []);
 
-  // ── Helpers ────────────────────────────────────────────────────────────────────
+  // ── Helpers de interface ────────────────────────────────────────────────────
   function tsRelativo(iso){
     if(!iso) return '—';
     var diff = Date.now() - new Date(iso).getTime();
@@ -5351,17 +5632,24 @@ function ViewRadar({ session, isGestor, isConsultor }) {
 
   var countOn = Object.keys(radarOn).filter(function(k){return radarOn[k];}).length;
 
-  // Interface funcional do Radar
-  // Montar lista exibida
   var ativosList = clients.filter(function(c){ return radarOn[c.id]; }).map(function(c){
-    var dados   = news[c.id]||{};
-    var lista   = dados.noticias||[];
-    var sc      = scoreCliente(c.id);
-    var cls     = classificar(sc);
-    return {c:c, lista:lista, analise:dados.analise||'', score:sc, cls:cls, ts:timestamps[c.id]};
+    var dados    = news[c.id]||{};
+    var lista    = dados.noticias||[];
+    var intencao = consolidarIntencaoCliente(c, lista);
+    var cls      = classificar(intencao.score);
+    return {c:c, lista:lista, analise:dados.analise||intencao.resumo, intencao:intencao, score:intencao.score, cls:cls, ts:timestamps[c.id]};
   }).filter(function(item){
     if(filterScore!=='todos' && item.cls.id!==filterScore) return false;
-    if(search && item.c.apelido.toLowerCase().indexOf(search.toLowerCase())<0) return false;
+    if(filterCategory!=='todas' && (item.intencao.categorias||[]).indexOf(filterCategory)<0) return false;
+    if(search){
+      var hay = [
+        item.c.apelido,item.c.nome,item.c.segmento,
+        (item.intencao.produtos||[]).join(' '),
+        (item.intencao.motivos||[]).join(' '),
+        (item.intencao.categoriaLabels||[]).join(' ')
+      ].join(' ').toLowerCase();
+      if(hay.indexOf(search.toLowerCase())<0) return false;
+    }
     return true;
   }).sort(function(a,b){return b.score-a.score;});
 
@@ -5379,15 +5667,18 @@ function ViewRadar({ session, isGestor, isConsultor }) {
       {/* ── BARRA DE CONTROLES ── */}
       <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
         <input value={search} onChange={function(e){setSearch(e.target.value);}}
-          placeholder="🔍 Filtrar empresa..." style={{width:160}}/>
+          placeholder="🔍 Empresa, produto ou sinal..." style={{width:210}}/>
         <select value={filterScore} onChange={function(e){setFilterScore(e.target.value);}}
           style={{padding:'6px 10px',fontSize:11,borderRadius:7,border:'1px solid var(--border)',background:'var(--bg3)',color:'var(--text)'}}>
           {STATUS_OPTIONS.map(function(s){ return <option key={s.id} value={s.id}>{s.label}</option>; })}
         </select>
+        <select value={filterCategory} onChange={function(e){setFilterCategory(e.target.value);}}
+          style={{padding:'6px 10px',fontSize:11,borderRadius:7,border:'1px solid var(--border)',background:'var(--bg3)',color:'var(--text)',minWidth:180}}>
+          {CATEGORY_OPTIONS.map(function(s){ return <option key={s.id} value={s.id}>{s.label}</option>; })}
+        </select>
         <div style={{flex:1}}/>
         <span style={{fontSize:11,color:'var(--text3)'}}>{countOn}/{MAX_RADAR} ativas</span>
 
-        {/* ── BOTÃO ÚNICO ── */}
         <button onClick={gerarRadarTodos} disabled={loading||countOn===0}
           style={{display:'flex',alignItems:'center',gap:7,padding:'8px 18px',borderRadius:8,
             border:'1px solid rgba(37,99,235,.5)',
@@ -5401,6 +5692,12 @@ function ViewRadar({ session, isGestor, isConsultor }) {
         </button>
       </div>
 
+      <div className="card" style={{padding:'10px 14px',background:'rgba(37,99,235,.05)',borderColor:'rgba(37,99,235,.15)'}}>
+        <div style={{fontSize:11,color:'var(--text2)',lineHeight:1.6}}>
+          <b style={{color:'#60A5FA'}}>Radar de Intenção de Compra:</b> cruza Google News RSS, palavras-chave comerciais e histórico do CRM para estimar o que a empresa pode comprar. A saída é uma hipótese comercial para validar em campo, não uma certeza.
+        </div>
+      </div>
+
       {/* ── TOGGLES ── */}
       <div className="card" style={{padding:'12px 14px'}}>
         <div style={{fontSize:10,fontWeight:700,color:'var(--text2)',marginBottom:8,
@@ -5410,7 +5707,7 @@ function ViewRadar({ session, isGestor, isConsultor }) {
         <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
           {clients.map(function(c){
             var on  = !!radarOn[c.id];
-            var sc  = scoreCliente(c.id);
+            var sc  = scoreClienteObj(c);
             var cls = classificar(sc);
             return (
               <div key={c.id} onClick={function(){toggleRadarOn(c.id);}}
@@ -5440,8 +5737,12 @@ function ViewRadar({ session, isGestor, isConsultor }) {
             <div style={{fontWeight:600,marginBottom:4}}>Ative empresas no painel acima</div>
             <div style={{fontSize:11}}>Máximo {MAX_RADAR} empresas simultâneas</div>
           </div>
+        ) : ativosList.length===0 ? (
+          <div className="card" style={{textAlign:'center',padding:'30px 20px',color:'var(--text3)'}}>
+            Nenhuma empresa corresponde aos filtros selecionados.
+          </div>
         ) : ativosList.map(function(item){
-          var c=item.c; var lista=item.lista; var sc=item.score; var cls=item.cls;
+          var c=item.c; var lista=item.lista; var sc=item.score; var cls=item.cls; var intent=item.intencao;
           var isLoad  = loadingId===c.id;
           var expanded= expandedId===c.id;
           var listaShow = expanded?lista:lista.slice(0,3);
@@ -5449,7 +5750,7 @@ function ViewRadar({ session, isGestor, isConsultor }) {
           return (
             <div key={c.id} className="card" style={{borderLeft:'3px solid '+cls.color}}>
               {/* Header */}
-              <div style={{display:'flex',gap:10,alignItems:'center',marginBottom:item.analise||lista.length?10:0,flexWrap:'wrap'}}>
+              <div style={{display:'flex',gap:10,alignItems:'center',marginBottom:10,flexWrap:'wrap'}}>
                 {c.logo&&<img src={c.logo} style={{width:28,height:28,objectFit:'contain',
                   background:'#fff',borderRadius:4,padding:2}} alt=""/>}
                 <div style={{flex:1,minWidth:0}}>
@@ -5462,6 +5763,7 @@ function ViewRadar({ session, isGestor, isConsultor }) {
                   <div style={{fontSize:10,color:'var(--text3)',marginTop:2}}>
                     {lista.length} notícia{lista.length!==1?'s':''} · atualizado {tsRelativo(item.ts)}
                     {c.segmento&&' · '+c.segmento}
+                    {' · Fonte: '+intent.origem}
                   </div>
                 </div>
                 {/* Score */}
@@ -5474,37 +5776,62 @@ function ViewRadar({ session, isGestor, isConsultor }) {
                 </div>
               </div>
 
-              {/* Análise IA */}
+              {/* Intenção de compra */}
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:8,marginBottom:8}}>
+                <div style={{padding:'8px 10px',borderRadius:7,background:'rgba(37,99,235,.07)',border:'1px solid rgba(37,99,235,.15)'}}>
+                  <div style={{fontSize:9,color:'#60A5FA',fontWeight:800,letterSpacing:'.06em',textTransform:'uppercase',marginBottom:4}}>Produto provável</div>
+                  <div style={{fontSize:11,color:'var(--text2)',lineHeight:1.5}}>{clip(intent.produtoPrincipal,180)}</div>
+                </div>
+                <div style={{padding:'8px 10px',borderRadius:7,background:'rgba(202,138,4,.07)',border:'1px solid rgba(202,138,4,.18)'}}>
+                  <div style={{fontSize:9,color:'#FACC15',fontWeight:800,letterSpacing:'.06em',textTransform:'uppercase',marginBottom:4}}>Sinais detectados</div>
+                  <div style={{fontSize:11,color:'var(--text2)',lineHeight:1.5}}>
+                    {intent.motivos.length ? intent.motivos.slice(0,5).join(', ') : 'Sem palavras-chave fortes ainda'}
+                  </div>
+                </div>
+                <div style={{padding:'8px 10px',borderRadius:7,background:'rgba(22,163,74,.07)',border:'1px solid rgba(22,163,74,.18)'}}>
+                  <div style={{fontSize:9,color:'#4ADE80',fontWeight:800,letterSpacing:'.06em',textTransform:'uppercase',marginBottom:4}}>Ação recomendada</div>
+                  <div style={{fontSize:11,color:'var(--text2)',lineHeight:1.5}}>{clip(intent.acao,190)}</div>
+                </div>
+              </div>
+
+              {/* Categorias */}
+              {intent.categoriaLabels.length>0 && (
+                <div style={{display:'flex',gap:5,flexWrap:'wrap',marginBottom:8}}>
+                  {intent.categoriaLabels.map(function(cat,ci){
+                    return <span key={ci} style={{fontSize:9,padding:'2px 7px',borderRadius:10,background:'var(--bg3)',color:'var(--text2)',border:'1px solid var(--border)'}}>{cat}</span>;
+                  })}
+                </div>
+              )}
+
+              {/* Leitura comercial */}
               {item.analise && (
                 <div style={{fontSize:11,padding:'7px 10px',borderRadius:6,
-                  background:'rgba(37,99,235,.07)',border:'1px solid rgba(37,99,235,.15)',
+                  background:'rgba(37,99,235,.05)',border:'1px solid rgba(37,99,235,.12)',
                   color:'var(--text2)',lineHeight:1.6,marginBottom:8}}>
-                  <span style={{fontWeight:700,color:'#60A5FA',fontSize:10}}>🧠 Análise IA: </span>
+                  <span style={{fontWeight:700,color:'#60A5FA',fontSize:10}}>🧭 Leitura comercial: </span>
                   {item.analise}
                 </div>
               )}
 
-              {/* Sem notícias */}
               {!isLoad&&lista.length===0&&(
                 <div style={{fontSize:11,color:'var(--text3)',textAlign:'center',padding:'8px 0'}}>
-                  Nenhuma notícia ainda — clique em Gerar Radar.
+                  Nenhuma notícia ainda — clique em Gerar Radar. O histórico interno do CRM continua sendo considerado.
                 </div>
               )}
 
               {/* Lista de notícias */}
               {listaShow.map(function(n,ni){
                 var cls2 = classificar(n.score||0);
+                var nIntent = n.intencao || analisarIntencaoCompra([n.titulo,n.resumo,(n.kws||[]).join(' ')].join(' '));
                 return (
                   <div key={n.id||ni} style={{padding:'8px 10px',borderRadius:6,
                     background:'var(--bg3)',border:'1px solid var(--border)',marginBottom:6}}>
                     <div style={{display:'flex',gap:8,alignItems:'flex-start'}}>
-                      {/* Score badge */}
                       <div style={{flexShrink:0,width:34,textAlign:'center',fontSize:11,fontWeight:700,
                         color:cls2.color,background:cls2.color+'18',borderRadius:5,padding:'2px 0',marginTop:2}}>
                         {n.score||0}
                       </div>
                       <div style={{flex:1,minWidth:0}}>
-                        {/* Título com link */}
                         {n.link ? (
                           <a href={n.link} target="_blank" rel="noopener noreferrer"
                             style={{fontSize:12,fontWeight:600,color:'var(--text)',textDecoration:'none',
@@ -5517,9 +5844,14 @@ function ViewRadar({ session, isGestor, isConsultor }) {
                             {n.titulo||n.title||'—'}
                           </div>
                         )}
-                        {/* Resumo */}
-                        {n.resumo&&<div style={{fontSize:10,color:'var(--text3)',marginTop:3,lineHeight:1.5}}>{n.resumo.slice(0,180)}</div>}
-                        {/* Meta */}
+                        {n.resumo&&<div style={{fontSize:10,color:'var(--text3)',marginTop:3,lineHeight:1.5}}>{clip(n.resumo,180)}</div>}
+
+                        {nIntent.produtos&&nIntent.produtos.length>0&&(
+                          <div style={{fontSize:10,color:'#4ADE80',marginTop:5,lineHeight:1.4}}>
+                            <b>Indica possível compra:</b> {clip(nIntent.produtos[0],160)}
+                          </div>
+                        )}
+
                         <div style={{display:'flex',gap:8,marginTop:5,flexWrap:'wrap',alignItems:'center'}}>
                           {n.data&&<span style={{fontSize:9,color:'var(--text3)'}}>📅 {n.data}</span>}
                           {n.fonte&&<span style={{fontSize:9,color:'var(--text3)'}}>📰 {n.fonte}</span>}
@@ -5534,7 +5866,6 @@ function ViewRadar({ session, isGestor, isConsultor }) {
                 );
               })}
 
-              {/* Ver mais / menos */}
               {lista.length>3&&(
                 <button onClick={function(){setExpandedId(expanded?null:c.id);}}
                   style={{width:'100%',padding:'5px 0',background:'none',border:'none',
